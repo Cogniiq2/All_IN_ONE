@@ -1,0 +1,1347 @@
+<title>BoLaGio Condition Report</title>
+<style>
+  :root {
+    --ground: #EFF1EF;
+    --surface: #FAFBFA;
+    --surface-2: #E6EAE7;
+    --ink: #141C1A;
+    --ink-2: #3D4B47;
+    --ink-3: #6B7A75;
+    --rule: #CDD5D1;
+    --rule-soft: #DDE3E0;
+    --accent: #2E6E62;
+    --accent-soft: #DCEAE5;
+    --brass: #96662B;
+    --crit: #A82018;
+    --crit-soft: #F6E2E0;
+    --high: #9A5B12;
+    --high-soft: #F7E9D9;
+    --med: #4A5C7A;
+    --med-soft: #E3E8F0;
+    --shadow: 0 1px 2px rgba(20,28,26,.05), 0 8px 28px -18px rgba(20,28,26,.28);
+
+    --display: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
+    --body: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0E1413;
+      --surface: #151E1C;
+      --surface-2: #1D2826;
+      --ink: #E7ECE9;
+      --ink-2: #B4C0BB;
+      --ink-3: #849690;
+      --rule: #2A3735;
+      --rule-soft: #212C2A;
+      --accent: #6FB9A8;
+      --accent-soft: #17302B;
+      --brass: #CFA061;
+      --crit: #E8776C;
+      --crit-soft: #331A17;
+      --high: #D79A4E;
+      --high-soft: #302315;
+      --med: #93A7C4;
+      --med-soft: #1B242F;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px -20px rgba(0,0,0,.9);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0E1413;
+    --surface: #151E1C;
+    --surface-2: #1D2826;
+    --ink: #E7ECE9;
+    --ink-2: #B4C0BB;
+    --ink-3: #849690;
+    --rule: #2A3735;
+    --rule-soft: #212C2A;
+    --accent: #6FB9A8;
+    --accent-soft: #17302B;
+    --brass: #CFA061;
+    --crit: #E8776C;
+    --crit-soft: #331A17;
+    --high: #D79A4E;
+    --high-soft: #302315;
+    --med: #93A7C4;
+    --med-soft: #1B242F;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px -20px rgba(0,0,0,.9);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.62;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 0 24px 120px;
+  }
+
+  /* ── Masthead ─────────────────────────────── */
+
+  .masthead {
+    padding: 72px 0 40px;
+    border-bottom: 2px solid var(--ink);
+  }
+
+  .kicker {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 20px;
+  }
+
+  h1 {
+    font-family: var(--display);
+    font-size: clamp(2.4rem, 6vw, 3.9rem);
+    line-height: 1.02;
+    letter-spacing: -.02em;
+    font-weight: 400;
+    margin: 0 0 20px;
+    text-wrap: balance;
+  }
+
+  .standfirst {
+    font-size: 1.075rem;
+    color: var(--ink-2);
+    max-width: 62ch;
+    margin: 0 0 32px;
+  }
+
+  .meta-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 20px 28px;
+    padding-top: 8px;
+  }
+  .meta-grid dt {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 5px;
+  }
+  .meta-grid dd {
+    margin: 0;
+    font-size: 14px;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Verdict panel ────────────────────────── */
+
+  .verdict {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--crit);
+    padding: 28px 30px;
+    margin: 44px 0 0;
+    box-shadow: var(--shadow);
+  }
+  .verdict h2 {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--crit);
+    margin: 0 0 14px;
+    font-weight: 600;
+  }
+  .verdict p {
+    margin: 0 0 14px;
+    font-size: 1.02rem;
+  }
+  .verdict p:last-child { margin-bottom: 0; }
+
+  /* ── Sections ─────────────────────────────── */
+
+  section { margin-top: 76px; scroll-margin-top: 24px; }
+
+  .sec-head {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    border-bottom: 1px solid var(--ink);
+    padding-bottom: 12px;
+    margin-bottom: 32px;
+  }
+  .sec-num {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+    letter-spacing: .1em;
+    flex-shrink: 0;
+  }
+  .sec-head h2 {
+    font-family: var(--display);
+    font-size: clamp(1.6rem, 3.4vw, 2.15rem);
+    font-weight: 400;
+    letter-spacing: -.015em;
+    margin: 0;
+    flex: 1;
+  }
+
+  .lede {
+    font-size: 1.02rem;
+    color: var(--ink-2);
+    max-width: 66ch;
+    margin: 0 0 32px;
+  }
+
+  h3 {
+    font-family: var(--display);
+    font-size: 1.28rem;
+    font-weight: 400;
+    letter-spacing: -.01em;
+    margin: 40px 0 12px;
+  }
+
+  p { max-width: 68ch; }
+
+  /* ── Contents ─────────────────────────────── */
+
+  .toc {
+    margin: 44px 0 0;
+    border: 1px solid var(--rule);
+    background: var(--surface);
+    padding: 24px 28px;
+  }
+  .toc h2 {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 16px;
+    font-weight: 600;
+  }
+  .toc ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 10px 28px;
+    counter-reset: toc;
+  }
+  .toc li { counter-increment: toc; }
+  .toc a {
+    color: var(--ink);
+    text-decoration: none;
+    font-size: 14.5px;
+    display: flex;
+    gap: 10px;
+    border-bottom: 1px solid transparent;
+    padding-bottom: 2px;
+  }
+  .toc a::before {
+    content: counter(toc, decimal-leading-zero);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    padding-top: 3px;
+  }
+  .toc a:hover, .toc a:focus-visible { border-bottom-color: var(--accent); }
+
+  /* ── Findings ─────────────────────────────── */
+
+  .finding {
+    display: grid;
+    grid-template-columns: 92px 1fr;
+    gap: 0 22px;
+    border-top: 1px solid var(--rule-soft);
+    padding: 26px 0;
+  }
+  .finding:last-of-type { border-bottom: 1px solid var(--rule-soft); }
+
+  .f-gutter { display: flex; flex-direction: column; gap: 9px; }
+
+  .f-id {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: .06em;
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .sev {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 9.5px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    padding: 3px 7px;
+    border-radius: 2px;
+    font-weight: 600;
+    width: fit-content;
+  }
+  .sev-crit { background: var(--crit-soft); color: var(--crit); }
+  .sev-high { background: var(--high-soft); color: var(--high); }
+  .sev-med  { background: var(--med-soft);  color: var(--med); }
+  .sev-ok   { background: var(--accent-soft); color: var(--accent); }
+
+  .f-body h4 {
+    font-family: var(--body);
+    font-size: 1.02rem;
+    font-weight: 650;
+    letter-spacing: -.005em;
+    margin: 0 0 8px;
+    line-height: 1.35;
+  }
+  .f-body p { margin: 0 0 10px; font-size: 15px; color: var(--ink-2); }
+  .f-body p:last-child { margin-bottom: 0; }
+  .f-body strong { color: var(--ink); font-weight: 620; }
+
+  .fix {
+    margin-top: 10px;
+    padding-left: 13px;
+    border-left: 2px solid var(--accent);
+    font-size: 14.5px;
+    color: var(--ink-2);
+  }
+  .fix b {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 3px;
+    font-weight: 600;
+  }
+
+  code, .path {
+    font-family: var(--mono);
+    font-size: .855em;
+    background: var(--surface-2);
+    padding: 1.5px 5px;
+    border-radius: 2px;
+    color: var(--ink);
+    word-break: break-word;
+  }
+
+  /* ── Lists ────────────────────────────────── */
+
+  ul.plain { padding-left: 0; list-style: none; margin: 0 0 18px; }
+  ul.plain li {
+    padding-left: 20px;
+    position: relative;
+    margin-bottom: 9px;
+    max-width: 68ch;
+    color: var(--ink-2);
+    font-size: 15px;
+  }
+  ul.plain li::before {
+    content: '';
+    position: absolute;
+    left: 2px;
+    top: 10px;
+    width: 6px;
+    height: 1px;
+    background: var(--accent);
+  }
+  ul.plain li strong { color: var(--ink); font-weight: 620; }
+
+  /* ── Ask blocks (information required) ────── */
+
+  .ask {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    padding: 24px 26px 20px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow);
+  }
+  .ask > h3 {
+    margin: 0 0 4px;
+    font-family: var(--body);
+    font-size: 1rem;
+    font-weight: 650;
+    letter-spacing: -.005em;
+  }
+  .ask > .why {
+    font-size: 13.5px;
+    color: var(--ink-3);
+    margin: 0 0 18px;
+    max-width: 66ch;
+  }
+  .ask ul { list-style: none; margin: 0; padding: 0; }
+  .ask ul li {
+    position: relative;
+    padding: 7px 0 7px 26px;
+    font-size: 14.5px;
+    color: var(--ink-2);
+    border-top: 1px solid var(--rule-soft);
+  }
+  .ask ul li:first-child { border-top: none; }
+  .ask ul li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 13px;
+    width: 10px;
+    height: 10px;
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    background: var(--ground);
+  }
+  .ask ul li b { color: var(--ink); font-weight: 620; }
+  .ask ul li em { color: var(--ink-3); font-style: normal; font-size: 13px; }
+
+  .blocker {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--crit);
+    background: var(--crit-soft);
+    padding: 2px 6px;
+    border-radius: 2px;
+    margin-left: 6px;
+    vertical-align: 1px;
+    font-weight: 600;
+  }
+
+  /* ── Table ────────────────────────────────── */
+
+  .tscroll { overflow-x: auto; margin: 0 0 24px; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 520px;
+    font-size: 14.5px;
+  }
+  th, td {
+    text-align: left;
+    padding: 11px 16px 11px 0;
+    border-bottom: 1px solid var(--rule-soft);
+    vertical-align: top;
+  }
+  th {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    border-bottom: 1px solid var(--ink);
+    font-weight: 600;
+  }
+  td { color: var(--ink-2); }
+  td:first-child { color: var(--ink); font-weight: 600; white-space: nowrap; }
+
+  /* ── Phase cards ──────────────────────────── */
+
+  .phases { display: grid; gap: 16px; }
+  .phase {
+    border: 1px solid var(--rule);
+    background: var(--surface);
+    padding: 22px 26px;
+    display: grid;
+    grid-template-columns: 78px 1fr;
+    gap: 0 20px;
+    box-shadow: var(--shadow);
+  }
+  .phase .tag {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    padding-top: 4px;
+    font-weight: 600;
+  }
+  .phase h3 { margin: 0 0 8px; font-family: var(--body); font-size: 1rem; font-weight: 650; }
+  .phase p { margin: 0; font-size: 14.5px; color: var(--ink-2); }
+
+  /* ── Closing ──────────────────────────────── */
+
+  .closing {
+    margin-top: 76px;
+    padding: 30px 32px;
+    border: 1px solid var(--accent);
+    background: var(--accent-soft);
+  }
+  .closing h2 {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: 1.5rem;
+    margin: 0 0 12px;
+    color: var(--ink);
+  }
+  .closing p { margin: 0 0 12px; color: var(--ink-2); font-size: 15.5px; }
+  .closing p:last-child { margin-bottom: 0; }
+
+  a { color: var(--accent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  @media (max-width: 620px) {
+    .finding { grid-template-columns: 1fr; gap: 12px; }
+    .f-gutter { flex-direction: row; align-items: center; gap: 10px; }
+    .phase { grid-template-columns: 1fr; gap: 10px; }
+    .wrap { padding: 0 18px 90px; }
+    .masthead { padding-top: 48px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="kicker">Condition report · Website &amp; commercial readiness</p>
+    <h1>BoLaGio</h1>
+    <p class="standfirst">
+      A full survey of the <code>All_IN_ONE</code> repository against what BoLaGio GmbH actually is:
+      a family business letting two apartments in Bayreuth, with a third under renovation — and an
+      ambition to take direct bookings at a better margin than Booking.com or Airbnb.
+    </p>
+    <dl class="meta-grid">
+      <div><dt>Surveyed</dt><dd>15 Aug 2026</dd></div>
+      <div><dt>Stack</dt><dd>Next.js 13.5 · Tailwind · Netlify</dd></div>
+      <div><dt>Pages built</dt><dd>33 static</dd></div>
+      <div><dt>Typecheck / build</dt><dd>Both pass</dd></div>
+      <div><dt>Findings</dt><dd>24</dd></div>
+      <div><dt>Launch blockers</dt><dd>6</dd></div>
+    </dl>
+  </header>
+
+  <div class="verdict">
+    <h2>Verdict</h2>
+    <p>
+      The engineering is genuinely good. It compiles clean, the design language is restrained and
+      confident, the motion work is more sophisticated than most hospitality sites in Germany, and
+      the SEO scaffolding is thorough.
+    </p>
+    <p>
+      <strong>But it is a beautiful website for a company that does not exist.</strong> It is branded
+      "All in One Residences", sells five apartments described identically at 120 m² each, illustrates
+      them with Pexels stock interiors, publishes six invented guest reviews and a 9.4/10 rating in
+      machine-readable review markup, takes real card payments against no availability calendar, and
+      ships an admin panel — with the family's invoices and business email behind it — publicly
+      readable by anyone who types the URL.
+    </p>
+    <p>
+      None of that is fixed by better animation. The path to "the guest knows immediately they made
+      the right decision" runs through <em>truth first</em>: real name, real apartments, real
+      photographs, real availability, real reviews. Then design amplifies something that's actually
+      there. That sequencing is the core recommendation of this report.
+    </p>
+  </div>
+
+  <nav class="toc" aria-label="Contents">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#blockers">Launch blockers</a></li>
+      <li><a href="#brand">The BoLaGio rebrand</a></li>
+      <li><a href="#truth">Content that isn't true</a></li>
+      <li><a href="#design">Design &amp; the feel gap</a></li>
+      <li><a href="#craft">Craft &amp; performance</a></li>
+      <li><a href="#legal">German legal exposure</a></li>
+      <li><a href="#good">What to keep</a></li>
+      <li><a href="#need">What I need from you</a></li>
+      <li><a href="#plan">Proposed sequence</a></li>
+    </ol>
+  </nav>
+
+  <!-- ══════════════════════════════════════ -->
+  <section id="blockers">
+    <div class="sec-head"><span class="sec-num">01</span><h2>Launch blockers</h2></div>
+    <p class="lede">
+      Six things that must be resolved before the domain points at this site. Two of them are live
+      risks <em>right now</em> if any version of this is already deployed.
+    </p>
+
+    <article class="finding">
+      <div class="f-gutter"><span class="f-id">F-01</span><span class="sev sev-crit">Critical</span></div>
+      <div class="f-body">
+        <h4>Your invoices and business email are publicly downloadable</h4>
+        <p>
+          <code>public/admin/</code> is a compiled admin app served as a static site, and
+          <code>next.config.js</code> redirects <code>/admin</code> straight to it. Its login is
+          checked in browser JavaScript against a hardcoded password (<code>aio2024</code>), so it
+          can be read or simply bypassed. The bundle also contains the Supabase project URL and anon
+          key in plain text.
+        </p>
+        <p>
+          That would be survivable if the database were locked down. It isn't: the migrations grant
+          the <code>anon</code> role full <strong>select, insert, update and delete</strong> on
+          <code>invoices</code>, <code>emails</code> and <code>email_attachments</code>, plus read
+          access to the private <code>invoices</code> storage bucket. Anyone with the key — which is
+          in a public file — can read every business email you've ingested, download every invoice
+          PDF, or delete the lot. <code>robots.txt</code> doesn't even disallow <code>/admin</code>,
+          so it's crawlable.
+        </p>
+        <div class="fix"><b>Fix</b>
+          Rotate the Supabase anon key today. Remove <code>public/admin</code> and the
+          <code>/admin</code> redirect from this repo. Rewrite the RLS policies to require an
+          authenticated user (Supabase Auth), never <code>anon</code>. Redeploy the admin as a
+          separate, password-protected deployment on its own subdomain. This is unrelated to the
+          guest-facing site and should not share a codebase with it.
+        </div>
+      </div>
+    </article>
+
+    <article class="finding">
+      <div class="f-gutter"><span class="f-id">F-02</span><span class="sev sev-crit">Critical</span></div>
+      <div class="f-body">
+        <h4>The booking flow charges real money against no availability data</h4>
+        <p>
+          <code>booking-modal.tsx</code> and <code>sidebar-date-picker.tsx</code> accept any future
+          date. There is no availability source anywhere in the repo — no blocked dates, no existing
+          reservations, no iCal feed from Booking.com or Airbnb. The modal then posts to n8n webhooks
+          that create a live Stripe or PayPal checkout. A guest can pay in full, today, for a week
+          that is already sold on Booking.com.
+        </p>
+        <p>
+          Pricing is equally thin: <code>priceFrom × nights + €60</code>. No seasonality, no
+          Festspiele rate, no minimum stay, no weekly or monthly discount, no extra-guest fee, no VAT
+          or Kurtaxe line on the total. Direct booking only beats the platforms if your rate
+          management is at least as good as theirs.
+        </p>
+        <div class="fix"><b>Fix</b>
+          Decide the channel strategy first (see <a href="#need">§08</a>). If you stay on Booking and
+          Airbnb, you need a channel manager — Smoobu, Beds24, Lodgify or Hostaway — as the single
+          source of truth, with the website reading its availability and writing bookings back to it.
+          Until that exists, the site should take <em>enquiries and deposits</em>, not instant
+          confirmed payment. That change alone removes your largest operational risk.
+        </div>
+      </div>
+    </article>
+
+    <article class="finding">
+      <div class="f-gutter"><span class="f-id">F-03</span><span class="sev sev-crit">Critical</span></div>
+      <div class="f-body">
+        <h4>Invented reviews, published as structured data</h4>
+        <p>
+          "9.4 / 10 · 48+ Bewertungen" appears in the hero, the footer, the About page and every
+          apartment page. <code>lib/reviews.ts</code> contains six named guest reviews. Worse,
+          <code>json-ld.tsx</code> emits <code>AggregateRating</code> and three full
+          <code>Review</code> objects with named authors and dates — machine-readable claims to
+          Google that specific people wrote specific things.
+        </p>
+        <p>
+          In Germany this is misleading advertising under <strong>UWG §5 / §5b</strong>. Since 2022,
+          §5b(3) explicitly requires disclosing how you verify reviews, and fabricated ones are
+          expressly prohibited — enforceable by competitors and by Wettbewerbszentrale via
+          Abmahnung. Google separately issues manual actions for fake review markup, which would cost
+          you the rich snippets you built all this SEO for.
+        </p>
+        <div class="fix"><b>Fix</b>
+          Delete every invented review, rating number and rating schema block. Replace with real
+          Booking.com/Airbnb ratings (quotable with attribution) or nothing at all. A new brand with
+          no reviews and an honest "we're just opening — here's exactly what you get" reads far
+          better than a suspiciously round 9.4 with no source.
+        </div>
+      </div>
+    </article>
+
+    <article class="finding">
+      <div class="f-gutter"><span class="f-id">F-04</span><span class="sev sev-crit">Critical</span></div>
+      <div class="f-body">
+        <h4>Third-party press and stock photography used without licence</h4>
+        <p>
+          <code>public/images/richard-wagner-…-KD6MMB.jpg</code> is an <strong>Alamy comp</strong> —
+          a watermark-free preview, licensed for layout mock-ups only — and the journal page also
+          hotlinks it directly from <code>c8.alamy.com</code>. The Festspielhaus photo on the
+          homepage teaser has a filename matching a Bayerischer Rundfunk press image. Alamy actively
+          pursues unlicensed comp use, and German Abmahnung costs for a single press photo commonly
+          run four figures.
+        </p>
+        <div class="fix"><b>Fix</b>
+          Remove both immediately. Licence properly, use Wikimedia images with a compatible licence
+          and correct attribution, or shoot Bayreuth yourself — a walk with a good camera on a clear
+          morning solves it permanently and looks more like you.
+        </div>
+      </div>
+    </article>
+
+    <article class="finding">
+      <div class="f-gutter"><span class="f-id">F-05</span><span class="sev sev-crit">Critical</span></div>
+      <div class="f-body">
+        <h4>Impressum, Datenschutz and AGB are placeholder text</h4>
+        <p>
+          The Impressum lists <strong>"Musterstraße 1"</strong> and
+          <strong>"USt-IdNr: DE XXX XXX XXX"</strong>, names no GmbH, no Handelsregister number, no
+          Registergericht, and no Geschäftsführer in the form §5 DDG requires. The privacy policy is
+          63 lines and names none of your actual processors — Stripe, PayPal, n8n
+          (<code>n8n.cogniiq.co</code>), Supabase, Netlify or Google Fonts. The AGB is 72 lines for a
+          business that takes 100% prepayment from consumers.
+        </p>
+        <p>
+          A missing or wrong Impressum is directly abmahnfähig in Germany, and it is the single
+          cheapest thing on this list to get right.
+        </p>
+        <div class="fix"><b>Fix</b>
+          Give me the company data in <a href="#need">§08.A</a> and I'll write all three properly.
+          Have your Steuerberater or a Fachanwalt für IT-Recht review the AGB before launch —
+          especially the cancellation terms and the consumer Widerrufsrecht carve-out for
+          accommodation (§312g(2) Nr. 9 BGB), which the current AGB never mentions.
+        </div>
+      </div>
+    </article>
+
+    <article class="finding">
+      <div class="f-gutter"><span class="f-id">F-06</span><span class="sev sev-crit">Critical</span></div>
+      <div class="f-body">
+        <h4>The inventory doesn't exist</h4>
+        <p>
+          The site sells five named apartments — Maison Sternplatz, Loge am Sternplatz, Atelier
+          Opernstraße, Penthouse Belvédère, Design Loft Innenstadt — each "ca. 120 m²", each sleeping
+          exactly 4, each with an identical amenity list and a garage. You have two lettable
+          apartments in Schulstraße and one in Opernstraße still being renovated.
+        </p>
+        <p>
+          The data is internally inconsistent too: <code>residences.ts</code> files Atelier
+          Opernstraße under the "Sternplatz Collection"; the same apartment is "Penthouse Belvédère"
+          in one file and "Belvédère Schulstraße" in another; walking times to the Hofgarten are
+          3–5 minutes in German and 10 minutes in English; the FAQ says the Festspielhaus is 15
+          minutes <em>by car</em> while the apartment pages imply walking distance.
+        </p>
+        <div class="fix"><b>Fix</b>
+          Rebuild <code>lib/residences.ts</code> from the real property data in
+          <a href="#need">§08.B</a>. Two apartments presented in full, honest depth will convert far
+          better than five described identically. The "collections" framing is a device that only
+          makes sense at scale — with two units it reads as padding.
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <!-- ══════════════════════════════════════ -->
+  <section id="brand">
+    <div class="sec-head"><span class="sec-num">02</span><h2>The BoLaGio rebrand</h2></div>
+    <p class="lede">
+      "All in One" is a generic name that says nothing. BoLaGio is the opposite — it already carries
+      the whole story, and almost nobody realises it. That's the most valuable asset in this project
+      and the site currently doesn't use it at all.
+    </p>
+
+    <h3>Scope of the rename</h3>
+    <ul class="plain">
+      <li><strong>Every visible string</strong> — 141 occurrences of the old naming across components, plus <code>lib/translations.ts</code>, all metadata, all JSON-LD, sitemap, robots.</li>
+      <li><strong>The logo</strong> — <code>brand-logo.tsx</code> hand-draws an "All in" calligraphic monogram in SVG. It has to be replaced outright, not recoloured. <code>public/images/logo-allinone.png</code> is a 0-byte file.</li>
+      <li><strong>Domain, email and schema</strong> — <code>allinone-residences.de</code> is hardcoded in ~20 places including <code>metadataBase</code>, canonicals and hreflang.</li>
+      <li><strong>The repository itself</strong> — <code>All_IN_ONE</code>, and the <code>aio-</code> prefixes in localStorage keys.</li>
+    </ul>
+
+    <h3>What I'd build the identity on</h3>
+    <p>
+      Bogdana, Lazar, Djordje. Three names, three initials, and — once Opernstraße is finished —
+      three residences. That correspondence is the design system: <strong>B · L · G</strong> as a
+      monogram that resolves into the wordmark, one letter per apartment, each apartment carrying its
+      own letter as a quiet mark on its page. It's structural, it's true, and no competitor can copy
+      it because it's your children's names.
+    </p>
+    <p>
+      It also solves the "why book direct" problem emotionally rather than commercially. Booking.com
+      cannot offer a family. A site that says <em>this house is named after our three children, and
+      one of us answers the phone</em> is doing something the platforms structurally cannot.
+    </p>
+
+    <article class="finding">
+      <div class="f-gutter"><span class="f-id">F-07</span><span class="sev sev-high">High</span></div>
+      <div class="f-body">
+        <h4>The children are currently listed as staff with job titles</h4>
+        <p>
+          <code>app/about/about-client.tsx</code> presents Bogdana as "Standards &amp; Qualität",
+          Lazar as "Hospitality-Projekte" and Djordje as "Operations &amp; Entwicklung", with
+          professional biographies. If any of them are minors, publishing a named role and bio for
+          them on a commercial site is both a data-protection problem under DSGVO Art. 8 and, frankly,
+          a tonal one — it reads as invented corporate structure, which undercuts the honesty the page
+          is trying to establish.
+        </p>
+        <div class="fix"><b>Fix</b>
+          Tell me their ages. If minors: name the company for them, tell the story of the name, and
+          keep the operating team to the adults who actually run it. That's warmer <em>and</em> safer
+          than fictional job titles.
+        </div>
+      </div>
+    </article>
+
+    <article class="finding">
+      <div class="f-gutter"><span class="f-id">F-08</span><span class="sev sev-med">Medium</span></div>
+      <div class="f-body">
+        <h4>The Niš café and the "coming soon" pages have no strategy</h4>
+        <p>
+          There are two unfinished pages — <code>/coming-soon/gelateria-michele</code> and
+          <code>/coming-soon/cafetaria-bayreuth</code> — with email capture forms that submit
+          nowhere, linked from the footer but excluded in <code>robots.ts</code>. Meanwhile the café
+          you actually own, in Niš, appears nowhere.
+        </p>
+        <div class="fix"><b>Fix</b>
+          Decide whether BoLaGio is a <em>Bayreuth lettings</em> brand or a <em>family holding</em>
+          brand. If the latter, the Niš café belongs on the About page as a second chapter — it makes
+          the family real and international. If those two coming-soon pages aren't happening, delete
+          them; half-finished pages read as neglect.
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <!-- ══════════════════════════════════════ -->
+  <section id="truth">
+    <div class="sec-head"><span class="sec-num">03</span><h2>Content that isn't true</h2></div>
+    <p class="lede">
+      Beyond the blockers, there's a layer of claims that would survive a casual read but not a
+      guest's arrival. Each one is a refund request or a bad first review waiting to happen.
+    </p>
+
+    <div class="tscroll">
+      <table>
+        <thead>
+          <tr><th>Claim on the site</th><th>Where</th><th>Problem</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>91 stock photos</td><td>All apartment galleries</td><td>Every interior image is a Pexels stock photo. Guests compare listing photos to reality; this is the fastest route to a one-star review.</td></tr>
+          <tr><td>"Garage inklusive"</td><td>Hero, every card, FAQ, schema</td><td>Stated for all five apartments, free of charge. Needs to be true per unit, with the number of spaces.</td></tr>
+          <tr><td>"Klimaanlage"</td><td>Every feature list</td><td>Air conditioning is rare in German apartments and heavily advertised here. Verify per unit.</td></tr>
+          <tr><td>"Antwort innerhalb von 2 Stunden"</td><td>About, booking confirmation</td><td>A service promise you'll be measured against, seven days a week.</td></tr>
+          <tr><td>Four languages</td><td>Schema, About page</td><td>DE/EN/FR/SR advertised. Only DE and EN exist, and neither French nor Serbian is implemented anywhere.</td></tr>
+          <tr><td>"ca. 120 m²" ×5</td><td><code>lib/residences.ts</code></td><td>Identical size, guest count and amenity list for every unit — visibly copy-pasted.</td></tr>
+          <tr><td>OG preview image</td><td><code>layout.tsx</code>, <code>page.tsx</code></td><td>Every WhatsApp and social share of your site shows a Pexels stock photo of someone else's flat.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════ -->
+  <section id="design">
+    <div class="sec-head"><span class="sec-num">04</span><h2>Design &amp; the feel gap</h2></div>
+    <p class="lede">
+      You asked for the visitor to know immediately they made the right decision. The current site is
+      handsome but anonymous — it is <em>correctly executed luxury</em> rather than <em>this
+      particular family's house in this particular city</em>. Here's precisely where the gap sits.
+    </p>
+
+    <article class="finding">
+      <div class="f-gutter"><span class="f-id">F-09</span><span class="sev sev-high">High</span></div>
+      <div class="f-body">
+        <h4>The hero is a stock photo of nowhere</h4>
+        <p>
+          The single most consequential image on the site — full-bleed, first paint, behind the
+          headline "Fünf Apartments. Mitten in Bayreuth." — is a generic interior. The vertical side
+          labels say "Deutschland / Bayern". There is nothing in the first screen that could only be
+          BoLaGio, and nothing that could only be Bayreuth.
+        </p>
+        <div class="fix"><b>Fix</b>
+          This is a photography problem, not a code problem, and it's where I'd spend money first. A
+          half-day with an interiors photographer — blue hour with the lamps on, morning light across
+          the floor, one detail shot per room, one shot of the actual street door — is worth more to
+          your conversion rate than every animation in the repo combined.
+        </div>
+      </div>
+    </article>
+
+    <article class="finding">
+      <div class="f-gutter"><span class="f-id">F-10</span><span class="sev sev-high">High</span></div>
+      <div class="f-body">
+        <h4>Eleven homepage sections, six of which say the same thing</h4>
+        <p>
+          <code>home-client.tsx</code> stacks Hero → ProofStrip → CollectionsTeaser → WhyChoose →
+          Pillars → ResidencesPreview → DirectBooking → Reviews → BayreuthTeaser → TrustTeaser →
+          FinalCta. ProofStrip, WhyChoose, Pillars, DirectBooking, TrustTeaser and FinalCta are all
+          variations on "trust us, book direct". Restraint is the actual signal of luxury; repetition
+          reads as insecurity.
+        </p>
+        <div class="fix"><b>Fix</b>
+          Cut to six: Hero → The two apartments (in real depth) → Why direct (once, with concrete
+          numbers) → Bayreuth &amp; the Festspiele → The family → Book. Each section then gets room
+          to be excellent instead of adequate.
+        </div>
+      </div>
+    </article>
+
+    <article class="finding">
+      <div class="f-gutter"><span class="f-id">F-11</span><span class="sev sev-high">High</span></div>
+      <div class="f-body">
+        <h4>Micro-typography has crossed from refined into unreadable</h4>
+        <p>
+          Labels run at <strong>7px to 9px</strong> with 0.28–0.42em letter-spacing, in colours like
+          <code>text-white/20</code>, <code>white/22</code> and <code>white/34</code> over a
+          photograph. The hero subline is <code>text-white/46</code>. Much of this fails WCAG AA
+          contrast outright, and 7px uppercase is genuinely illegible on a phone in daylight — which
+          is where most of your Festspiele guests will first see it.
+        </p>
+        <div class="fix"><b>Fix</b>
+          Floor of 11px for any real text, 10px for decorative eyebrows, and lift every muted opacity
+          to a minimum 4.5:1 against its actual background. Precision at legible sizes reads as
+          expensive; unreadable small type reads as a template.
+        </div>
+      </div>
+    </article>
+
+    <article class="finding">
+      <div class="f-gutter"><span class="f-id">F-12</span><span class="sev sev-med">Medium</span></div>
+      <div class="f-body">
+        <h4>Motion is scattered rather than orchestrated</h4>
+        <p>
+          There's a cursor glow, a pulsing gold orb, a grid overlay, parallax, word-by-word reveals,
+          magnetic nav items, shimmer sweeps on three different buttons, marquees, float animations
+          and a scroll progress bar — plus 30 keyframe definitions in <code>globals.css</code>, many
+          unused. Individually each is well made. Together they compete.
+        </p>
+        <div class="fix"><b>Fix</b>
+          Pick <em>one</em> signature moment and make it exceptional — my recommendation: on load, the
+          B·L·G monogram resolves into the BoLaGio wordmark while the hero image completes a slow
+          crop-out. Everything else drops to a single restrained reveal on scroll. One remembered
+          moment beats twelve forgettable ones.
+        </div>
+      </div>
+    </article>
+
+    <article class="finding">
+      <div class="f-gutter"><span class="f-id">F-13</span><span class="sev sev-med">Medium</span></div>
+      <div class="f-body">
+        <h4>The "why book direct" argument is asserted, never shown</h4>
+        <p>
+          The strongest line in the whole repo is buried in a FAQ answer on <code>/book-direct</code>:
+          platform fees typically add 10–20%. That's your entire commercial thesis and it's in an
+          accordion.
+        </p>
+        <div class="fix"><b>Fix</b>
+          Put it on the homepage as an actual comparison, with your real numbers — the same apartment,
+          the same week, the platform total beside the direct total, and the difference named. Then
+          add benefits the platforms can't match: guaranteed garage space, late checkout, a welcome
+          basket, direct WhatsApp to the family. Concrete beats adjectival.
+        </div>
+      </div>
+    </article>
+
+    <article class="finding">
+      <div class="f-gutter"><span class="f-id">F-14</span><span class="sev sev-med">Medium</span></div>
+      <div class="f-body">
+        <h4>English exists in the UI but not in search</h4>
+        <p>
+          The language toggle swaps strings client-side and stores the choice in localStorage. There
+          are no <code>/en</code> routes, so no English page is indexable, and the hreflang tags in
+          <code>layout.tsx</code> point <code>de-DE</code>, <code>en-US</code> and
+          <code>x-default</code> at the identical URL. For a Wagner festival that draws visitors from
+          the UK, US and Japan, that's the most valuable audience you have, invisible to Google.
+        </p>
+        <div class="fix"><b>Fix</b>
+          Move to Next.js locale routing with real <code>/de</code> and <code>/en</code> paths and
+          correct hreflang. Worth doing before you invest further in SEO copy.
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <!-- ══════════════════════════════════════ -->
+  <section id="craft">
+    <div class="sec-head"><span class="sec-num">05</span><h2>Craft &amp; performance</h2></div>
+    <p class="lede">
+      Detail work. Individually small; collectively the difference between "nice site" and
+      "immaculate".
+    </p>
+
+    <article class="finding">
+      <div class="f-gutter"><span class="f-id">F-15</span><span class="sev sev-high">High</span></div>
+      <div class="f-body">
+        <h4>Desktop navigation triggers a full page reload</h4>
+        <p>
+          <code>navbar.tsx</code> renders desktop links as <code>&lt;motion.a href&gt;</code> instead
+          of Next's <code>&lt;Link&gt;</code>. Every click on Residences, About or Contact reloads the
+          entire application — white flash, fonts re-render, hero animation replays. The mobile menu
+          uses <code>Link</code> correctly, so desktop feels notably worse than mobile. This is the
+          most immediately noticeable "cheap" moment on the site.
+        </p>
+        <div class="fix"><b>Fix</b>Wrap the magnetic effect around <code>&lt;Link&gt;</code>. Small change, disproportionate improvement.</div>
+      </div>
+    </article>
+
+    <article class="finding">
+      <div class="f-gutter"><span class="f-id">F-16</span><span class="sev sev-high">High</span></div>
+      <div class="f-body">
+        <h4>No favicon, no share image, no logo file</h4>
+        <p>
+          There is no <code>app/icon</code>, no <code>favicon.ico</code>, no
+          <code>opengraph-image</code>. <code>logo-allinone.png</code> is zero bytes, and the JSON-LD
+          points at <code>/logo.png</code>, which doesn't exist. Open Graph falls back to a Pexels
+          URL. Every WhatsApp share — your most likely referral channel — shows a stock photo and a
+          blank browser tab.
+        </p>
+        <div class="fix"><b>Fix</b>Ship a favicon set, an Apple touch icon, a real logo asset, and a designed 1200×630 OG image per key page.</div>
+      </div>
+    </article>
+
+    <article class="finding">
+      <div class="f-gutter"><span class="f-id">F-17</span><span class="sev sev-med">Medium</span></div>
+      <div class="f-body">
+        <h4>Image optimisation is switched off, and assets are duplicated</h4>
+        <p>
+          <code>next.config.js</code> sets <code>images.unoptimized: true</code>, so no WebP/AVIF
+          conversion and no responsive sizing. <code>public/images/</code> is 5.5 MB, and almost every
+          file exists twice — one 767 KB PNG is present in <strong>five</strong> identical copies
+          ("copy copy copy copy"). Real apartment photography will multiply this.
+        </p>
+        <div class="fix"><b>Fix</b>Re-enable optimisation (Netlify's Next plugin supports it), delete the duplicates, and set explicit <code>sizes</code> on every <code>&lt;Image&gt;</code>.</div>
+      </div>
+    </article>
+
+    <article class="finding">
+      <div class="f-gutter"><span class="f-id">F-18</span><span class="sev sev-med">Medium</span></div>
+      <div class="f-body">
+        <h4>Scroll handlers re-render the hero on every frame</h4>
+        <p>
+          <code>hero-section.tsx</code> stores <code>window.scrollY</code> in React state on every
+          scroll event, re-rendering the whole hero — background, overlays, orb, headline, stat chips
+          — continuously while scrolling. On a mid-range Android this will stutter, which is exactly
+          the opposite of the impression you're paying for.
+        </p>
+        <div class="fix"><b>Fix</b>Use Framer Motion's <code>useScroll</code> + <code>useTransform</code> so the parallax runs off the compositor and never re-renders the tree.</div>
+      </div>
+    </article>
+
+    <article class="finding">
+      <div class="f-gutter"><span class="f-id">F-19</span><span class="sev sev-med">Medium</span></div>
+      <div class="f-body">
+        <h4>The booking modal isn't accessible</h4>
+        <p>
+          It's a plain fixed <code>&lt;div&gt;</code>: no <code>role="dialog"</code>, no
+          <code>aria-modal</code>, no focus trap, no Escape-to-close, and the page behind it keeps
+          scrolling. Keyboard users can tab out of the modal into the page underneath mid-payment.
+          Radix Dialog is already a dependency and used elsewhere.
+        </p>
+        <div class="fix"><b>Fix</b>Rebuild on Radix Dialog. Same visuals, correct behaviour, less code.</div>
+      </div>
+    </article>
+
+    <article class="finding">
+      <div class="f-gutter"><span class="f-id">F-20</span><span class="sev sev-med">Medium</span></div>
+      <div class="f-body">
+        <h4>Payment payloads are logged to the browser console</h4>
+        <p>
+          <code>booking-modal.tsx</code> calls <code>console.log</code> with the full payload —
+          guest name, email, phone, notes, total — plus the webhook response. It's client-side, so
+          it's the guest's own data, but it's noise in production and it exposes your n8n response
+          shape to anyone inspecting.
+        </p>
+        <div class="fix"><b>Fix</b>Strip the logs. While you're there: the "Nur anfragen" fallback button sets a success state locally without ever sending the request anywhere — those enquiries are silently discarded.</div>
+      </div>
+    </article>
+
+    <article class="finding">
+      <div class="f-gutter"><span class="f-id">F-21</span><span class="sev sev-med">Medium</span></div>
+      <div class="f-body">
+        <h4>No analytics, so no way to know whether any of this works</h4>
+        <p>
+          Nothing measures traffic, funnel drop-off or direct-vs-platform mix. You're about to make a
+          commercial bet on direct booking with no instrument on the dashboard.
+        </p>
+        <div class="fix"><b>Fix</b>Add Plausible or Fathom — cookieless, so no consent banner is required in Germany, which also keeps the site clean. Track: apartment page views, date-picker opens, checkout starts, completions.</div>
+      </div>
+    </article>
+  </section>
+
+  <!-- ══════════════════════════════════════ -->
+  <section id="legal">
+    <div class="sec-head"><span class="sec-num">06</span><h2>German legal exposure</h2></div>
+    <p class="lede">
+      Beyond the placeholder legal pages (F-05), three specific items apply to a German short-term
+      letting business and are currently unaddressed.
+    </p>
+
+    <article class="finding">
+      <div class="f-gutter"><span class="f-id">F-22</span><span class="sev sev-high">High</span></div>
+      <div class="f-body">
+        <h4>Google Fonts loaded from Google's servers</h4>
+        <p>
+          <code>globals.css</code> opens with an <code>@import</code> from
+          <code>fonts.googleapis.com</code>, which transmits every visitor's IP address to Google
+          before any consent. This is the exact configuration the Landgericht München I ruled against
+          in 2022 (3 O 17493/20), and it spawned a wave of Abmahnungen against German sites.
+          Ironically the repo already self-hosts one font correctly via <code>next/font</code>.
+        </p>
+        <div class="fix"><b>Fix</b>Move Playfair, Cormorant and Inter to <code>next/font/google</code>, which downloads and self-hosts them at build time. Faster too — it removes a render-blocking third-party request.</div>
+      </div>
+    </article>
+
+    <article class="finding">
+      <div class="f-gutter"><span class="f-id">F-23</span><span class="sev sev-med">Medium</span></div>
+      <div class="f-body">
+        <h4>No Meldeschein flow, no Gästebeitrag handling</h4>
+        <p>
+          German law (BMG §29/§30) requires accommodation providers to collect and retain a
+          registration form from every guest. There's no digital check-in flow, and no line item for
+          any Bayreuth Gästebeitrag/Kurtaxe in the price breakdown. Both belong in the booking flow —
+          and a well-designed digital Meldeschein is a genuine quality signal, not just compliance.
+        </p>
+        <div class="fix"><b>Fix</b>Confirm Bayreuth's current position on both (see §08.A), then build a post-booking guest form that collects the Meldeschein data and issues the door code on completion.</div>
+      </div>
+    </article>
+
+    <article class="finding">
+      <div class="f-gutter"><span class="f-id">F-24</span><span class="sev sev-med">Medium</span></div>
+      <div class="f-body">
+        <h4>Invoicing and VAT are unmodelled</h4>
+        <p>
+          <code>/book-direct</code> promises "eine vollständige Rechnung mit USt-ID" for every
+          booking, but nothing issues invoices, and the total is a flat sum with no tax breakdown.
+          German short-term accommodation is 7% VAT while ancillary services — cleaning fees can fall
+          here — are 19%. Your €60 cleaning fee may need to be split out and taxed separately.
+        </p>
+        <div class="fix"><b>Fix</b>Get your Steuerberater's ruling on the cleaning-fee split, then model VAT explicitly in the price breakdown and generate a compliant invoice automatically on payment.</div>
+      </div>
+    </article>
+  </section>
+
+  <!-- ══════════════════════════════════════ -->
+  <section id="good">
+    <div class="sec-head"><span class="sec-num">07</span><h2>What to keep</h2></div>
+    <p class="lede">
+      This isn't a rewrite. A great deal here is worth building on, and I want to be explicit about
+      it so nothing good gets thrown out with the rebrand.
+    </p>
+    <ul class="plain">
+      <li><strong>The technical foundation is sound.</strong> <code>tsc --noEmit</code> passes clean, the production build succeeds, 33 pages render fully static, and shared JS is 86 kB — genuinely lean for a site with this much motion.</li>
+      <li><strong>The design language is a good starting point.</strong> Champagne-on-ink, a 2px border radius, Playfair against Inter, the film-grain overlay, and the hairline gold rules form a coherent system. It needs rooting in Bayreuth and in your family, not replacing.</li>
+      <li><strong>The SEO scaffolding is unusually thorough</strong> — sitemap, robots, breadcrumb/Event/FAQ schema, and five long-form German journal articles targeting real Festspiele search intent. Once the review markup is removed, this is a real asset.</li>
+      <li><strong>The Festspiele 2026 focus is commercially right.</strong> That's your highest-margin window and the site already anticipates it.</li>
+      <li><strong>The bilingual content layer exists</strong> — every string is already written in German and English. It only needs routing.</li>
+      <li><strong>The apartment detail page is well structured</strong> — gallery, highlights, walking distances, sticky booking sidebar, per-apartment FAQ. The skeleton is right; it needs true content.</li>
+    </ul>
+  </section>
+
+  <!-- ══════════════════════════════════════ -->
+  <section id="need">
+    <div class="sec-head"><span class="sec-num">08</span><h2>What I need from you</h2></div>
+    <p class="lede">
+      This is the part that determines whether the site is excellent or merely pretty. Items marked
+      <span class="blocker">blocker</span> stop specific work until answered; everything else I can
+      make a sensible assumption on and correct later. Answer in any format — voice note, photos of
+      documents, a messy list. I'll structure it.
+    </p>
+
+    <h3>A · Company &amp; legal</h3>
+    <div class="ask">
+      <h3>Identity of the GmbH</h3>
+      <p class="why">Required verbatim for the Impressum, the AGB, invoices and every schema block.</p>
+      <ul>
+        <li><b>Exact registered company name</b> — "BoLaGio GmbH"? "BoLaGio Immobilien GmbH"? <em>as written in the Handelsregister</em> <span class="blocker">blocker</span></li>
+        <li><b>Registered address (Sitz der Gesellschaft)</b> — street, number, postcode, city <span class="blocker">blocker</span></li>
+        <li><b>Handelsregister number and court</b> — e.g. HRB 12345, Amtsgericht Bayreuth <span class="blocker">blocker</span></li>
+        <li><b>Geschäftsführer</b> — full legal name(s) of everyone who must be named under §5 DDG <span class="blocker">blocker</span></li>
+        <li><b>USt-IdNr</b> and Steuernummer — or confirmation you're on Kleinunternehmerregelung §19 UStG, which changes how prices must be displayed <span class="blocker">blocker</span></li>
+        <li><b>Is the GmbH already founded and registered</b>, or still <em>in Gründung</em>? The Impressum wording differs</li>
+        <li><b>Public contact details</b> — is <code>+49 160 1832917</code> the right number to publish? Which email address should be public?</li>
+        <li><b>Data-protection contact</b> — who is responsible, and has anyone advised whether you need a formal DSB?</li>
+      </ul>
+    </div>
+
+    <div class="ask">
+      <h3>Bayreuth-specific obligations</h3>
+      <p class="why">These change what the booking flow must collect and what the price must show.</p>
+      <ul>
+        <li><b>Does Bayreuth levy a Gästebeitrag or Kurtaxe</b> on short-term guests, and at what rate? It must appear in the price breakdown if so</li>
+        <li><b>Is a Beherbergungsbetrieb registration or Gewerbeanmeldung</b> in place for the apartments?</li>
+        <li><b>Any Zweckentfremdungssatzung</b> or letting restrictions on either building, and any WEG rules limiting short-term letting?</li>
+        <li><b>How are you handling Meldescheine today</b> — paper on arrival, or nothing yet?</li>
+        <li><b>Your Steuerberater's position on the cleaning fee</b> — 7% with the accommodation or 19% as a separate service?</li>
+      </ul>
+    </div>
+
+    <h3>B · The apartments</h3>
+    <div class="ask">
+      <h3>Per unit — for each of the two Schulstraße apartments</h3>
+      <p class="why">This replaces <code>lib/residences.ts</code> entirely. Precision here is what makes the pages feel real rather than templated.</p>
+      <ul>
+        <li><b>Full address and floor</b>, and how you want it shown publicly — full address, or street only until booking? <span class="blocker">blocker</span></li>
+        <li><b>Wohnfläche in m²</b>, number of rooms, and a room-by-room list <span class="blocker">blocker</span></li>
+        <li><b>Sleeping arrangement</b> — how many beds, what size, in which rooms, and any sofa bed. Maximum guests <span class="blocker">blocker</span></li>
+        <li><b>Bathrooms</b> — how many, bath or shower</li>
+        <li><b>Garage</b> — is it genuinely included, how many spaces, and is it in the building or nearby?</li>
+        <li><b>Which of these are actually true per unit:</b> air conditioning, dishwasher, washing machine, dryer, Nespresso machine, smart TV with Netflix, dedicated desk, balcony, lift</li>
+        <li><b>Wi-Fi provider and measured speed</b> — a real number beats "schnelles WLAN"</li>
+        <li><b>Floor number and whether there's a lift</b> — accessibility matters to Festspiele guests, who skew older</li>
+        <li><b>What each apartment is genuinely best for</b>, in your own words — and honestly, what it's <em>not</em> good for. The second half builds more trust than the first</li>
+        <li><b>What you'd want a name to evoke</b> — I'd propose naming them for the children rather than inventing French words</li>
+      </ul>
+    </div>
+
+    <div class="ask">
+      <h3>Opernstraße</h3>
+      <ul>
+        <li><b>Expected completion date</b>, even approximate</li>
+        <li><b>Show it as "coming soon" with an email waiting list, or hide it entirely</b> until ready? My recommendation is to show it — renovation-in-progress photography is genuinely compelling and builds anticipation</li>
+        <li><b>Same property details as above</b>, as far as they're decided</li>
+      </ul>
+    </div>
+
+    <div class="ask">
+      <h3>The café in Niš</h3>
+      <ul>
+        <li><b>Name, address, and is it currently operating?</b></li>
+        <li><b>In scope for this site at all</b> — as part of the family story, as its own page, or not at all?</li>
+        <li><b>Are "Gelateria Michele" and "Cafetaria Bayreuth" still real plans</b>, or leftovers to delete?</li>
+      </ul>
+    </div>
+
+    <h3>C · Commercial</h3>
+    <div class="ask">
+      <h3>Rates and rules</h3>
+      <p class="why">Without these, the booking flow can't be honest, and the direct-booking argument can't be made with numbers.</p>
+      <ul>
+        <li><b>Nightly rate per apartment, per season</b> — low, high, and the Festspiele window separately <span class="blocker">blocker</span></li>
+        <li><b>Minimum stay</b> per season — and specifically for the Festspiele <span class="blocker">blocker</span></li>
+        <li><b>Weekly and monthly discounts</b> — the site advertises long stays with no rate for them</li>
+        <li><b>Cleaning fee per apartment</b> — the flat €60 is currently guessed</li>
+        <li><b>Deposit / Kaution</b>, extra guest fee, pet fee, late checkout, early check-in</li>
+        <li><b>Check-in and check-out times</b> — the FAQ says 15:00, please confirm</li>
+        <li><b>The cancellation policy you actually want</b> — the AGB currently says free to 14 days, then 50%. Was that a decision or a placeholder?</li>
+        <li><b>Full prepayment or deposit-only?</b> Full prepayment at booking is aggressive for a brand-new site with no reviews; a 20–30% deposit usually converts better</li>
+      </ul>
+    </div>
+
+    <div class="ask">
+      <h3>Channels — the single most important decision</h3>
+      <p class="why">This determines the entire booking architecture. Nothing on availability can be built until it's settled.</p>
+      <ul>
+        <li><b>Are you live on Booking.com and Airbnb now?</b> Property IDs / listing links if so <span class="blocker">blocker</span></li>
+        <li><b>Do you use a PMS or channel manager already</b> — Smoobu, Lodgify, Hostaway, Beds24, Guesty? If yes, which; if no, are you willing to pay ~€20–50/month for one? <span class="blocker">blocker</span></li>
+        <li><b>Do you want the website to confirm instantly</b>, or to take a request that you approve manually? Manual is safer to launch with and much cheaper to build</li>
+        <li><b>What's your target direct-booking share</b> in year one? It sets how hard the site should push against the platforms</li>
+      </ul>
+    </div>
+
+    <div class="ask">
+      <h3>Payments</h3>
+      <ul>
+        <li><b>Is <code>n8n.cogniiq.co</code> yours</b>, in production, and monitored? The entire checkout depends on it <span class="blocker">blocker</span></li>
+        <li><b>Stripe account</b> — live or test mode, and registered to the GmbH?</li>
+        <li><b>PayPal business account</b> — same question</li>
+        <li><b>Do you want bank transfer / Rechnung</b> as an option for business guests? Worth it — corporate bookers often need it</li>
+      </ul>
+    </div>
+
+    <h3>D · Brand &amp; content</h3>
+    <div class="ask">
+      <h3>The name</h3>
+      <ul>
+        <li><b>Exact capitalisation</b> — BoLaGio, Bolagio, BOLAGIO? I'd keep BoLaGio, because the capitals make the three names visible <span class="blocker">blocker</span></li>
+        <li><b>Domains you own or can register</b> — bolagio.de, bolagio.com, bolagio-bayreuth.de. Everything is hardcoded to the old domain right now <span class="blocker">blocker</span></li>
+        <li><b>Do you have a logo already</b>, or shall I design the B·L·G monogram?</li>
+        <li><b>Has the name been checked for trademark conflict</b> in DE/EU?</li>
+      </ul>
+    </div>
+
+    <div class="ask">
+      <h3>The family story</h3>
+      <p class="why">This is your strongest differentiator against Booking.com, and I need permission before using any of it.</p>
+      <ul>
+        <li><b>Ages of Bogdana, Lazar and Djordje</b>, and whether you're comfortable naming them publicly <span class="blocker">blocker</span></li>
+        <li><b>May I use a family photograph?</b> A real one outweighs any stock image on the site</li>
+        <li><b>Who actually runs day-to-day operations</b> — who answers the phone, who does check-ins, who handles cleaning?</li>
+        <li><b>How did the family come to Bayreuth from Serbia?</b> Told well, in two paragraphs, this is worth more than any amount of "premium" copy</li>
+        <li><b>Why these apartments</b> — did you renovate them yourselves, live in one, inherit them?</li>
+        <li><b>How much do you want to say about the Serbian connection?</b> It's an asset, not something to hide</li>
+      </ul>
+    </div>
+
+    <div class="ask">
+      <h3>Assets &amp; proof</h3>
+      <ul>
+        <li><b>Any real photographs of the apartments today</b>, at any quality, and at what resolution? Even phone photos let me build the true structure now <span class="blocker">blocker</span></li>
+        <li><b>Budget and appetite for a professional shoot?</b> This is my strongest single recommendation</li>
+        <li><b>Real reviews</b> — screenshots or links from Booking/Airbnb, and your actual current ratings. If there are none yet, say so and I'll design honestly around that</li>
+        <li><b>Do you have a Google Business Profile</b> for the address(es)? Critical for "Ferienwohnung Bayreuth" searches</li>
+        <li><b>Floor plans</b>, even hand-drawn — I'd redraw them as line diagrams, which reads as unusually considerate</li>
+        <li><b>Languages to launch</b> — DE and EN certainly. Do you genuinely want FR and SR, or should I remove those claims?</li>
+      </ul>
+    </div>
+
+    <h3>E · Technical accounts</h3>
+    <div class="ask">
+      <h3>Who owns what</h3>
+      <ul>
+        <li><b>Domain registrar and DNS access</b>, Netlify account access <span class="blocker">blocker</span></li>
+        <li><b>The Supabase project</b> <code>lqgtmoulqzmrhglabrms</code> — yours, and do you have admin access to rotate the key? <span class="blocker">blocker</span></li>
+        <li><b>Is anyone actually using the admin panel</b> — the invoices and email inbox features? That decides whether it's secured properly or deleted</li>
+        <li><b>Business WhatsApp number</b> for the floating button — and who's on the other end of it</li>
+        <li><b>Analytics preference</b> — cookieless Plausible/Fathom (no consent banner, cleaner site) or GA4 (free, but needs a consent banner)?</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════ -->
+  <section id="plan">
+    <div class="sec-head"><span class="sec-num">09</span><h2>Proposed sequence</h2></div>
+    <p class="lede">
+      I'd work in three passes. The first needs almost nothing from you and removes the real risk;
+      the second is where the site becomes BoLaGio; the third is where it becomes exceptional.
+    </p>
+
+    <div class="phases">
+      <div class="phase">
+        <div class="tag">Pass 1</div>
+        <div>
+          <h3>Make it safe</h3>
+          <p>
+            Rotate the Supabase key and lock down RLS. Remove the public admin build. Delete the
+            invented reviews and the rating schema. Remove the Alamy and press images. Self-host the
+            fonts. Strip the console logging and fix the silently-discarded enquiry button. None of
+            this needs a single answer from you — I can start today.
+          </p>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="tag">Pass 2</div>
+        <div>
+          <h3>Make it true</h3>
+          <p>
+            The full BoLaGio rename across every string, the new B·L·G identity and logo, real legal
+            pages, the inventory rebuilt from your actual apartments, honest rates and rules, real
+            hreflang routing for German and English, favicon and share images. This needs §08.A, B
+            and D answered.
+          </p>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="tag">Pass 3</div>
+        <div>
+          <h3>Make it unmistakable</h3>
+          <p>
+            The homepage cut from eleven sections to six. Real photography woven through a page per
+            apartment with floor plans and an annotated neighbourhood map. The single orchestrated
+            load moment. Availability wired to your channel manager, with a real booking or deposit
+            flow, digital Meldeschein and automatic invoicing. Analytics, so you can see it working.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="closing">
+    <h2>The one thing I'd emphasise</h2>
+    <p>
+      You asked for a billion-dollar feel. The brands that achieve it — Aman, Le Bristol, the good
+      small Italian agriturismi — don't do it with more animation. They do it by being
+      <em>specific</em>: this room, this view, this family, this town. Every stock photo, invented
+      review and copy-pasted "ca. 120 m²" on the current site is a piece of specificity thrown away.
+    </p>
+    <p>
+      You have something the platforms structurally cannot offer: a company named after three
+      children, two apartments in a Wagner town, a family that answers its own phone, and a café in
+      Niš. That's the site. The design work is how we let people see it.
+    </p>
+    <p>
+      Send me whatever you can from §08 — even partially — and I'll start on Pass 1 immediately,
+      since none of it is blocked.
+    </p>
+  </div>
+
+</div>
