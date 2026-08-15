@@ -573,7 +573,7 @@
         <p>
           <code>public/admin/</code> is a compiled admin app served as a static site, and
           <code>next.config.js</code> redirects <code>/admin</code> straight to it. Its login is
-          checked in browser JavaScript against a hardcoded password (<code>aio2024</code>), so it
+          checked in browser JavaScript against a hardcoded password (a constant compiled into the bundle), so it
           can be read or simply bypassed. The bundle also contains the Supabase project URL and anon
           key in plain text.
         </p>

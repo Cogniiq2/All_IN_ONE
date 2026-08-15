@@ -7,14 +7,17 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: '*',
         allow: '/',
-        // /admin is the separate internal application. It should not be
-        // crawled — and, separately from this frontend pass, it should not be
-        // publicly reachable at all.
+        // Nothing is disallowed here any more, deliberately.
         //
-        // /coming-soon/ is deliberately NOT listed any more: those routes were
-        // withdrawn and now return 404. Disallowing them would stop crawlers
-        // from ever seeing that 404 and dropping them from the index.
-        disallow: ['/admin', '/api/'],
+        // /admin and /coming-soon/ were both listed previously. Both are now
+        // removed from the application and return 404, and a Disallow rule
+        // would stop crawlers from ever seeing that 404 and dropping the URLs
+        // from the index. Listing /admin also advertised the path.
+        //
+        // robots.txt is not access control. The admin surface is gone from
+        // this application; the database permissions are the real control and
+        // are handled in supabase/migrations/.
+        disallow: [],
       },
     ],
     sitemap: `${SITE_URL}/sitemap.xml`,

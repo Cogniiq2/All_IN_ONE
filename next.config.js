@@ -17,12 +17,11 @@ const nextConfig = {
   },
   async redirects() {
     return [
-      // Internal admin application — untouched by this frontend pass.
-      {
-        source: '/admin',
-        destination: '/admin/index.html',
-        permanent: false,
-      },
+      // NOTE: the former /admin redirect is gone. It pointed at a compiled
+      // admin application that was served publicly out of public/admin. Both
+      // the redirect and the compiled app have been removed, so /admin and
+      // every /admin/* asset path now 404. The source is archived under
+      // archive/admin-app/ and is not built or served.
 
       // ── Inventory ────────────────────────────────────────────────────
       // The five invented apartments have no real counterpart, so they go to
