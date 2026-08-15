@@ -1,31 +1,29 @@
 'use client';
 
-import { HeroSection } from '@/components/home/hero-section';
-import { ProofStrip } from '@/components/home/proof-strip';
-import { CollectionsTeaser } from '@/components/home/collections-teaser';
-import { WhyChooseSection } from '@/components/home/why-choose-section';
-import { PillarsSection } from '@/components/home/pillars-section';
-import { ResidencesPreview } from '@/components/home/residences-preview';
-import { DirectBookingSection } from '@/components/home/direct-booking-section';
-import { ReviewsSection } from '@/components/home/reviews-section';
-import { BayreuthTeaser } from '@/components/home/bayreuth-teaser';
-import { TrustTeaser } from '@/components/home/trust-teaser';
-import { FinalCta } from '@/components/home/final-cta';
+import { Hero } from '@/components/home/hero';
+import { ApartmentsSection } from '@/components/home/apartments-section';
+import { DirectSection } from '@/components/home/direct-section';
+import { BayreuthSection } from '@/components/home/bayreuth-section';
+import { FamilySection } from '@/components/home/family-section';
+import { ClosingSection } from '@/components/home/closing-section';
 
+/**
+ * Six sections, in the order a visitor actually decides:
+ *   see it → evaluate it → understand why direct → picture the town →
+ *   trust who is behind it → act.
+ *
+ * The previous homepage stacked eleven, six of which were variations on
+ * "trust us, book direct".
+ */
 export function HomePageClient() {
   return (
     <>
-      <HeroSection />
-      <ProofStrip />
-      <CollectionsTeaser />
-      <WhyChooseSection />
-      <PillarsSection />
-      <ResidencesPreview />
-      <DirectBookingSection />
-      <ReviewsSection />
-      <BayreuthTeaser />
-      <TrustTeaser />
-      <FinalCta />
+      <Hero />
+      <ApartmentsSection />
+      <DirectSection />
+      <BayreuthSection />
+      <FamilySection />
+      <ClosingSection />
     </>
   );
 }

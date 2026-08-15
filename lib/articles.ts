@@ -1,94 +1,121 @@
+/**
+ * Journal.
+ *
+ * ── What happened to the previous five articles ───────────────────────────
+ * All five were deleted. Their prose carried the fabricated brand claims that
+ * this pass exists to remove: a guaranteed garage space at every apartment,
+ * the invented 9.4/10 rating, five named apartments at a Sternplatz address
+ * the company does not hold, and a whole essay describing how "All in One
+ * Residences" runs its five units. Two of them were also illustrated with an
+ * unlicensed Alamy comp and a Bayerischer Rundfunk press photograph.
+ *
+ * What remains is one piece written only from general, checkable knowledge
+ * about Bayreuth and the Festival — it makes no claim about our apartments —
+ * plus the article structure itself, ready for the family's own writing.
+ *
+ * To add an article: append an entry here. The overview and the article shell
+ * pick it up automatically. Keep `body` free of anything unverified.
+ */
+
+export type Localized = { de: string; en: string };
+
+export interface ArticleBlock {
+  type: 'heading' | 'paragraph';
+  text: Localized;
+}
+
 export interface Article {
   slug: string;
-  title: { de: string; en: string };
-  excerpt: { de: string; en: string };
-  category: { de: string; en: string };
-  publishedDate: { de: string; en: string };
-  readTime: { de: string; en: string };
-  image: string;
+  title: Localized;
+  excerpt: Localized;
+  category: Localized;
+  /** ISO date — used for the article schema and the visible date. */
+  publishedDate: string;
+  readTime: Localized;
+  body: ArticleBlock[];
   featured?: boolean;
 }
 
 export const articles: Article[] = [
   {
-    slug: 'bayreuth-festspiele-unterkunft-guide',
+    slug: 'bayreuth-und-die-festspiele',
     title: {
-      de: 'Festspiele 2026: Warum Unterkunft dieses Jahr anders denken muss',
-      en: 'Festival 2026: Why Accommodation Needs to Be Rethought This Year',
+      de: 'Bayreuth und die Festspiele: Warum diese Stadt im Sommer eine andere ist',
+      en: 'Bayreuth and the Festival: why this town is different in summer',
     },
     excerpt: {
-      de: 'Die Warteliste ist zehn Jahre lang. Der Abend dauert sechs Stunden. Wer nach dem letzten Akt noch einen langen Weg vor sich hat, verpasst den stillsten Moment des Abends. Ein Plädoyer für Nähe.',
-      en: 'The waiting list is ten years long. The evening lasts six hours. Whoever has a long journey ahead after the final act misses the quietest moment of the evening. A case for proximity.',
+      de: 'Eine kleine oberfränkische Stadt, ein Theater auf einem Hügel und ein Publikum, das jahrelang auf seine Karten wartet. Was das für alle bedeutet, die im Sommer hier übernachten möchten.',
+      en: 'A small Upper Franconian town, a theatre on a hill, and an audience that waits years for its tickets. What that means for anyone looking for somewhere to stay in summer.',
     },
-    category: { de: 'Festspiele 2026', en: 'Festival 2026' },
-    publishedDate: { de: '12. Januar 2025', en: 'January 12, 2025' },
-    readTime: { de: '8 Min. Lesezeit', en: '8 min read' },
-    image: '/images/bayreuther-festspielhaus-blumen-wagner-100~_h-558_v-img__16__9__xl_w-994_-e1d284d92729d9396a907e303225e0f2d9fa53b4.jpg',
+    category: { de: 'Bayreuth', en: 'Bayreuth' },
+    publishedDate: '2026-08-01',
+    readTime: { de: '4 Min. Lesezeit', en: '4 min read' },
     featured: true,
-  },
-  {
-    slug: 'richard-wagner-bayreuth-mythos',
-    title: {
-      de: 'Richard Wagner und Bayreuth: Wie eine Stadt zur Wallfahrtsstätte wurde',
-      en: 'Richard Wagner and Bayreuth: How a City Became a Place of Pilgrimage',
-    },
-    excerpt: {
-      de: 'Wagner wählte Bayreuth nicht zufällig. Er baute ein Theater nach seinen eigenen Regeln — und schuf damit ein kulturelles Gravitationszentrum, das bis heute nichts von seiner Anziehungskraft verloren hat.',
-      en: 'Wagner did not choose Bayreuth by chance. He built a theater by his own rules — and in doing so created a center of cultural gravity that has lost none of its pull to this day.',
-    },
-    category: { de: 'Kultur & Geschichte', en: 'Culture & History' },
-    publishedDate: { de: '28. Februar 2025', en: 'February 28, 2025' },
-    readTime: { de: '7 Min. Lesezeit', en: '7 min read' },
-    image: '/images/richard-wagner-in-bayreuth-with-festspielhaus-festival-house-and-villa-KD6MMB copy.jpg',
-    featured: false,
-  },
-  {
-    slug: 'wie-wir-arbeiten',
-    title: {
-      de: 'Hinter den Kulissen: Wie wir All in One Residences betreiben',
-      en: 'Behind the Scenes: How We Run All in One Residences',
-    },
-    excerpt: {
-      de: 'Fünf Apartments. Kein Rezeptionist. Kein Callcenter. Wie persönlicher Service im Jahr 2025 wirklich aussieht — und warum wir es nicht anders haben wollen.',
-      en: 'Five apartments. No receptionist. No call center. What genuine personal service looks like in 2025 — and why we wouldn\'t have it any other way.',
-    },
-    category: { de: 'Über uns', en: 'About us' },
-    publishedDate: { de: '5. März 2025', en: 'March 5, 2025' },
-    readTime: { de: '5 Min. Lesezeit', en: '5 min read' },
-    image: '/images/723934204.jpg',
-    featured: false,
-  },
-  {
-    slug: 'wo-in-bayreuth-ubernachten',
-    title: {
-      de: 'Wo in Bayreuth übernachten: Ein ehrlicher Guide',
-      en: 'Where to Stay in Bayreuth: An Honest Guide',
-    },
-    excerpt: {
-      de: 'Nicht jede Unterkunft in Bayreuth verdient ihren Preis. Wir erklären, was den Unterschied macht — und warum die Lage alles entscheidet, besonders wenn die Festspiele beginnen.',
-      en: 'Not every accommodation in Bayreuth deserves its price. We explain what makes the difference — and why location decides everything, especially when the festival begins.',
-    },
-    category: { de: 'Reiseplanung', en: 'Travel Planning' },
-    publishedDate: { de: '18. März 2025', en: 'March 18, 2025' },
-    readTime: { de: '6 Min. Lesezeit', en: '6 min read' },
-    image: '/images/728876267 copy.jpg',
-    featured: false,
-  },
-  {
-    slug: 'serviced-apartments-bayreuth-geschaftsreisen',
-    title: {
-      de: 'Bayreuth für Geschäftsreisende: Was das Hotelzimmer nicht kann',
-      en: 'Bayreuth for Business Travelers: What the Hotel Room Cannot Do',
-    },
-    excerpt: {
-      de: 'Zwischen Uni-Kliniken, Linde, Knorr-Bremse und Schaeffler liegt Bayreuth im Herzen einer Wirtschaftsregion. Warum immer mehr Ingenieure, Consultants und Projektleiter auf Serviced Apartments umsteigen.',
-      en: 'Between university clinics, Linde, Knorr-Bremse, and Schaeffler, Bayreuth sits at the heart of an economic region. Why more and more engineers, consultants and project managers are switching to serviced apartments.',
-    },
-    category: { de: 'Geschäftsreisen', en: 'Business Travel' },
-    publishedDate: { de: '22. März 2025', en: 'March 22, 2025' },
-    readTime: { de: '5 Min. Lesezeit', en: '5 min read' },
-    image: 'https://images.pexels.com/photos/3184360/pexels-photo-3184360.jpeg?auto=compress&cs=tinysrgb&w=800',
-    featured: false,
+    body: [
+      {
+        type: 'paragraph',
+        text: {
+          de: 'Bayreuth ist die meiste Zeit des Jahres genau das, wonach es aussieht: eine oberfränkische Universitätsstadt mit einer barocken Innenstadt, einem Hofgarten und einer überschaubaren Zahl von Straßen, in denen sich das Leben abspielt. Man geht zu Fuß. Man kennt die Wege.',
+          en: 'For most of the year Bayreuth is exactly what it looks like: an Upper Franconian university town with a baroque centre, a Hofgarten, and a manageable number of streets where life happens. You walk. You learn the way.',
+        },
+      },
+      {
+        type: 'paragraph',
+        text: {
+          de: 'Und dann kommt der Sommer. Richard Wagner hat sich diese Stadt Ende des 19. Jahrhunderts ausgesucht, weil er ein Theater bauen wollte, das seinen eigenen Regeln folgt — kein Hoftheater, kein Repertoirebetrieb, sondern ein Haus für ein einziges Werk und ein Publikum, das dafür anreist. Genau das ist bis heute so geblieben.',
+          en: 'And then summer arrives. Richard Wagner chose this town in the late nineteenth century because he wanted a theatre that followed his own rules — not a court theatre, not a repertory house, but a building for a single body of work and an audience that travels for it. That is still exactly what it is.',
+        },
+      },
+      {
+        type: 'heading',
+        text: {
+          de: 'Ein Publikum, das lange gewartet hat',
+          en: 'An audience that has waited a long time',
+        },
+      },
+      {
+        type: 'paragraph',
+        text: {
+          de: 'Die Bayreuther Festspiele sind berühmt dafür, dass Karten schwer zu bekommen sind. Wer im Sommer hier ist, hat den Termin meist lange im Voraus geplant — und entsprechend früh auch die Frage geklärt, wo er schläft. Das ist der eigentliche Unterschied zu anderen Reisezielen: Die Nachfrage nach Unterkunft konzentriert sich auf wenige Wochen im Jahr, und sie ist verabredet, nicht spontan.',
+          en: 'The Bayreuth Festival is famous for how hard its tickets are to come by. Anyone here in summer has usually planned the date long in advance — and settled the question of where to sleep just as early. That is the real difference from other destinations: demand for accommodation concentrates into a few weeks a year, and it is arranged rather than spontaneous.',
+        },
+      },
+      {
+        type: 'paragraph',
+        text: {
+          de: 'Für Gäste heißt das vor allem eines: früh fragen. Wer erst im Frühjahr sucht, findet in Bayreuth deutlich weniger als in einer Stadt, die das ganze Jahr über Besucher hat.',
+          en: 'For guests that means one thing above all: ask early. Anyone who starts looking in spring will find considerably less in Bayreuth than in a town with visitors all year round.',
+        },
+      },
+      {
+        type: 'heading',
+        text: {
+          de: 'Warum Nähe im Sommer zählt',
+          en: 'Why proximity matters in summer',
+        },
+      },
+      {
+        type: 'paragraph',
+        text: {
+          de: 'Ein Wagner-Abend ist kein normaler Theaterabend. Er beginnt am Nachmittag, hat lange Pausen und endet spät. Danach noch eine weite Fahrt vor sich zu haben, verändert den ganzen Abend — man schaut auf die Uhr, statt zuzuhören. Wer in der Stadt selbst übernachtet, muss das nicht.',
+          en: 'A Wagner evening is not a normal night at the theatre. It begins in the afternoon, has long intervals, and ends late. Having a long drive ahead afterwards changes the whole evening — you watch the clock instead of listening. Staying in town itself removes that.',
+        },
+      },
+      {
+        type: 'heading',
+        text: {
+          de: 'Und den Rest des Jahres',
+          en: 'And the rest of the year',
+        },
+      },
+      {
+        type: 'paragraph',
+        text: {
+          de: 'Außerhalb der Festspielwochen ist Bayreuth ruhiger und, ehrlich gesagt, angenehmer zu besuchen. Das Markgräfliche Opernhaus, der Hofgarten, die Universität, die Cafés in der Innenstadt — all das ist auch im Oktober da, nur ohne die Anspannung des Sommers. Wer die Stadt kennenlernen möchte, statt ein Festival zu besuchen, kommt vielleicht besser dann.',
+          en: 'Outside the festival weeks Bayreuth is quieter and, honestly, more pleasant to visit. The Margravial Opera House, the Hofgarten, the university, the cafés in the centre — all of it is there in October too, just without the tension of summer. If you want to get to know the town rather than attend a festival, that may be the better time.',
+        },
+      },
+    ],
   },
 ];
 

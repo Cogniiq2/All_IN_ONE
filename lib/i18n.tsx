@@ -18,7 +18,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>('de');
 
   useEffect(() => {
-    const saved = localStorage.getItem('aio-locale') as Locale | null;
+    const saved = localStorage.getItem('bolagio-locale') as Locale | null;
     if (saved && (saved === 'de' || saved === 'en')) {
       setLocaleState(saved);
     }
@@ -26,7 +26,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   const setLocale = useCallback((newLocale: Locale) => {
     setLocaleState(newLocale);
-    localStorage.setItem('aio-locale', newLocale);
+    localStorage.setItem('bolagio-locale', newLocale);
     document.documentElement.lang = newLocale;
   }, []);
 

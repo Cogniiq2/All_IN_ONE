@@ -1,69 +1,43 @@
 import { MetadataRoute } from 'next';
-import { residences } from '@/lib/residences';
+import { apartments } from '@/lib/content/apartments';
 import { articles } from '@/lib/articles';
+import { SITE_URL } from '@/lib/content/brand';
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = 'https://allinone-residences.de';
+  const now = new Date();
 
-  const highPriorityPages = [
-    { path: '', priority: 1.0, freq: 'daily' as const },
-    { path: '/residences', priority: 0.95, freq: 'weekly' as const },
-    { path: '/bayreuth-2026', priority: 0.95, freq: 'weekly' as const },
-    { path: '/book-direct', priority: 0.9, freq: 'monthly' as const },
-    { path: '/business-stays', priority: 0.9, freq: 'monthly' as const },
-    { path: '/long-stay', priority: 0.9, freq: 'monthly' as const },
-    { path: '/collections/sternplatz', priority: 0.85, freq: 'monthly' as const },
-    { path: '/collections/altstadt', priority: 0.85, freq: 'monthly' as const },
+  const pages = [
+    { path: '', priority: 1.0, freq: 'weekly' as const },
+    { path: '/apartments', priority: 0.95, freq: 'weekly' as const },
+    { path: '/book-direct', priority: 0.85, freq: 'monthly' as const },
+    { path: '/bayreuth-2026', priority: 0.8, freq: 'monthly' as const },
+    { path: '/about', priority: 0.7, freq: 'monthly' as const },
+    { path: '/contact', priority: 0.7, freq: 'monthly' as const },
+    { path: '/faq', priority: 0.6, freq: 'monthly' as const },
+    { path: '/journal', priority: 0.6, freq: 'monthly' as const },
   ];
-
-  const standardPages = [
-    '/about',
-    '/contact',
-    '/reviews',
-    '/faq',
-    '/journal',
-  ];
-
-  const legalPages = [
-    '/impressum',
-    '/datenschutz',
-    '/agb',
-  ];
-
-  const residencePages = residences.map((r) => ({
-    url: `${baseUrl}/residences/${r.slug}`,
-    lastModified: new Date(),
-    changeFrequency: 'weekly' as const,
-    priority: 0.92,
-  }));
-
-  const journalPages = articles.map((a) => ({
-    url: `${baseUrl}/journal/${a.slug}`,
-    lastModified: new Date(),
-    changeFrequency: 'monthly' as const,
-    priority: 0.75,
-  }));
 
   return [
-    ...highPriorityPages.map(({ path, priority, freq }) => ({
-      url: `${baseUrl}${path}`,
-      lastModified: new Date(),
+    ...pages.map(({ path, priority, freq }) => ({
+      url: `${SITE_URL}${path}`,
+      lastModified: now,
       changeFrequency: freq,
       priority,
     })),
-    ...standardPages.map((page) => ({
-      url: `${baseUrl}${page}`,
-      lastModified: new Date(),
+    // Units still in renovation are excluded: there is nothing to book yet.
+    ...apartments
+      .filter((apartment) => apartment.status === 'available')
+      .map((apartment) => ({
+        url: `${SITE_URL}/apartments/${apartment.slug}`,
+        lastModified: now,
+        changeFrequency: 'weekly' as const,
+        priority: 0.9,
+      })),
+    ...articles.map((article) => ({
+      url: `${SITE_URL}/journal/${article.slug}`,
+      lastModified: now,
       changeFrequency: 'monthly' as const,
-      priority: 0.75,
+      priority: 0.5,
     })),
-    ...legalPages.map((page) => ({
-      url: `${baseUrl}${page}`,
-      lastModified: new Date(),
-      changeFrequency: 'yearly' as const,
-      priority: 0.3,
-    })),
-    ...residencePages,
-    ...journalPages,
   ];
 }

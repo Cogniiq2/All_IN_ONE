@@ -2,18 +2,46 @@
 
 import { useI18n } from '@/lib/i18n';
 
-export function LanguageToggle() {
+/**
+ * Two languages, because two languages actually work. The previous site
+ * advertised German, English, French and Serbian; only German and English
+ * were ever implemented.
+ */
+export function LanguageToggle({ invert = false }: { invert?: boolean }) {
   const { locale, setLocale } = useI18n();
 
+  const activeColor = invert ? 'hsl(var(--on-dark))' : 'hsl(var(--foreground))';
+  const idleColor = invert ? 'hsl(var(--on-dark) / 0.6)' : 'hsl(var(--muted-foreground))';
+  const borderColor = invert ? 'hsl(var(--on-dark) / 0.24)' : 'hsl(var(--border))';
+
   return (
-    <button
-      onClick={() => setLocale(locale === 'de' ? 'en' : 'de')}
-      className="flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs font-medium tracking-wide uppercase transition-colors hover:bg-secondary"
-      aria-label={locale === 'de' ? 'Switch to English' : 'Auf Deutsch wechseln'}
+    <div
+      className="inline-flex items-center rounded-sm overflow-hidden"
+      style={{ border: `1px solid ${borderColor}` }}
+      role="group"
+      aria-label={locale === 'de' ? 'Sprache wählen' : 'Choose language'}
     >
-      <span className={locale === 'de' ? 'text-foreground' : 'text-muted-foreground'}>DE</span>
-      <span className="text-champagne">|</span>
-      <span className={locale === 'en' ? 'text-foreground' : 'text-muted-foreground'}>EN</span>
-    </button>
+      {(['de', 'en'] as const).map((code) => {
+        const active = locale === code;
+        return (
+          <button
+            key={code}
+            onClick={() => setLocale(code)}
+            aria-pressed={active}
+            className="px-2.5 py-2 text-[11px] font-semibold uppercase tracking-wide transition-colors min-h-[38px]"
+            style={{
+              color: active ? activeColor : idleColor,
+              background: active
+                ? invert
+                  ? 'hsl(var(--on-dark) / 0.14)'
+                  : 'hsl(var(--secondary))'
+                : 'transparent',
+            }}
+          >
+            {code}
+          </button>
+        );
+      })}
+    </div>
   );
 }

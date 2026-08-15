@@ -1,11 +1,12 @@
 import type { Metadata } from 'next';
+import { SITE_URL } from '@/lib/content/brand';
 import DatenschutzClient from './datenschutz-client';
 
 export const metadata: Metadata = {
-  title: 'Datenschutzerklärung | All in One Residences — Bayreuth',
-  description: 'Datenschutzerklärung gemäß DSGVO für All in One Residences — Bayreuth.',
+  title: 'Datenschutzerklärung',
+  description: 'Wie BoLaGio mit personenbezogenen Daten auf dieser Website umgeht.',
   robots: { index: false, follow: false },
-  alternates: { canonical: 'https://allinone-residences.de/datenschutz' },
+  alternates: { canonical: `${SITE_URL}/datenschutz` },
 };
 
 export default function DatenschutzPage() {

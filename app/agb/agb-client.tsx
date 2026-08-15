@@ -1,72 +1,78 @@
 'use client';
 
 import { useI18n } from '@/lib/i18n';
-import { SectionReveal } from '@/components/shared/section-reveal';
+import { brand } from '@/lib/content/brand';
+import { LegalPage, LegalSection } from '@/components/legal/legal-page';
 
+/**
+ * AGB.
+ *
+ * NEEDS LEGAL REVIEW before launch — final terms are out of scope for this
+ * frontend pass and must be drafted with a Fachanwalt.
+ *
+ * Removed from the previous version because none of it was decided: "100 %
+ * payment due at booking by Stripe or PayPal", a 14-day / 50 % cancellation
+ * schedule, a maximum occupancy of four guests per apartment, and fixed quiet
+ * hours. Those are commercial decisions the owners have not yet made, and the
+ * website no longer takes payment at all.
+ */
 export default function AGBClient() {
-  const { t, locale } = useI18n();
+  const { locale } = useI18n();
+  const de = locale === 'de';
+
+  const pending = de
+    ? 'Die verbindlichen Konditionen werden vor Veröffentlichung ergänzt und rechtlich geprüft.'
+    : 'The binding terms will be completed and legally reviewed before publication.';
 
   return (
-    <div className="py-12 lg:py-20">
-      <div className="container-luxury">
-        <SectionReveal>
-          <div className="max-w-2xl mx-auto">
-            <h1 className="font-serif text-4xl font-semibold mb-8">{t('legal.agbTitle')}</h1>
-            <div className="prose prose-sm text-muted-foreground space-y-6">
-              <div>
-                <h2 className="font-serif text-xl font-semibold text-foreground mb-3">
-                  {locale === 'de' ? '1. Geltungsbereich' : '1. Scope'}
-                </h2>
-                <p>
-                  {locale === 'de'
-                    ? 'Diese Allgemeinen Geschäftsbedingungen gelten für alle Buchungen und Aufenthalte in den Residenzen von All in One Residences — Bayreuth.'
-                    : 'These General Terms and Conditions apply to all bookings and stays at the residences of All in One Residences — Bayreuth.'}
-                </p>
-              </div>
-              <div>
-                <h2 className="font-serif text-xl font-semibold text-foreground mb-3">
-                  {locale === 'de' ? '2. Buchung & Zahlung' : '2. Booking & Payment'}
-                </h2>
-                <p>
-                  {locale === 'de'
-                    ? 'Die Buchung wird mit Eingang der vollständigen Zahlung verbindlich. Die Zahlung ist zu 100 % bei Buchung fällig. Akzeptierte Zahlungsmethoden: Kreditkarte (Stripe) und PayPal.'
-                    : 'The booking becomes binding upon receipt of full payment. Payment of 100% is due at the time of booking. Accepted payment methods: credit card (Stripe) and PayPal.'}
-                </p>
-              </div>
-              <div>
-                <h2 className="font-serif text-xl font-semibold text-foreground mb-3">
-                  {locale === 'de' ? '3. Stornierung' : '3. Cancellation'}
-                </h2>
-                <p>
-                  {locale === 'de'
-                    ? 'Stornierungen sind bis 14 Tage vor Anreise kostenfrei möglich. Bei Stornierung innerhalb von 14 Tagen vor Anreise werden 50 % des Gesamtbetrags berechnet. Bei Nichterscheinen wird der volle Betrag fällig.'
-                    : 'Cancellations are free of charge up to 14 days before arrival. Cancellations within 14 days of arrival will be charged 50% of the total amount. No-shows will be charged the full amount.'}
-                </p>
-              </div>
-              <div>
-                <h2 className="font-serif text-xl font-semibold text-foreground mb-3">
-                  {locale === 'de' ? '4. Hausregeln' : '4. House Rules'}
-                </h2>
-                <p>
-                  {locale === 'de'
-                    ? 'Ruhezeiten: 22:00–07:00 Uhr. Rauchen ist in allen Residenzen untersagt. Haustiere sind nur nach vorheriger Absprache gestattet. Die maximale Belegung beträgt 4 Gäste pro Residenz.'
-                    : 'Quiet hours: 10 PM–7 AM. Smoking is prohibited in all residences. Pets are allowed only by prior arrangement. Maximum occupancy is 4 guests per residence.'}
-                </p>
-              </div>
-              <div>
-                <h2 className="font-serif text-xl font-semibold text-foreground mb-3">
-                  {locale === 'de' ? '5. Haftung' : '5. Liability'}
-                </h2>
-                <p>
-                  {locale === 'de'
-                    ? 'All in One Residences haftet nicht für den Verlust persönlicher Gegenstände. Schäden an der Residenz, die durch den Gast verursacht werden, sind vom Gast zu tragen.'
-                    : 'All in One Residences is not liable for the loss of personal belongings. Damages to the residence caused by the guest are the responsibility of the guest.'}
-                </p>
-              </div>
-            </div>
-          </div>
-        </SectionReveal>
-      </div>
-    </div>
+    <LegalPage
+      title={de ? 'Allgemeine Geschäftsbedingungen' : 'Terms and conditions'}
+      intro={
+        de
+          ? `Grundlage für Anfragen und Aufenthalte bei ${brand.name}.`
+          : `The basis for enquiries and stays with ${brand.name}.`
+      }
+    >
+      <LegalSection heading={de ? '1. Geltungsbereich' : '1. Scope'}>
+        <p>
+          {de
+            ? `Diese Bedingungen gelten für Anfragen und Aufenthalte in den von ${brand.name} in Bayreuth vermieteten Apartments.`
+            : `These terms apply to enquiries and stays in the apartments let by ${brand.name} in Bayreuth.`}
+        </p>
+      </LegalSection>
+
+      <LegalSection heading={de ? '2. Anfrage und Zustandekommen' : '2. Enquiry and formation'}>
+        <p>
+          {de
+            ? 'Eine über diese Website gesendete Anfrage ist unverbindlich und stellt keine Buchung dar. Ein Vertrag kommt erst zustande, wenn wir Verfügbarkeit und Preis bestätigt haben und Sie diese Bestätigung ausdrücklich annehmen.'
+            : 'An enquiry sent through this website is non-binding and does not constitute a booking. A contract is formed only once we have confirmed availability and price and you have expressly accepted that confirmation.'}
+        </p>
+      </LegalSection>
+
+      <LegalSection heading={de ? '3. Preise und Zahlung' : '3. Prices and payment'}>
+        <p>
+          {de
+            ? 'Preise werden individuell je Zeitraum, Aufenthaltsdauer und Personenzahl mitgeteilt. Über diese Website werden keine Zahlungen abgewickelt.'
+            : 'Prices are quoted individually according to dates, length of stay and number of guests. No payments are processed through this website.'}
+        </p>
+        <p>{pending}</p>
+      </LegalSection>
+
+      <LegalSection heading={de ? '4. Stornierung' : '4. Cancellation'}>
+        <p>{pending}</p>
+      </LegalSection>
+
+      <LegalSection heading={de ? '5. Nutzung der Apartments' : '5. Use of the apartments'}>
+        <p>
+          {de
+            ? 'Die Apartments sind Wohnungen in bewohnten Häusern. Wir bitten um einen entsprechend rücksichtsvollen Umgang mit Nachbarschaft und Gebäude. Die konkreten Hausregeln erhalten Sie mit der Bestätigung Ihres Aufenthalts.'
+            : 'The apartments are homes in occupied buildings. We ask for corresponding consideration towards neighbours and the building. The specific house rules are provided with the confirmation of your stay.'}
+        </p>
+      </LegalSection>
+
+      <LegalSection heading={de ? '6. Haftung' : '6. Liability'}>
+        <p>{pending}</p>
+      </LegalSection>
+    </LegalPage>
   );
 }

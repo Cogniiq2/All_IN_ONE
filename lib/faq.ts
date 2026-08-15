@@ -1,3 +1,16 @@
+/**
+ * Frequently asked questions.
+ *
+ * Rewritten so that no answer asserts anything unverified. Removed from the
+ * previous version: a guaranteed reserved garage space at every apartment,
+ * "100 % payment at booking by card or PayPal", access codes sent 24 hours
+ * before arrival, fixed check-in times, a stated maximum occupancy and a
+ * four-language service claim.
+ *
+ * Where the honest answer is "ask us", it says so — that is also the
+ * conversion path while rates and specifications are still being confirmed.
+ */
+
 export interface FAQ {
   id: string;
   category: { de: string; en: string };
@@ -5,95 +18,131 @@ export interface FAQ {
   answer: { de: string; en: string };
 }
 
+const CATEGORY = {
+  enquiry: { de: 'Anfrage & Buchung', en: 'Enquiry & booking' },
+  apartments: { de: 'Die Apartments', en: 'The apartments' },
+  stay: { de: 'Aufenthalt', en: 'Your stay' },
+} as const;
+
 export const faqs: FAQ[] = [
   {
-    id: 'checkin',
-    category: { de: 'Anreise & Check-in', en: 'Arrival & Check-in' },
-    question: { de: 'Wie funktioniert der Self Check-in?', en: 'How does self check-in work?' },
+    id: 'how-to-enquire',
+    category: CATEGORY.enquiry,
+    question: {
+      de: 'Wie frage ich einen Zeitraum an?',
+      en: 'How do I enquire about dates?',
+    },
     answer: {
-      de: 'Sie erhalten 24 Stunden vor Anreise einen persönlichen Zugangscode per E-Mail und SMS. Damit können Sie jederzeit eigenständig einchecken — ohne Wartezeiten, ohne Schlüsselübergabe. Bei Fragen stehen wir Ihnen jederzeit per WhatsApp oder Telefon zur Verfügung.',
-      en: 'You\'ll receive a personal access code via email and SMS 24 hours before arrival. This allows you to check in independently at any time — no waiting, no key handover. If you have questions, we\'re always available via WhatsApp or phone.',
+      de: 'Über das Anfrageformular auf dieser Website, per WhatsApp oder telefonisch. Sie nennen uns Ihren Zeitraum und die Anzahl der Personen — wir prüfen persönlich und melden uns mit Verfügbarkeit und Preis zurück.',
+      en: 'Through the enquiry form on this site, via WhatsApp or by phone. Tell us your dates and how many of you there are — we check personally and come back to you with availability and price.',
     },
   },
   {
-    id: 'parking',
-    category: { de: 'Anreise & Check-in', en: 'Arrival & Check-in' },
-    question: { de: 'Ist ein Parkplatz verfügbar?', en: 'Is parking available?' },
+    id: 'binding',
+    category: CATEGORY.enquiry,
+    question: {
+      de: 'Ist eine Anfrage schon verbindlich?',
+      en: 'Is an enquiry already binding?',
+    },
     answer: {
-      de: 'Ja, jede Residenz verfügt über einen reservierten Garagenstellplatz in zentraler Lage — ein seltener Vorteil in der Bayreuther Innenstadt. Die genaue Adresse und Zugangsdetails erhalten Sie mit Ihrer Buchungsbestätigung.',
-      en: 'Yes, each residence includes a reserved garage parking space in a central location — a rare advantage in Bayreuth\'s city center. The exact address and access details are provided with your booking confirmation.',
+      de: 'Nein. Eine Anfrage kostet nichts und verpflichtet zu nichts. Verbindlich wird ein Aufenthalt erst, wenn wir Verfügbarkeit und Preis bestätigt haben und Sie ausdrücklich zusagen.',
+      en: 'No. An enquiry costs nothing and commits you to nothing. A stay becomes binding only once we have confirmed availability and price and you have explicitly agreed.',
     },
   },
   {
     id: 'payment',
-    category: { de: 'Buchung & Zahlung', en: 'Booking & Payment' },
-    question: { de: 'Wie funktioniert die Zahlung?', en: 'How does payment work?' },
+    category: CATEGORY.enquiry,
+    question: {
+      de: 'Wie läuft die Bezahlung?',
+      en: 'How does payment work?',
+    },
     answer: {
-      de: 'Die Zahlung erfolgt zu 100 % bei Buchung per Kreditkarte (Stripe) oder PayPal. Sie erhalten umgehend eine Buchungsbestätigung und alle notwendigen Informationen per E-Mail.',
-      en: 'Payment of 100% is due at booking via credit card (Stripe) or PayPal. You\'ll immediately receive a booking confirmation and all necessary information via email.',
+      de: 'Über diese Website wird derzeit nichts abgerechnet. Zahlungsweg und Konditionen stimmen wir mit Ihnen ab, sobald der Aufenthalt bestätigt ist.',
+      en: 'Nothing is charged through this website at the moment. We agree the payment method and terms with you once your stay is confirmed.',
     },
   },
   {
-    id: 'cancellation',
-    category: { de: 'Buchung & Zahlung', en: 'Booking & Payment' },
-    question: { de: 'Welche Stornierungsbedingungen gelten?', en: 'What are the cancellation terms?' },
+    id: 'both-apartments',
+    category: CATEGORY.apartments,
+    question: {
+      de: 'Können wir beide Wohnungen zusammen mieten?',
+      en: 'Can we take both apartments together?',
+    },
     answer: {
-      de: 'Stornierungen sind bis 14 Tage vor Anreise kostenfrei möglich. Bei Stornierung innerhalb von 14 Tagen vor Anreise werden 50 % des Gesamtbetrags berechnet. Bei Nichterscheinen wird der volle Betrag fällig.',
-      en: 'Cancellations are free of charge up to 14 days before arrival. Cancellations within 14 days of arrival will be charged 50% of the total amount. No-shows will be charged the full amount.',
+      de: 'Ja, sofern beide im gewünschten Zeitraum frei sind. Sie liegen im selben Haus — für Familien oder Gruppen, die zusammen anreisen, ist das oft praktischer als mehrere Hotelzimmer. Fragen Sie beide einfach gemeinsam an.',
+      en: 'Yes, provided both are free for your dates. They are in the same building — for families or groups travelling together that is often more practical than several hotel rooms. Simply enquire about both at once.',
     },
   },
   {
-    id: 'invoice',
-    category: { de: 'Geschäftsreisen', en: 'Business Travel' },
-    question: { de: 'Erhalte ich eine Rechnung für Geschäftsreisen?', en: 'Will I receive an invoice for business travel?' },
+    id: 'equipment',
+    category: CATEGORY.apartments,
+    question: {
+      de: 'Wie sind die Wohnungen ausgestattet?',
+      en: 'How are the apartments equipped?',
+    },
     answer: {
-      de: 'Ja, Sie erhalten automatisch eine ordnungsgemäße Rechnung per E-Mail nach Ihrem Aufenthalt. Für Geschäftsreisende stellen wir auf Anfrage auch gerne vorab eine Proforma-Rechnung aus.',
-      en: 'Yes, you\'ll automatically receive a proper invoice via email after your stay. For business travelers, we\'re happy to issue a proforma invoice in advance upon request.',
+      de: 'Wir stellen die vollständigen Angaben zu Größe, Räumen, Schlafplätzen und Ausstattung gerade zusammen und veröffentlichen sie hier, sobald sie geprüft sind. Fragen Sie uns in der Zwischenzeit gern direkt — wir beantworten alles konkret.',
+      en: 'We are compiling the full details on size, rooms, sleeping arrangements and amenities, and will publish them here once verified. In the meantime, just ask us directly — we will answer specifically.',
     },
   },
   {
-    id: 'longstay',
-    category: { de: 'Aufenthalt', en: 'Stay' },
-    question: { de: 'Gibt es Sonderkonditionen für längere Aufenthalte?', en: 'Are there special rates for longer stays?' },
+    id: 'parking',
+    category: CATEGORY.stay,
+    question: {
+      de: 'Gibt es einen Parkplatz?',
+      en: 'Is parking available?',
+    },
     answer: {
-      de: 'Ja, für Aufenthalte ab 7 Nächten bieten wir attraktive Langzeitkonditionen an. Kontaktieren Sie uns direkt für ein individuelles Angebot.',
-      en: 'Yes, we offer attractive long-term rates for stays of 7 nights or more. Contact us directly for a personalized quote.',
+      de: 'Sprechen Sie uns bitte darauf an, wenn Sie mit dem Auto anreisen. Wir sagen Ihnen dann, welche Möglichkeit für Ihren Zeitraum tatsächlich zur Verfügung steht.',
+      en: 'Please mention it if you are arriving by car. We will tell you what is genuinely available for your dates.',
     },
   },
   {
-    id: 'location',
-    category: { de: 'Lage & Umgebung', en: 'Location & Area' },
-    question: { de: 'Wie zentral sind die Residenzen?', en: 'How central are the residences?' },
+    id: 'arrival',
+    category: CATEGORY.stay,
+    question: {
+      de: 'Wie läuft die Anreise ab?',
+      en: 'How does arrival work?',
+    },
     answer: {
-      de: 'Alle fünf Residenzen befinden sich im Herzen von Bayreuth — am Sternplatz, an der Opernstraße und in der Innenstadt. Zu Fuß erreichen Sie in wenigen Minuten das Markgräfliche Opernhaus, den Hofgarten, Restaurants, Cafés und alle wichtigen Sehenswürdigkeiten Bayreuths.',
-      en: 'All five residences are located in the heart of Bayreuth — at Sternplatz, on Opernstraße, and in the city center. Within a few minutes\' walk, you can reach the Margravial Opera House, Hofgarten, restaurants, cafés, and all of Bayreuth\'s main attractions.',
+      de: 'Die genaue Adresse, den Weg und alle Anreisedetails erhalten Sie von uns, sobald Ihr Aufenthalt feststeht. Wenn Sie spät ankommen oder Ihre Ankunftszeit noch offen ist, schreiben Sie uns — wir stimmen das persönlich ab.',
+      en: 'You receive the exact address, directions and all arrival details from us once your stay is confirmed. If you are arriving late or your time is still open, write to us — we arrange it personally.',
     },
   },
   {
-    id: 'direct',
-    category: { de: 'Direktbuchung', en: 'Direct Booking' },
-    question: { de: 'Warum sollte ich direkt buchen?', en: 'Why should I book directly?' },
+    id: 'long-stay',
+    category: CATEGORY.stay,
+    question: {
+      de: 'Sind längere Aufenthalte möglich?',
+      en: 'Are longer stays possible?',
+    },
     answer: {
-      de: 'Direktbuchungen ermöglichen uns, Ihnen den besten Service zu bieten: persönlicher Kontakt, exklusiver Willkommenswein, transparente Preise ohne Plattform-Gebühren und direkter Support vor, während und nach Ihrem Aufenthalt.',
-      en: 'Direct bookings allow us to provide you with the best service: personal contact, exclusive welcome wine, transparent pricing without platform fees, and direct support before, during, and after your stay.',
+      de: 'Grundsätzlich ja. Für längere Zeiträume sprechen wir Konditionen individuell ab — schreiben Sie uns, wie lange Sie bleiben möchten.',
+      en: 'In principle, yes. For longer periods we agree terms individually — write and tell us how long you would like to stay.',
     },
   },
   {
-    id: 'guests',
-    category: { de: 'Aufenthalt', en: 'Stay' },
-    question: { de: 'Wie viele Gäste können in einer Residenz übernachten?', en: 'How many guests can stay in a residence?' },
+    id: 'languages',
+    category: CATEGORY.stay,
+    question: {
+      de: 'In welchen Sprachen können wir schreiben?',
+      en: 'What languages can we write in?',
+    },
     answer: {
-      de: 'Jede Residenz bietet komfortablen Platz für bis zu 4 Gäste. Die genaue Betten-Konfiguration finden Sie auf der jeweiligen Residenz-Seite.',
-      en: 'Each residence comfortably accommodates up to 4 guests. The exact bed configuration can be found on the respective residence page.',
+      de: 'Deutsch und Englisch.',
+      en: 'German and English.',
     },
   },
   {
-    id: 'quiet',
-    category: { de: 'Hausregeln', en: 'House Rules' },
-    question: { de: 'Gibt es Ruhezeiten?', en: 'Are there quiet hours?' },
+    id: 'opernstrasse',
+    category: CATEGORY.apartments,
+    question: {
+      de: 'Wann ist das Apartment Opernstraße verfügbar?',
+      en: 'When will the Opernstraße apartment be available?',
+    },
     answer: {
-      de: 'Ja, wir bitten um Einhaltung der Ruhezeiten von 22:00 bis 07:00 Uhr — aus Rücksicht auf Nachbarn und Mitbewohner. Rauchen ist in allen Residenzen untersagt.',
-      en: 'Yes, we kindly ask guests to observe quiet hours from 10 PM to 7 AM — out of respect for neighbors and fellow residents. Smoking is prohibited in all residences.',
+      de: 'Es wird derzeit renoviert und ist noch nicht buchbar. Ein Eröffnungstermin steht noch nicht fest — schreiben Sie uns, wenn wir Sie informieren sollen, sobald es so weit ist.',
+      en: 'It is currently being renovated and is not yet bookable. No opening date has been set — write to us if you would like to be told as soon as it is ready.',
     },
   },
 ];
