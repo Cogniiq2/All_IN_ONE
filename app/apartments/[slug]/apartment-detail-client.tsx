@@ -17,6 +17,7 @@ import {
   getApartment,
   hasVerifiedDetails,
   STATUS_LABEL,
+  supportsLongTerm,
   type Apartment,
 } from '@/lib/content/apartments';
 import { brand, contact } from '@/lib/content/brand';
@@ -64,6 +65,13 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
   const images = galleryFor(slug);
   const upcoming = apartment.status === 'in-preparation';
   const detailed = hasVerifiedDetails(apartment);
+  /**
+   * Whether this flat may *also* be discussed as a conventional tenancy. Read
+   * from `rentalModes`, never from the slug. It is offered as a quiet
+   * alternative below the availability card, never as a competing CTA: the
+   * primary use of this page is a stay.
+   */
+  const alsoLongTerm = !upcoming && supportsLongTerm(apartment);
 
   const quickFacts = [
     apartment.sizeSqm && { icon: Maximize, text: `${apartment.sizeSqm} m²` },
@@ -365,6 +373,33 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
                   </p>
                 </div>
               </div>
+
+              {alsoLongTerm && (
+                <div
+                  className="mt-4 p-6 lg:p-7"
+                  style={{
+                    background: 'hsl(var(--secondary) / 0.6)',
+                    border: '1px solid hsl(var(--border))',
+                    borderRadius: 'var(--radius)',
+                  }}
+                >
+                  <p className="eyebrow">{de ? 'Andere Frage' : 'A different question'}</p>
+                  <h2 className="display-3 mt-3 text-[19px]">
+                    {de ? 'Länger als ein Aufenthalt?' : 'Longer than a stay?'}
+                  </h2>
+                  <p className="body-copy mt-3 text-[14px]">
+                    {de
+                      ? 'Diese Wohnung vermieten wir in erster Linie tageweise. Für eine dauerhafte Vermietung über einen Mietvertrag gibt es einen eigenen Weg — keine Buchung, sondern ein Gespräch.'
+                      : 'We let this apartment primarily by the day. A conventional tenancy under a rental agreement follows its own path — not a booking, a conversation.'}
+                  </p>
+                  <div className="mt-5">
+                    <Link href="/mieten" className="link-quiet">
+                      {de ? 'Mieten statt übernachten' : 'Renting instead of staying'}
+                      <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+                    </Link>
+                  </div>
+                </div>
+              )}
             </aside>
           </div>
         </div>

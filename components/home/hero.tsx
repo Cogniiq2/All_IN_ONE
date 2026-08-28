@@ -3,7 +3,10 @@
 import { useRef } from 'react';
 import Image from 'next/image';
 import { motion, useReducedMotion, useScroll, useTransform } from 'framer-motion';
+import Link from 'next/link';
+import { ArrowRight } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
+import { bookableApartments } from '@/lib/content/apartments';
 import { brand } from '@/lib/content/brand';
 import { heroImage, REFERENCE_IMAGE_LABEL } from '@/lib/content/media';
 import { Wordmark } from '@/components/brand/logo';
@@ -81,11 +84,27 @@ function BrandEntrance() {
   );
 }
 
+/**
+ * The headline states how many apartments are actually lettable, so it stays
+ * true when a unit opens or closes. German and English both read better with a
+ * word than a digit at these counts; anything larger falls back to the digit.
+ */
+const NUMERAL: Record<number, { de: string; en: string }> = {
+  1: { de: 'Ein', en: 'One' },
+  2: { de: 'Zwei', en: 'Two' },
+  3: { de: 'Drei', en: 'Three' },
+  4: { de: 'Vier', en: 'Four' },
+  5: { de: 'Fünf', en: 'Five' },
+};
+
 export function Hero() {
   const { locale } = useI18n();
   const de = locale === 'de';
   const reduce = useReducedMotion();
   const ref = useRef<HTMLElement>(null);
+
+  const countNumber = bookableApartments().length;
+  const count = NUMERAL[countNumber]?.[locale] ?? String(countNumber);
 
   /**
    * Compositor-friendly parallax. The previous hero wrote window.scrollY into
@@ -170,15 +189,17 @@ export function Hero() {
           >
             {de ? (
               <>
-                Zwei Apartments in Bayreuth.
+                {count} {countNumber === 1 ? 'Apartment' : 'Apartments'} in Bayreuth.
                 <br />
                 <span style={{ color: 'hsl(var(--on-dark-gold))' }}>Eine Familie dahinter.</span>
               </>
             ) : (
               <>
-                Two apartments in Bayreuth.
+                {count} {countNumber === 1 ? 'apartment' : 'apartments'} in Bayreuth.
                 <br />
-                <span style={{ color: 'hsl(var(--on-dark-gold))' }}>One family behind them.</span>
+                <span style={{ color: 'hsl(var(--on-dark-gold))' }}>
+                  {countNumber === 1 ? 'One family behind it.' : 'One family behind them.'}
+                </span>
               </>
             )}
           </motion.h1>
@@ -206,11 +227,43 @@ export function Hero() {
             </CtaLink>
             <EnquiryButton variant="secondary" invert />
           </motion.div>
+
+          {/*
+            The second audience, kept deliberately quiet. A prospective tenant
+            landing on the homepage needs a way in; a guest looking for a few
+            nights must not be given a second thing to weigh against the CTAs
+            above. Hence a text link, not a third button.
+          */}
+          <motion.p
+            className="mt-7 text-[13px] leading-relaxed"
+            style={{ color: 'hsl(var(--on-dark-muted))' }}
+            initial={reduce ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.8, duration: 0.6 }}
+          >
+            {de ? 'Sie möchten dauerhaft mieten?' : 'Looking to rent long term?'}{' '}
+            <Link
+              href="/mieten"
+              className="group inline-flex items-center gap-1.5 py-1.5 font-semibold"
+              style={{
+                color: 'hsl(var(--on-dark))',
+                borderBottom: '1px solid hsl(var(--on-dark-gold) / 0.6)',
+              }}
+            >
+              {de ? 'Wohnraum und Gewerbeflächen' : 'Residential and commercial space'}
+              <ArrowRight
+                className="w-3.5 h-3.5 transition-transform duration-300 group-hover:translate-x-0.5"
+                aria-hidden="true"
+              />
+            </Link>
+          </motion.p>
         </div>
       </div>
 
-      {/* Provisional-photography marker — this is not a real photo of our rooms */}
-      <div className="absolute bottom-4 right-4 z-10 lg:bottom-6 lg:right-6">
+      {/* Provisional-photography marker — this is not a real photo of our rooms.
+          Raised on large screens so the availability panel, which lifts into
+          the bottom of the hero there, never sits on top of it. */}
+      <div className="absolute bottom-4 right-4 z-10 lg:bottom-24 lg:right-6">
         <span className="ref-badge">{REFERENCE_IMAGE_LABEL[locale]}</span>
       </div>
     </section>

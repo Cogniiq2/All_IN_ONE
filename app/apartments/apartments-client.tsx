@@ -8,6 +8,7 @@ import { bookableApartments, upcomingApartments } from '@/lib/content/apartments
 import { ApartmentCard } from '@/components/apartments/apartment-card';
 import { Reveal } from '@/components/ui-kit/reveal';
 import { EnquiryButton } from '@/components/enquiry/enquiry-button';
+import { label } from '@/components/ui-kit/cta';
 import { contact } from '@/lib/content/brand';
 
 /**
@@ -93,6 +94,40 @@ export function ApartmentsClient() {
               ))}
             </div>
           )}
+
+          {/*
+            The other journey, offered once — after the apartments, not beside
+            them. A visitor who came here for nights is not asked to weigh a
+            tenancy against them.
+          */}
+          <Reveal delay={0.08}>
+            <div
+              className="mt-14 flex flex-col gap-5 p-7 lg:flex-row lg:items-center lg:justify-between lg:p-9"
+              style={{
+                background: 'hsl(var(--secondary) / 0.5)',
+                border: '1px solid hsl(var(--border))',
+                borderRadius: 'var(--radius)',
+              }}
+            >
+              <div>
+                <h2 className="display-3">
+                  {de ? 'Sie möchten dauerhaft mieten?' : 'Looking to rent long term?'}
+                </h2>
+                <p className="body-copy mt-3 text-[14px]">
+                  {de
+                    ? 'Einzelne Objekte vermieten wir auch regulär über einen Mietvertrag — Wohnraum ebenso wie eine Gewerbefläche im Erdgeschoss. Das läuft nicht über eine Buchung, sondern über ein Gespräch.'
+                    : 'Some properties are also let conventionally under a rental agreement — residential space as well as a commercial unit on the ground floor. That runs through a conversation, not a booking.'}
+                </p>
+              </div>
+              <Link href="/mieten" className="cta-secondary group shrink-0">
+                {label('exploreRentals', locale)}
+                <ArrowRight
+                  className="w-4 h-4 transition-transform duration-300 group-hover:translate-x-1"
+                  aria-hidden="true"
+                />
+              </Link>
+            </div>
+          </Reveal>
         </div>
       </section>
     </>

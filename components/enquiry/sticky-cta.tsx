@@ -44,7 +44,7 @@ export function StickyEnquiryBar({ apartmentSlug }: { apartmentSlug?: string }) 
     >
       <div className="flex items-center gap-3 px-4 py-3">
         <button
-          onClick={() => openEnquiry(apartmentSlug)}
+          onClick={() => openEnquiry({ kind: 'short-term', unitSlug: apartmentSlug })}
           className="cta-primary flex-1"
           tabIndex={visible ? 0 : -1}
         >
