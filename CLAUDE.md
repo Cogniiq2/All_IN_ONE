@@ -113,8 +113,9 @@ refined transitions · clear hierarchy · strong mobile design.
 Luxury should feel **controlled, not flashy**.
 
 In practice: take colours, radii and spacing from the tokens in `app/globals.css` and
-`tailwind.config.ts` rather than introducing new ad-hoc values; the small radius and warm
-neutral palette are deliberate.
+`tailwind.config.ts` rather than introducing new ad-hoc values. The radius scale
+(`--radius-xs` … `--radius-xl`) is applied by surface weight — chips, then buttons and form
+fields, then cards, then overlay surfaces — and the warm neutral palette is deliberate.
 
 ---
 

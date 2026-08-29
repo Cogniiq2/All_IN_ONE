@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { ArrowRight, ChevronRight, Info } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
 import { getArticleBySlug, getRelatedArticles, type Article } from '@/lib/articles';
+import { apartments } from '@/lib/content/apartments';
 import { Reveal } from '@/components/ui-kit/reveal';
 import { CtaLink, label } from '@/components/ui-kit/cta';
 import { EnquiryButton } from '@/components/enquiry/enquiry-button';
@@ -99,7 +100,7 @@ export function ArticleClient({ slug }: { slug: string }) {
                       style={{
                         background: 'hsl(var(--secondary) / 0.7)',
                         borderLeft: '2px solid hsl(var(--champagne-dark))',
-                        borderRadius: 'var(--radius)',
+                        borderRadius: 'var(--radius-lg)',
                       }}
                     >
                       <Info
@@ -139,7 +140,7 @@ export function ArticleClient({ slug }: { slug: string }) {
                           className="flex gap-4 p-5"
                           style={{
                             border: '1px solid hsl(var(--border))',
-                            borderRadius: 'var(--radius)',
+                            borderRadius: 'var(--radius-lg)',
                             background: 'hsl(var(--card))',
                           }}
                         >
@@ -186,14 +187,14 @@ export function ArticleClient({ slug }: { slug: string }) {
             style={{
               background: 'hsl(var(--secondary) / 0.6)',
               border: '1px solid hsl(var(--border))',
-              borderRadius: 'var(--radius)',
+              borderRadius: 'var(--radius-lg)',
             }}
           >
             <h2 className="display-3">{de ? 'Sie planen einen Aufenthalt?' : 'Planning a stay?'}</h2>
             <p className="body-copy mt-3 text-[14px]">
               {de
-                ? 'Wir vermieten zwei eigene Apartments in der Bayreuther Innenstadt. Fragen Sie einfach Ihren Zeitraum an.'
-                : 'We let two apartments of our own in central Bayreuth. Simply enquire about your dates.'}
+                ? `Wir vermieten ${apartments.length} eigene Apartments in der Bayreuther Innenstadt. Fragen Sie einfach Ihren Zeitraum an.`
+                : `We let ${apartments.length} apartments of our own in central Bayreuth. Simply enquire about your dates.`}
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <EnquiryButton />
@@ -201,6 +202,15 @@ export function ArticleClient({ slug }: { slug: string }) {
                 {label('exploreApartments', locale)}
               </CtaLink>
             </div>
+            {/* The third point of the cluster. Every article routes to the
+                inventory and to the location page, not only to more reading. */}
+            <p className="mt-5 text-[13px]" style={{ color: 'hsl(var(--muted-foreground))' }}>
+              {de ? 'Neu in Bayreuth? ' : 'New to Bayreuth? '}
+              <Link href="/bayreuth-2026" className="link-quiet">
+                {de ? 'Die Stadt und die Festspiele' : 'The town and the festival'}
+                <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+              </Link>
+            </p>
           </aside>
         </Reveal>
 

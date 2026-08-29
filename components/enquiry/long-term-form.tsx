@@ -244,7 +244,7 @@ export function LongTermEnquiryForm({
                 key={party}
                 className="flex min-h-[46px] cursor-pointer items-center gap-2.5 px-3.5 py-2.5 text-[14px] transition-colors"
                 style={{
-                  borderRadius: 'var(--radius)',
+                  borderRadius: 'var(--radius-sm)',
                   border: `1px solid ${active ? 'hsl(var(--champagne-dark))' : 'hsl(var(--border))'}`,
                   background: active ? 'hsl(var(--champagne) / 0.14)' : 'hsl(var(--secondary) / 0.4)',
                 }}

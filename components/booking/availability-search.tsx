@@ -85,7 +85,7 @@ export function AvailabilitySearch({
   };
 
   const fieldClass =
-    'w-full min-h-[46px] px-3.5 py-2.5 bg-secondary/40 border border-border rounded-sm text-[15px] ' +
+    'w-full min-h-[46px] px-3.5 py-2.5 bg-secondary/40 border border-border rounded-md text-[15px] ' +
     'text-foreground transition-colors focus:outline-none focus:border-champagne focus:bg-secondary/70';
 
   const fieldLabel =
@@ -98,7 +98,7 @@ export function AvailabilitySearch({
       style={{
         background: 'hsl(var(--card))',
         border: '1px solid hsl(var(--border))',
-        borderRadius: 'var(--radius)',
+        borderRadius: 'var(--radius-lg)',
         boxShadow: tone === 'raised' ? '0 32px 80px -40px hsl(var(--ink) / 0.55)' : undefined,
       }}
       aria-labelledby={`${id}-heading`}

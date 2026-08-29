@@ -86,7 +86,7 @@ export function RentalSection() {
         />
 
         <div className="mt-12 grid gap-px overflow-hidden md:grid-cols-2"
-             style={{ background: 'hsl(var(--border))', borderRadius: 'var(--radius)' }}>
+             style={{ background: 'hsl(var(--border))', borderRadius: 'var(--radius-lg)' }}>
           {columns.map((column) => (
             <div key={column.title} className="p-7 lg:p-9" style={{ background: 'hsl(var(--card))' }}>
               <column.icon

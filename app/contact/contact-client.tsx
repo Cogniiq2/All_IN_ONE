@@ -1,6 +1,7 @@
 'use client';
 
-import { MapPin, MessageCircle, Phone, Send } from 'lucide-react';
+import Link from 'next/link';
+import { ArrowRight, Building2, CalendarDays, MapPin, MessageCircle, Phone, Send } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
 import { brand, contact } from '@/lib/content/brand';
 import { Reveal } from '@/components/ui-kit/reveal';
@@ -16,7 +17,14 @@ import { label } from '@/components/ui-kit/cta';
  * the loading, success and error behaviour identical everywhere.
  *
  * No email address is shown: none has been confirmed. See contact.email in
- * lib/content/brand.ts.
+ * lib/content/brand.ts. Nothing here invents one.
+ *
+ * ── What this page is for ────────────────────────────────────────────────
+ * It is the route for a visitor who does not fit the two main journeys: a
+ * general question, an unusual request, or simply not knowing which path to
+ * take. It is NOT a third way to book a stay or to ask about a tenancy — both
+ * of those have their own flows, and the router below points at them rather
+ * than duplicating them here.
  */
 export default function ContactClient() {
   const { locale } = useI18n();
@@ -94,7 +102,7 @@ export default function ContactClient() {
                   style={{
                     background: 'hsl(var(--card))',
                     border: '1px solid hsl(var(--border))',
-                    borderRadius: 'var(--radius)',
+                    borderRadius: 'var(--radius-lg)',
                   }}
                 >
                   <channel.icon
@@ -110,13 +118,64 @@ export default function ContactClient() {
             ))}
           </div>
 
-          <Reveal delay={0.12}>
+          {/* Sends a visitor to the journey built for them, before they write
+              a message that the booking or appointment flow would answer
+              faster. Two routes only, so the page stays a router and not a
+              menu. */}
+          <Reveal delay={0.1}>
+            <div className="mt-10 grid gap-6 md:grid-cols-2 lg:gap-8">
+              {[
+                {
+                  icon: CalendarDays,
+                  title: de ? 'Sie möchten übernachten?' : 'Looking to stay?',
+                  body: de
+                    ? 'Zeitraum und Personenzahl wählen, den Rest klären wir. Das geht über die Apartments schneller als über eine Nachricht.'
+                    : 'Choose your dates and party size and we settle the rest. That is quicker through the apartments than through a message.',
+                  href: '/apartments',
+                  cta: de ? 'Apartments ansehen' : 'View apartments',
+                },
+                {
+                  icon: Building2,
+                  title: de ? 'Sie möchten mieten?' : 'Looking to rent?',
+                  body: de
+                    ? 'Wohnraum oder Gewerbefläche über einen regulären Mietvertrag. Dafür vereinbaren wir ein Gespräch, keine Buchung.'
+                    : 'Residential or commercial space under a conventional rental agreement. For that we arrange a conversation, not a booking.',
+                  href: '/mieten',
+                  cta: de ? 'Mietangebote ansehen' : 'View properties to rent',
+                },
+              ].map((route) => (
+                <div
+                  key={route.href}
+                  className="flex flex-col p-7"
+                  style={{
+                    background: 'hsl(var(--secondary) / 0.5)',
+                    border: '1px solid hsl(var(--border))',
+                    borderRadius: 'var(--radius-lg)',
+                  }}
+                >
+                  <route.icon
+                    className="mb-4 h-5 w-5"
+                    style={{ color: 'hsl(var(--champagne-dark))' }}
+                    aria-hidden="true"
+                  />
+                  <h2 className="text-[16px] font-semibold">{route.title}</h2>
+                  <p className="body-copy mt-2.5 flex-1 text-[14px]">{route.body}</p>
+                  <Link href={route.href} className="link-quiet mt-5 self-start">
+                    {route.cta}
+                    <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                  </Link>
+                </div>
+              ))}
+            </div>
+          </Reveal>
+
+          <Reveal delay={0.14}>
             <div
               className="mt-10 flex flex-col gap-6 p-7 sm:flex-row sm:items-center sm:justify-between lg:p-9"
               style={{
                 background: 'hsl(var(--secondary) / 0.6)',
                 border: '1px solid hsl(var(--border))',
-                borderRadius: 'var(--radius)',
+                borderRadius: 'var(--radius-lg)',
               }}
             >
               <div className="flex items-start gap-3">

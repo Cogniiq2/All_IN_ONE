@@ -44,7 +44,7 @@ export function LegalPage({
             style={{
               background: 'hsl(var(--secondary) / 0.6)',
               border: '1px solid hsl(var(--border))',
-              borderRadius: 'var(--radius)',
+              borderRadius: 'var(--radius-lg)',
               color: 'hsl(var(--muted-foreground))',
             }}
           >

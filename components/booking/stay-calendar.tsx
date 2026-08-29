@@ -138,7 +138,9 @@ export function StayCalendar({
                 className="relative flex h-10 items-center justify-center text-[13px] transition-colors
                            disabled:cursor-not-allowed"
                 style={{
-                  borderRadius: 'var(--radius)',
+                  // Extra-small: 42 of these sit in a grid; anything larger
+                  // turns the month into a field of lozenges.
+                  borderRadius: 'var(--radius-xs)',
                   background: edge
                     ? 'hsl(var(--foreground))'
                     : inRange
@@ -170,7 +172,7 @@ export function StayCalendar({
           onClick={() => shift(-1)}
           disabled={!canGoBack}
           className="flex h-10 w-10 items-center justify-center transition-colors disabled:opacity-30"
-          style={{ borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))' }}
+          style={{ borderRadius: 'var(--radius-sm)', border: '1px solid hsl(var(--border))' }}
           aria-label={de ? 'Vorheriger Monat' : 'Previous month'}
         >
           <ChevronLeft className="h-4 w-4" aria-hidden="true" />
@@ -183,7 +185,7 @@ export function StayCalendar({
           type="button"
           onClick={() => shift(1)}
           className="flex h-10 w-10 items-center justify-center transition-colors"
-          style={{ borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))' }}
+          style={{ borderRadius: 'var(--radius-sm)', border: '1px solid hsl(var(--border))' }}
           aria-label={de ? 'Nächster Monat' : 'Next month'}
         >
           <ChevronRight className="h-4 w-4" aria-hidden="true" />

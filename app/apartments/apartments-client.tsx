@@ -71,7 +71,7 @@ export function ApartmentsClient() {
                 style={{
                   background: 'hsl(var(--secondary) / 0.6)',
                   border: '1px solid hsl(var(--border))',
-                  borderRadius: 'var(--radius)',
+                  borderRadius: 'var(--radius-lg)',
                 }}
               >
                 <CalendarDays
@@ -145,7 +145,7 @@ export function ApartmentsClient() {
               style={{
                 background: 'hsl(var(--secondary) / 0.5)',
                 border: '1px solid hsl(var(--border))',
-                borderRadius: 'var(--radius)',
+                borderRadius: 'var(--radius-lg)',
               }}
             >
               <div>

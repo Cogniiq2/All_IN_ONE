@@ -81,7 +81,7 @@ export function UnitDetailModal() {
           <div className="flex flex-col p-6 sm:p-8 lg:p-10">
             <div className="flex flex-wrap items-center gap-2.5">
               <span
-                className="inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1.5 text-[11px] font-semibold"
+                className="inline-flex items-center gap-1.5 rounded-xs px-2.5 py-1.5 text-[11px] font-semibold"
                 style={{
                   background: upcoming ? 'hsl(var(--ink))' : 'hsl(var(--accent))',
                   color: upcoming ? 'hsl(var(--on-dark))' : 'hsl(var(--foreground))',

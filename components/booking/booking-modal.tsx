@@ -357,7 +357,7 @@ function StepGuests({ guests, setGuests }: { guests: number; setGuests: (n: numb
             onClick={() => setGuests(n)}
             className="min-h-[44px] px-4 text-[13px] font-medium transition-colors"
             style={{
-              borderRadius: 'var(--radius)',
+              borderRadius: 'var(--radius-sm)',
               border: `1px solid ${guests === n ? 'hsl(var(--champagne-dark))' : 'hsl(var(--border))'}`,
               background: guests === n ? 'hsl(var(--champagne) / 0.16)' : 'transparent',
             }}
@@ -380,7 +380,7 @@ function StepperButton({
       disabled={disabled}
       aria-label={label}
       className="flex h-12 w-12 items-center justify-center transition-colors disabled:opacity-30"
-      style={{ borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))' }}
+      style={{ borderRadius: 'var(--radius-sm)', border: '1px solid hsl(var(--border))' }}
     >
       {children}
     </button>
@@ -463,7 +463,7 @@ function StepPayment({
       <h3 className="display-3 text-[20px]">{de ? 'Wie möchten Sie zahlen?' : 'How would you like to pay?'}</h3>
 
       {/* No total. No nightly rate. No rate has been supplied to this site. */}
-      <div className="mt-5 p-4" style={{ background: 'hsl(var(--secondary) / 0.55)', borderRadius: 'var(--radius)' }}>
+      <div className="mt-5 p-4" style={{ background: 'hsl(var(--secondary) / 0.55)', borderRadius: 'var(--radius-md)' }}>
         <dl className="space-y-1.5 text-[13.5px]">
           <Row label={de ? 'Apartment' : 'Apartment'} value={unitName} />
           <Row label={de ? 'Zeitraum' : 'Dates'} value={`${fmt(arrival)} – ${fmt(departure)}`} />
@@ -483,7 +483,7 @@ function StepPayment({
               onClick={() => setMethod(m.id)}
               className="flex min-h-[56px] items-center gap-3.5 px-4 py-3 text-left transition-colors"
               style={{
-                borderRadius: 'var(--radius)',
+                borderRadius: 'var(--radius-md)',
                 border: `1px solid ${active ? 'hsl(var(--champagne-dark))' : 'hsl(var(--border))'}`,
                 background: active ? 'hsl(var(--champagne) / 0.14)' : 'transparent',
               }}

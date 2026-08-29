@@ -15,7 +15,7 @@ import { contact } from '@/lib/content/brand';
 import { CtaButton, label } from '@/components/ui-kit/cta';
 
 export const inputClass =
-  'w-full min-h-[46px] px-3.5 py-2.5 bg-secondary/40 border border-border rounded-sm text-[15px] ' +
+  'w-full min-h-[46px] px-3.5 py-2.5 bg-secondary/40 border border-border rounded-md text-[15px] ' +
   'text-foreground placeholder:text-muted-foreground/60 transition-colors ' +
   'focus:outline-none focus:border-champagne focus:bg-secondary/70';
 
@@ -133,7 +133,7 @@ export function SubmitError({ locale }: { locale: Locale }) {
   return (
     <div
       role="alert"
-      className="flex items-start gap-3 p-3.5 rounded-sm"
+      className="flex items-start gap-3 p-3.5 rounded-md"
       style={{
         background: 'hsl(var(--destructive) / 0.07)',
         border: '1px solid hsl(var(--destructive) / 0.25)',

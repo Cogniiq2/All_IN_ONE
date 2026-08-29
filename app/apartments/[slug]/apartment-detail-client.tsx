@@ -118,7 +118,7 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
           <Reveal>
             <div className="flex flex-wrap items-center gap-3 mb-4">
               <span
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-sm"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-xs"
                 style={{
                   background: upcoming ? 'hsl(var(--ink))' : 'hsl(var(--accent))',
                   color: upcoming ? 'hsl(var(--on-dark))' : 'hsl(var(--foreground))',
@@ -173,7 +173,7 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
                       <li
                         key={room.label.de}
                         className="p-4"
-                        style={{ border: '1px solid hsl(var(--border))', borderRadius: 'var(--radius)' }}
+                        style={{ border: '1px solid hsl(var(--border))', borderRadius: 'var(--radius-lg)' }}
                       >
                         <p className="text-[14px] font-semibold">{room.label[locale]}</p>
                         <p className="text-[13px] text-muted-foreground mt-1">{room.beds[locale]}</p>
@@ -213,7 +213,7 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
                     src={apartment.floorPlan}
                     alt={de ? `Grundriss ${apartment.name.de}` : `Floor plan of ${apartment.name.en}`}
                     className="w-full h-auto"
-                    style={{ borderRadius: 'var(--radius)' }}
+                    style={{ borderRadius: 'var(--radius-lg)' }}
                   />
                 </Block>
               )}
@@ -312,7 +312,7 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
                 style={{
                   background: 'hsl(var(--card))',
                   border: '1px solid hsl(var(--border))',
-                  borderRadius: 'var(--radius)',
+                  borderRadius: 'var(--radius-lg)',
                 }}
               >
                 {upcoming ? (
@@ -388,7 +388,7 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
                   style={{
                     background: 'hsl(var(--secondary) / 0.6)',
                     border: '1px solid hsl(var(--border))',
-                    borderRadius: 'var(--radius)',
+                    borderRadius: 'var(--radius-lg)',
                   }}
                 >
                   <p className="eyebrow">{de ? 'Andere Frage' : 'A different question'}</p>

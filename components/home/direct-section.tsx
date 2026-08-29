@@ -74,7 +74,7 @@ export function DirectSection() {
         <Reveal delay={0.08}>
           <div
             className="mt-12 overflow-hidden"
-            style={{ border: '1px solid hsl(var(--border))', borderRadius: 'var(--radius)', background: 'hsl(var(--card))' }}
+            style={{ border: '1px solid hsl(var(--border))', borderRadius: 'var(--radius-lg)', background: 'hsl(var(--card))' }}
           >
             <div className="overflow-x-auto">
               <table className="w-full min-w-[560px] text-left border-collapse">

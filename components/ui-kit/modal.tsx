@@ -64,7 +64,7 @@ function CloseButton({ floating = false }: { floating?: boolean }) {
   return (
     <Dialog.Close asChild>
       <button
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-sm transition-colors
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xs transition-colors
                    hover:bg-secondary"
         style={{
           color: 'hsl(var(--foreground))',
@@ -116,7 +116,10 @@ export function LargeModal({
               className="pointer-events-auto relative flex w-full max-w-[1180px] flex-col
                          overflow-hidden bg-background shadow-2xl"
               style={{
-                borderRadius: 'var(--radius)',
+                // Extra-large tier. `overflow-hidden` above clips the imagery
+                // and the inner scroll container to the same curve, so nothing
+                // squares off a corner during the entrance transform.
+                borderRadius: 'var(--radius-xl)',
                 border: '1px solid hsl(var(--border))',
               }}
             >
@@ -175,7 +178,9 @@ export function DialogModal({
               className="pointer-events-auto flex max-h-full w-full max-w-[540px] flex-col
                          overflow-hidden bg-background shadow-2xl"
               style={{
-                borderRadius: 'var(--radius)',
+                // Same tier as the detail overlay: the dialog reads as the same
+                // family of surface, one step down in scale.
+                borderRadius: 'var(--radius-xl)',
                 border: '1px solid hsl(var(--border))',
               }}
             >

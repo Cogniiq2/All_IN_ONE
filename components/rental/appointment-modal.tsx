@@ -288,7 +288,7 @@ function StepParty({
               aria-pressed={active}
               className="flex min-h-[72px] items-start gap-4 p-4 text-left transition-colors"
               style={{
-                borderRadius: 'var(--radius)',
+                borderRadius: 'var(--radius-md)',
                 border: `1px solid ${active ? 'hsl(var(--champagne-dark))' : 'hsl(var(--border))'}`,
                 background: active ? 'hsl(var(--champagne) / 0.14)' : 'transparent',
               }}
@@ -339,7 +339,7 @@ function StepTiming({
               <button key={t.id} type="button" onClick={() => setTiming(t.id)} aria-pressed={active}
                       className="min-h-[52px] px-3.5 py-2.5 text-left text-[13.5px] transition-colors"
                       style={{
-                        borderRadius: 'var(--radius)',
+                        borderRadius: 'var(--radius-sm)',
                         border: `1px solid ${active ? 'hsl(var(--champagne-dark))' : 'hsl(var(--border))'}`,
                         background: active ? 'hsl(var(--champagne) / 0.14)' : 'transparent',
                       }}>
@@ -368,7 +368,7 @@ function StepTiming({
               <button key={d.id} type="button" onClick={() => setDuration(d.id)} aria-pressed={active}
                       className="min-h-[44px] px-3.5 text-[13px] transition-colors"
                       style={{
-                        borderRadius: 'var(--radius)',
+                        borderRadius: 'var(--radius-sm)',
                         border: `1px solid ${active ? 'hsl(var(--champagne-dark))' : 'hsl(var(--border))'}`,
                         background: active ? 'hsl(var(--champagne) / 0.14)' : 'transparent',
                       }}>

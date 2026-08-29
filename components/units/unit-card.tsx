@@ -95,7 +95,7 @@ export function UnitCard({
             className="aspect-[4/3] w-full"
           />
           <span
-            className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1.5
+            className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-xs px-2.5 py-1.5
                        text-[11px] font-semibold"
             style={{
               background: upcoming ? 'hsl(var(--ink) / 0.82)' : 'hsl(var(--background) / 0.94)',

@@ -100,7 +100,7 @@ export function EnquiryDialog() {
               transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
               className="pointer-events-auto w-full max-w-[520px] max-h-full
                          overflow-y-auto bg-background shadow-2xl"
-              style={{ borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))' }}
+              style={{ borderRadius: 'var(--radius-xl)', border: '1px solid hsl(var(--border))' }}
             >
               <div className="flex items-start justify-between gap-4 px-6 pt-6 pb-5 border-b border-border/70">
                 <div>
@@ -114,7 +114,7 @@ export function EnquiryDialog() {
                 </div>
                 <Dialog.Close asChild>
                   <button
-                    className="shrink-0 w-10 h-10 -mr-2 -mt-1 flex items-center justify-center rounded-sm
+                    className="shrink-0 w-10 h-10 -mr-2 -mt-1 flex items-center justify-center rounded-xs
                                text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
                     aria-label={label('close', locale)}
                   >

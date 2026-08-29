@@ -52,10 +52,21 @@ const config: Config = {
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
       },
+      /*
+       * Mapped straight onto the radius tokens in globals.css.
+       *
+       * The previous scale derived md and sm by subtracting 2px and 4px from
+       * a 2px base, which resolved to negative values — every `rounded-sm` on
+       * the site rendered as a square corner. Naming the tokens directly
+       * removes that whole class of bug.
+       */
       borderRadius: {
-        lg: 'var(--radius)',
-        md: 'calc(var(--radius) - 2px)',
-        sm: 'calc(var(--radius) - 4px)',
+        xs: 'var(--radius-xs)',
+        sm: 'var(--radius-sm)',
+        DEFAULT: 'var(--radius-md)',
+        md: 'var(--radius-md)',
+        lg: 'var(--radius-lg)',
+        xl: 'var(--radius-xl)',
       },
       keyframes: {
         'accordion-down': {
