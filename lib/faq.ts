@@ -22,6 +22,7 @@ const CATEGORY = {
   enquiry: { de: 'Anfrage & Buchung', en: 'Enquiry & booking' },
   apartments: { de: 'Die Apartments', en: 'The apartments' },
   stay: { de: 'Aufenthalt', en: 'Your stay' },
+  bayreuth: { de: 'Bayreuth', en: 'Bayreuth' },
 } as const;
 
 export const faqs: FAQ[] = [
@@ -145,4 +146,45 @@ export const faqs: FAQ[] = [
       en: 'It is currently being renovated and is not yet bookable. No opening date has been set — write to us if you would like to be told as soon as it is ready.',
     },
   },
+  {
+    id: 'why-city-centre',
+    category: CATEGORY.bayreuth,
+    question: {
+      de: 'Warum in der Innenstadt übernachten und nicht am Stadtrand?',
+      en: 'Why stay in the centre rather than on the edge of town?',
+    },
+    answer: {
+      de: 'Bayreuth ist eine überschaubare Stadt. Wer zentral wohnt, erreicht Gastronomie, Geschäfte und Kultur zu Fuß und braucht für den Alltag kein Auto. Gerade an Festspielabenden, die spät enden, ist ein kurzer Heimweg mehr wert als ein günstigeres Zimmer außerhalb.',
+      en: 'Bayreuth is a compact town. Staying centrally means restaurants, shops and culture are reachable on foot, and you need no car for day-to-day life. On festival evenings, which end late, a short way home is worth more than a cheaper room outside town.',
+    },
+  },
+  {
+    id: 'festival-season-booking',
+    category: CATEGORY.bayreuth,
+    question: {
+      de: 'Wie früh sollte ich für die Festspielzeit anfragen?',
+      en: 'How early should I enquire for the festival season?',
+    },
+    answer: {
+      de: 'So früh wie möglich. In den Festspielwochen ist in Bayreuth deutlich weniger frei als sonst, und wir haben nur wenige Wohnungen. Wenn Ihr Zeitraum feststeht, fragen Sie ihn an — wir sagen Ihnen ehrlich, ob wir ihn halten können.',
+      en: 'As early as you can. During the festival weeks there is markedly less available in Bayreuth than at other times, and we have only a few apartments. Once your dates are settled, ask about them — we will tell you honestly whether we can hold them.',
+    },
+  },
+  {
+    id: 'outside-festival',
+    category: CATEGORY.bayreuth,
+    question: {
+      de: 'Lohnt sich Bayreuth außerhalb der Festspiele?',
+      en: 'Is Bayreuth worth visiting outside the festival?',
+    },
+    answer: {
+      de: 'Den Rest des Jahres ist Bayreuth eine ruhige oberfränkische Stadt mit markgräflichem Barock, Hofgarten und Universität. Wer wegen der Architektur, der Museen oder geschäftlich kommt, findet die Stadt dann entspannter — und wir haben mehr Spielraum bei Zeitraum und Aufenthaltsdauer.',
+      en: 'For the rest of the year Bayreuth is a quiet Upper Franconian town of margravial baroque, gardens and a university. If you come for the architecture, the museums or for work, you will find it calmer then — and we have more room to accommodate your dates and length of stay.',
+    },
+  },
 ];
+
+/** The questions belonging to one category, in their authored order. */
+export function faqsByCategory(key: keyof typeof CATEGORY): FAQ[] {
+  return faqs.filter((f) => f.category.de === CATEGORY[key].de);
+}

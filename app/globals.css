@@ -52,7 +52,27 @@
     --on-dark-muted: 38 12% 78%;
     --on-dark-gold: 40 52% 74%;
 
-    --radius: 0.125rem;
+    /* ── Corner radius ──────────────────────────────────────────
+       One scale, four tiers, applied by surface weight rather than
+       by whim. The values stay small on purpose: BoLaGio is
+       architectural, so corners are softened, not rounded off. The
+       jump between tiers is what reads as hierarchy — a chip is not
+       a card, and a card is not an overlay.
+
+       xs  4px   chips, tags, status badges, icon buttons
+       sm  6px   inputs, small segmented choices, compact tiles
+       md 10px   buttons and CTAs, form panels
+       lg 16px   cards, content boxes, image containers
+       xl 24px   large overlays: detail modals, dialogs
+
+       `--radius` is the medium tier under its historic name, so the
+       shadcn primitives in components/ui keep working untouched. */
+    --radius-xs: 0.25rem;
+    --radius-sm: 0.375rem;
+    --radius-md: 0.625rem;
+    --radius-lg: 1rem;
+    --radius-xl: 1.5rem;
+    --radius: var(--radius-md);
   }
 
   * {
@@ -101,7 +121,7 @@
   :focus-visible {
     outline: 2px solid hsl(var(--gold));
     outline-offset: 3px;
-    border-radius: 1px;
+    border-radius: var(--radius-xs);
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -231,7 +251,7 @@
     font-size: 13px;
     font-weight: 600;
     letter-spacing: 0.02em;
-    border-radius: var(--radius);
+    border-radius: var(--radius-md);
     border: 1px solid hsl(var(--foreground));
     transition: background 0.3s ease, transform 0.3s cubic-bezier(0.22,1,0.36,1), box-shadow 0.3s ease;
   }
@@ -256,7 +276,7 @@
     font-weight: 600;
     letter-spacing: 0.02em;
     border: 1px solid hsl(var(--foreground) / 0.24);
-    border-radius: var(--radius);
+    border-radius: var(--radius-md);
     transition: border-color 0.3s ease, background 0.3s ease, transform 0.3s cubic-bezier(0.22,1,0.36,1);
   }
   .cta-secondary:hover {
@@ -306,7 +326,7 @@
   .card-surface {
     background: hsl(var(--card));
     border: 1px solid hsl(var(--border) / 0.85);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
     transition: box-shadow 0.45s cubic-bezier(0.22,1,0.36,1),
                 border-color 0.35s ease,
                 transform 0.45s cubic-bezier(0.22,1,0.36,1);
@@ -338,7 +358,7 @@
     font-weight: 500;
     letter-spacing: 0.01em;
     padding: 0.3rem 0.6rem;
-    border-radius: var(--radius);
+    border-radius: var(--radius-xs);
     background: hsl(var(--ink) / 0.62);
     color: hsl(var(--on-dark));
     backdrop-filter: blur(8px);
@@ -398,7 +418,7 @@
     color: hsl(var(--primary-foreground));
     font-size: 13px;
     font-weight: 600;
-    border-radius: var(--radius);
+    border-radius: var(--radius-md);
     transition: top 0.2s ease;
   }
   .skip-link:focus {

@@ -35,6 +35,7 @@ export function Footer() {
       title: de ? 'BoLaGio' : 'BoLaGio',
       links: [
         { href: '/about', label: de ? 'Über uns' : 'About us' },
+        { href: '/mieten', label: de ? 'Mieten — Wohnraum & Gewerbe' : 'Long-term rental' },
         { href: '/book-direct', label: de ? 'Direkt anfragen' : 'Book direct' },
         { href: '/bayreuth-2026', label: de ? 'Bayreuth & Festspiele' : 'Bayreuth & the Festival' },
         { href: '/journal', label: 'Journal' },

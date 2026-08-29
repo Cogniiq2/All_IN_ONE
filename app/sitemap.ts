@@ -9,6 +9,9 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const pages = [
     { path: '', priority: 1.0, freq: 'weekly' as const },
     { path: '/apartments', priority: 0.95, freq: 'weekly' as const },
+    // The long-term rental area. One indexable page: the units it lists have
+    // no verified specifications yet, so per-unit rental pages would be thin.
+    { path: '/mieten', priority: 0.9, freq: 'monthly' as const },
     { path: '/book-direct', priority: 0.85, freq: 'monthly' as const },
     { path: '/bayreuth-2026', priority: 0.8, freq: 'monthly' as const },
     { path: '/about', priority: 0.7, freq: 'monthly' as const },

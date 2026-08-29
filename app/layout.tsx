@@ -33,12 +33,18 @@ export const metadata: Metadata = {
   description:
     'BoLaGio vermietet familiengeführte Apartments in der Bayreuther Innenstadt. Direkte Anfrage, persönliche Betreuung, keine Plattform dazwischen.',
   keywords: [
+    // Accommodation (short-term) …
     'Apartment Bayreuth',
     'Ferienwohnung Bayreuth',
     'Unterkunft Bayreuth Innenstadt',
     'Bayreuth Festspiele Unterkunft',
     'BoLaGio Bayreuth',
     'Wohnung auf Zeit Bayreuth',
+    // … and conventional rental (long-term). Kept as distinct terms rather
+    // than blended: the two searches have different intent.
+    'Wohnung mieten Bayreuth',
+    'Gewerbefläche mieten Bayreuth',
+    'Ladenfläche Bayreuth',
   ],
   applicationName: brand.name,
   authors: [{ name: brand.name }],

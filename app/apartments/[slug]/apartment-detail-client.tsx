@@ -17,14 +17,15 @@ import {
   getApartment,
   hasVerifiedDetails,
   STATUS_LABEL,
+  supportsLongTerm,
   type Apartment,
 } from '@/lib/content/apartments';
 import { brand, contact } from '@/lib/content/brand';
 import { faqs } from '@/lib/faq';
 import { Gallery } from '@/components/apartments/gallery';
 import { Reveal } from '@/components/ui-kit/reveal';
-import { CtaLink, label } from '@/components/ui-kit/cta';
-import { EnquiryButton } from '@/components/enquiry/enquiry-button';
+import { CtaButton, CtaLink, label } from '@/components/ui-kit/cta';
+import { useUnitFlow } from '@/components/units/unit-flow-context';
 import { StickyEnquiryBar } from '@/components/enquiry/sticky-cta';
 
 /**
@@ -60,10 +61,18 @@ function Block({
 export function ApartmentDetailClient({ slug }: { slug: string }) {
   const { locale } = useI18n();
   const de = locale === 'de';
+  const { openBooking } = useUnitFlow();
   const apartment = getApartment(slug) as Apartment;
   const images = galleryFor(slug);
   const upcoming = apartment.status === 'in-preparation';
   const detailed = hasVerifiedDetails(apartment);
+  /**
+   * Whether this flat may *also* be discussed as a conventional tenancy. Read
+   * from `rentalModes`, never from the slug. It is offered as a quiet
+   * alternative below the availability card, never as a competing CTA: the
+   * primary use of this page is a stay.
+   */
+  const alsoLongTerm = !upcoming && supportsLongTerm(apartment);
 
   const quickFacts = [
     apartment.sizeSqm && { icon: Maximize, text: `${apartment.sizeSqm} m²` },
@@ -109,7 +118,7 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
           <Reveal>
             <div className="flex flex-wrap items-center gap-3 mb-4">
               <span
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-sm"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-xs"
                 style={{
                   background: upcoming ? 'hsl(var(--ink))' : 'hsl(var(--accent))',
                   color: upcoming ? 'hsl(var(--on-dark))' : 'hsl(var(--foreground))',
@@ -164,7 +173,7 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
                       <li
                         key={room.label.de}
                         className="p-4"
-                        style={{ border: '1px solid hsl(var(--border))', borderRadius: 'var(--radius)' }}
+                        style={{ border: '1px solid hsl(var(--border))', borderRadius: 'var(--radius-lg)' }}
                       >
                         <p className="text-[14px] font-semibold">{room.label[locale]}</p>
                         <p className="text-[13px] text-muted-foreground mt-1">{room.beds[locale]}</p>
@@ -204,7 +213,7 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
                     src={apartment.floorPlan}
                     alt={de ? `Grundriss ${apartment.name.de}` : `Floor plan of ${apartment.name.en}`}
                     className="w-full h-auto"
-                    style={{ borderRadius: 'var(--radius)' }}
+                    style={{ borderRadius: 'var(--radius-lg)' }}
                   />
                 </Block>
               )}
@@ -255,7 +264,9 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
                       : 'Layout, furnishings, sleeping arrangements and price are agreed with you individually — depending on when you come, how long you stay and how many of you there are. Send us your dates and you will get everything specific from us.'}
                   </p>
                   <div className="mt-6 flex flex-wrap gap-3">
-                    <EnquiryButton apartmentSlug={apartment.slug} withArrow />
+                    <CtaButton withArrow onClick={() => openBooking(apartment)}>
+                      {de ? 'Buchen' : 'Book'}
+                    </CtaButton>
                     <a href={contact.whatsapp} target="_blank" rel="noopener noreferrer" className="cta-secondary">
                       <MessageCircle className="w-4 h-4" aria-hidden="true" />
                       {label('writeWhatsApp', locale)}
@@ -301,7 +312,7 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
                 style={{
                   background: 'hsl(var(--card))',
                   border: '1px solid hsl(var(--border))',
-                  borderRadius: 'var(--radius)',
+                  borderRadius: 'var(--radius-lg)',
                 }}
               >
                 {upcoming ? (
@@ -313,9 +324,9 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
                         : 'This apartment is being renovated. We cannot let it yet — but we are happy to let you know as soon as it is ready.'}
                     </p>
                     <div className="mt-6 flex flex-col gap-3">
-                      <CtaLink href="/contact" full>
+                      <CtaButton full onClick={() => openBooking(apartment)}>
                         {label('keepMePosted', locale)}
-                      </CtaLink>
+                      </CtaButton>
                       <CtaLink href="/apartments" variant="secondary" full>
                         {de ? 'Buchbare Apartments' : 'Available apartments'}
                       </CtaLink>
@@ -323,11 +334,11 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
                   </>
                 ) : (
                   <>
-                    <h2 className="display-3">{de ? 'Verfügbarkeit anfragen' : 'Request availability'}</h2>
+                    <h2 className="display-3">{de ? 'Buchen' : 'Book'}</h2>
                     <p className="body-copy mt-3 text-[14px]">
                       {de
-                        ? 'Sagen Sie uns Ihren Zeitraum. Wir prüfen persönlich und antworten mit Verfügbarkeit und Preis.'
-                        : 'Tell us your dates. We check personally and reply with availability and price.'}
+                        ? 'Personen, Zeitraum, Kontakt — in vier Schritten. Verfügbarkeit und Preis bestätigen wir persönlich, bevor etwas verbindlich wird.'
+                        : 'Guests, dates, contact — in four steps. We confirm availability and price personally before anything becomes binding.'}
                     </p>
 
                     {/* Price appears only once real rates exist. */}
@@ -339,7 +350,12 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
                     )}
 
                     <div className="mt-6 flex flex-col gap-3">
-                      <EnquiryButton apartmentSlug={apartment.slug} full />
+                      {/* Opens the same booking dialog the modal journey uses,
+                          so this crawlable route is a real entry point and not
+                          a lesser copy of it. */}
+                      <CtaButton full withArrow onClick={() => openBooking(apartment)}>
+                        {de ? 'Buchen' : 'Book'}
+                      </CtaButton>
                       <a
                         href={contact.whatsapp}
                         target="_blank"
@@ -365,6 +381,33 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
                   </p>
                 </div>
               </div>
+
+              {alsoLongTerm && (
+                <div
+                  className="mt-4 p-6 lg:p-7"
+                  style={{
+                    background: 'hsl(var(--secondary) / 0.6)',
+                    border: '1px solid hsl(var(--border))',
+                    borderRadius: 'var(--radius-lg)',
+                  }}
+                >
+                  <p className="eyebrow">{de ? 'Andere Frage' : 'A different question'}</p>
+                  <h2 className="display-3 mt-3 text-[19px]">
+                    {de ? 'Länger als ein Aufenthalt?' : 'Longer than a stay?'}
+                  </h2>
+                  <p className="body-copy mt-3 text-[14px]">
+                    {de
+                      ? 'Diese Wohnung vermieten wir in erster Linie tageweise. Für eine dauerhafte Vermietung über einen Mietvertrag gibt es einen eigenen Weg — keine Buchung, sondern ein Gespräch.'
+                      : 'We let this apartment primarily by the day. A conventional tenancy under a rental agreement follows its own path — not a booking, a conversation.'}
+                  </p>
+                  <div className="mt-5">
+                    <Link href="/mieten" className="link-quiet">
+                      {de ? 'Mieten statt übernachten' : 'Renting instead of staying'}
+                      <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+                    </Link>
+                  </div>
+                </div>
+              )}
             </aside>
           </div>
         </div>

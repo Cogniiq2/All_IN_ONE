@@ -16,10 +16,21 @@ import { brand } from '@/lib/content/brand';
  * Every internal link is a next/link, so nothing triggers a document reload.
  * (The previous navbar used <motion.a href> on desktop and full-reloaded the
  * whole application on every click.)
+ *
+ * ── What the items are, and are not ──────────────────────────────────────
+ * The nav names the two things BoLaGio offers — Apartments (nights) and
+ * Mieten (a tenancy) — followed by context and contact. The filled CTA beside
+ * them is the accommodation action, so the two business models are visually
+ * distinct: a link for renting, a button for staying.
+ *
+ * "Direkt anfragen" was removed from the primary nav: it is a *process*, not a
+ * product category, and it competed with the CTA that performs it. The route
+ * is untouched and still live — it keeps its URL, its metadata and its sitemap
+ * entry, and is reached from the homepage section and the footer.
  */
 const navItems = [
   { href: '/apartments', de: 'Apartments', en: 'Apartments' },
-  { href: '/book-direct', de: 'Direkt anfragen', en: 'Book direct' },
+  { href: '/mieten', de: 'Mieten', en: 'Long-term rental' },
   { href: '/bayreuth-2026', de: 'Bayreuth', en: 'Bayreuth' },
   { href: '/journal', de: 'Journal', en: 'Journal' },
   { href: '/about', de: 'Über uns', en: 'About' },
@@ -212,6 +223,16 @@ export function Navbar() {
 
               <div className="px-6 pt-4 pb-8 border-t border-border">
                 <EnquiryButton full />
+                {/* The rental path, subordinate to the accommodation CTA but
+                    reachable in one tap from the drawer. */}
+                <Link
+                  href="/mieten"
+                  className="mt-4 flex min-h-[44px] items-center justify-center text-[13px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {locale === 'de'
+                    ? 'Dauerhaft mieten — Wohnraum & Gewerbe'
+                    : 'Long-term rental — residential & commercial'}
+                </Link>
               </div>
             </motion.div>
           </motion.div>

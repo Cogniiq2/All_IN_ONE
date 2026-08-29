@@ -83,7 +83,7 @@ export default function BookDirectClient() {
                     style={{
                       background: 'hsl(var(--card))',
                       border: '1px solid hsl(var(--border))',
-                      borderRadius: 'var(--radius)',
+                      borderRadius: 'var(--radius-lg)',
                     }}
                   >
                     {/* The numbering is real: these steps happen in this order. */}

@@ -18,11 +18,26 @@ import { ArrowRight } from 'lucide-react';
 import { type ReactNode } from 'react';
 import type { Locale } from '@/lib/content/apartments';
 
-/** Single source of truth for CTA wording, German-first. */
+/**
+ * Single source of truth for CTA wording, German-first.
+ *
+ * The accommodation and rental journeys have deliberately different verbs.
+ * Accommodation asks about availability; renting asks for a conversation.
+ * Nothing on the rental side may say "buchen", "reservieren" or "Nächte".
+ *
+ * Note on `requestAvailability`: it says *anfragen*, not *prüfen*. There is no
+ * synchronised availability source yet (lib/booking/availability.ts), so
+ * "Verfügbarkeit prüfen" would promise the visitor a live answer the site
+ * cannot give. The verb changes when the PMS is connected, not before.
+ */
 export const ctaLabel = {
   exploreApartments: { de: 'Apartments entdecken', en: 'Explore apartments' },
   requestAvailability: { de: 'Verfügbarkeit anfragen', en: 'Request availability' },
   viewApartment: { de: 'Apartment ansehen', en: 'View apartment' },
+  // ── Long-term rental ──────────────────────────────────────────────────
+  requestConsultation: { de: 'Beratung anfragen', en: 'Request a consultation' },
+  requestViewing: { de: 'Besichtigung anfragen', en: 'Request a viewing' },
+  exploreRentals: { de: 'Mietangebote ansehen', en: 'View properties to rent' },
   writeWhatsApp: { de: 'Per WhatsApp schreiben', en: 'Message on WhatsApp' },
   contactUs: { de: 'Kontakt aufnehmen', en: 'Get in touch' },
   readJournal: { de: 'Zum Journal', en: 'Read the journal' },

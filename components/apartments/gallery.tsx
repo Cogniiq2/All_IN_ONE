@@ -44,7 +44,7 @@ export function Gallery({ images }: { images: TempImage[] }) {
         className="flex aspect-[16/10] flex-col items-center justify-center gap-3 text-center"
         style={{
           background: 'linear-gradient(135deg, hsl(var(--secondary)) 0%, hsl(var(--accent)) 100%)',
-          borderRadius: 'var(--radius)',
+          borderRadius: 'var(--radius-lg)',
         }}
       >
         <ImageOff className="w-6 h-6" style={{ color: 'hsl(var(--champagne-dark))' }} aria-hidden="true" />
@@ -63,7 +63,7 @@ export function Gallery({ images }: { images: TempImage[] }) {
     <figure className="m-0">
       <div
         className="relative aspect-[16/10] overflow-hidden bg-secondary"
-        style={{ borderRadius: 'var(--radius)' }}
+        style={{ borderRadius: 'var(--radius-lg)' }}
       >
         <Image
           key={active.src}
@@ -96,7 +96,7 @@ export function Gallery({ images }: { images: TempImage[] }) {
               <ChevronRight className="w-4 h-4" aria-hidden="true" />
             </button>
             <span
-              className="absolute bottom-3 right-3 px-2.5 py-1.5 text-[11px] font-medium rounded-sm"
+              className="absolute bottom-3 right-3 px-2.5 py-1.5 text-[11px] font-medium rounded-xs"
               style={{ background: 'hsl(var(--ink) / 0.7)', color: 'hsl(var(--on-dark))' }}
               aria-live="polite"
             >
@@ -117,7 +117,7 @@ export function Gallery({ images }: { images: TempImage[] }) {
               onClick={() => setIndex(i)}
               className="relative h-16 w-24 shrink-0 overflow-hidden transition-opacity"
               style={{
-                borderRadius: 'var(--radius)',
+                borderRadius: 'var(--radius-sm)',
                 opacity: i === index ? 1 : 0.55,
                 outline: i === index ? '2px solid hsl(var(--champagne-dark))' : 'none',
                 outlineOffset: '1px',

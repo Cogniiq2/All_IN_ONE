@@ -93,7 +93,7 @@ export default function FaqClient() {
               style={{
                 background: 'hsl(var(--secondary) / 0.6)',
                 border: '1px solid hsl(var(--border))',
-                borderRadius: 'var(--radius)',
+                borderRadius: 'var(--radius-lg)',
               }}
             >
               <h2 className="display-3">

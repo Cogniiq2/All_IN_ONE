@@ -27,7 +27,7 @@ export function ClosingSection() {
             style={{
               background: 'hsl(var(--card))',
               border: '1px solid hsl(var(--border))',
-              borderRadius: 'var(--radius)',
+              borderRadius: 'var(--radius-lg)',
             }}
           >
             <p className="eyebrow">{de ? 'Nächster Schritt' : 'Next step'}</p>

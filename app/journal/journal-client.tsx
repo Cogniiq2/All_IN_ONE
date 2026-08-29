@@ -5,6 +5,7 @@ import { ArrowRight } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
 import { articles } from '@/lib/articles';
 import { Reveal } from '@/components/ui-kit/reveal';
+import { CtaLink, label } from '@/components/ui-kit/cta';
 
 function formatDate(iso: string, locale: 'de' | 'en') {
   return new Date(iso).toLocaleDateString(locale === 'de' ? 'de-DE' : 'en-GB', {
@@ -17,6 +18,11 @@ function formatDate(iso: string, locale: 'de' | 'en') {
 export function JournalClient() {
   const { locale } = useI18n();
   const de = locale === 'de';
+
+  /* The topics actually covered, derived from the articles themselves. At this
+     length a reader is better served by seeing the range at a glance than by
+     the list being split into five one-item sections. */
+  const categories = Array.from(new Set(articles.map((a) => a.category[locale])));
 
   return (
     <>
@@ -34,6 +40,26 @@ export function JournalClient() {
                 : 'What we know about the town, about festival season, and about what makes a stay here worthwhile.'}
             </p>
           </Reveal>
+
+          {categories.length > 0 && (
+            <Reveal delay={0.06}>
+              <ul className="mt-8 flex flex-wrap gap-x-3 gap-y-2">
+                {categories.map((category) => (
+                  <li
+                    key={category}
+                    className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em]"
+                    style={{
+                      borderRadius: 'var(--radius-xs)',
+                      border: '1px solid hsl(var(--border))',
+                      color: 'hsl(var(--champagne-dark))',
+                    }}
+                  >
+                    {category}
+                  </li>
+                ))}
+              </ul>
+            </Reveal>
+          )}
         </div>
       </header>
 
@@ -80,6 +106,38 @@ export function JournalClient() {
               ))}
             </ul>
           )}
+
+          {/* The overview should not end in nothing. Both onward routes are
+              offered once, weighted toward the apartments. */}
+          <Reveal delay={0.12}>
+            <div
+              className="mt-14 flex flex-col gap-6 p-7 lg:flex-row lg:items-center lg:justify-between lg:p-9"
+              style={{
+                background: 'hsl(var(--secondary) / 0.55)',
+                border: '1px solid hsl(var(--border))',
+                borderRadius: 'var(--radius-lg)',
+              }}
+            >
+              <div>
+                <h2 className="display-3">
+                  {de ? 'Vom Lesen zum Aufenthalt' : 'From reading to staying'}
+                </h2>
+                <p className="body-copy mt-3 text-[14px]">
+                  {de
+                    ? 'Unsere Apartments liegen in der Bayreuther Innenstadt — dort, wo das meiste stattfindet, worüber wir hier schreiben.'
+                    : 'Our apartments are in central Bayreuth — where most of what we write about here actually happens.'}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <CtaLink href="/apartments" withArrow>
+                  {label('exploreApartments', locale)}
+                </CtaLink>
+                <CtaLink href="/bayreuth-2026" variant="secondary">
+                  {de ? 'Bayreuth entdecken' : 'Discover Bayreuth'}
+                </CtaLink>
+              </div>
+            </div>
+          </Reveal>
         </div>
       </section>
     </>

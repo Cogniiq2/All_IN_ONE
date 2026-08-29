@@ -64,7 +64,7 @@ export function BayreuthSection() {
           </Reveal>
 
           <Reveal delay={0.1}>
-            <div className="relative aspect-[4/5] overflow-hidden" style={{ borderRadius: 'var(--radius)' }}>
+            <div className="relative aspect-[4/5] overflow-hidden" style={{ borderRadius: 'var(--radius-lg)' }}>
               <Image
                 src={tempImages.loft.src}
                 alt={tempImages.loft.alt[locale]}
