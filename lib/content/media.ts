@@ -76,9 +76,22 @@ export const tempImages = { living, bedroom, loft } as const;
 /** Hero background. NEEDS REPLACEMENT with commissioned photography. */
 export const heroImage = living;
 
-/** Provisional gallery sets, keyed by apartment slug. */
+/**
+ * Provisional gallery sets, keyed by unit slug.
+ *
+ * Opernstraße now draws on the same reference set so its card and detail view
+ * hold their own beside the Schulstraße flats. Every frame still carries the
+ * "Referenzbild" marker, so nothing claims to show that specific apartment —
+ * and its `status` keeps it out of every bookable path regardless.
+ *
+ * The two commercial units are deliberately ABSENT. The only photographs in
+ * this repository are residential interiors; putting one on a shop unit would
+ * be a false depiction, not a placeholder. Those cards render the composed
+ * architectural panel in `components/units/unit-visual.tsx` instead, until real
+ * photography of the units exists.
+ */
 export const tempGalleries: Record<string, TempImage[]> = {
   'schulstrasse-i': [living, bedroom, loft],
   'schulstrasse-ii': [loft, living, bedroom],
-  'opernstrasse': [],
+  'opernstrasse': [bedroom, loft, living],
 };

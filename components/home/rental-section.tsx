@@ -23,7 +23,7 @@
 import Link from 'next/link';
 import { ArrowRight, Building2, Home } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
-import { lettableUnits } from '@/lib/content/apartments';
+import { apartments, commercialUnits, supportsLongTerm } from '@/lib/content/apartments';
 import { Section, SectionHeader } from '@/components/ui-kit/section';
 import { Reveal } from '@/components/ui-kit/reveal';
 import { label } from '@/components/ui-kit/cta';
@@ -32,8 +32,11 @@ export function RentalSection() {
   const { locale } = useI18n();
   const de = locale === 'de';
 
-  const residential = lettableUnits('long-term-residential');
-  const commercial = lettableUnits('long-term-commercial');
+  // Counts the whole rental collection, not only what is ready today — the
+  // /mieten cards carry each unit's own status, and the meta lines below never
+  // present the residential side as available stock.
+  const residential = apartments.filter(supportsLongTerm);
+  const commercial = commercialUnits.filter(supportsLongTerm);
 
   // Nothing to let today means no section at all — better an absent path than
   // an empty one.
@@ -54,14 +57,9 @@ export function RentalSection() {
       body: de
         ? 'Im Erdgeschoss unserer Häuser liegen Flächen mit Schaufenstern zur Straße — ausschließlich zur Miete über einen Gewerbemietvertrag, nicht als Unterkunft.'
         : 'The ground floors of our buildings hold units with display windows onto the street — let exclusively under a commercial rental agreement, never as accommodation.',
-      meta:
-        commercial.length === 1
-          ? de
-            ? '1 Objekt zu vermieten'
-            : '1 property available to let'
-          : de
-          ? `${commercial.length} Objekte zu vermieten`
-          : `${commercial.length} properties available to let`,
+      meta: de
+        ? `${commercial.length} Flächen · Details auf Anfrage`
+        : `${commercial.length} units · details on request`,
     },
   ].filter(Boolean) as {
     icon: typeof Home;

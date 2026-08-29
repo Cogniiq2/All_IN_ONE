@@ -24,8 +24,8 @@ import { brand, contact } from '@/lib/content/brand';
 import { faqs } from '@/lib/faq';
 import { Gallery } from '@/components/apartments/gallery';
 import { Reveal } from '@/components/ui-kit/reveal';
-import { CtaLink, label } from '@/components/ui-kit/cta';
-import { EnquiryButton } from '@/components/enquiry/enquiry-button';
+import { CtaButton, CtaLink, label } from '@/components/ui-kit/cta';
+import { useUnitFlow } from '@/components/units/unit-flow-context';
 import { StickyEnquiryBar } from '@/components/enquiry/sticky-cta';
 
 /**
@@ -61,6 +61,7 @@ function Block({
 export function ApartmentDetailClient({ slug }: { slug: string }) {
   const { locale } = useI18n();
   const de = locale === 'de';
+  const { openBooking } = useUnitFlow();
   const apartment = getApartment(slug) as Apartment;
   const images = galleryFor(slug);
   const upcoming = apartment.status === 'in-preparation';
@@ -263,7 +264,9 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
                       : 'Layout, furnishings, sleeping arrangements and price are agreed with you individually — depending on when you come, how long you stay and how many of you there are. Send us your dates and you will get everything specific from us.'}
                   </p>
                   <div className="mt-6 flex flex-wrap gap-3">
-                    <EnquiryButton apartmentSlug={apartment.slug} withArrow />
+                    <CtaButton withArrow onClick={() => openBooking(apartment)}>
+                      {de ? 'Buchen' : 'Book'}
+                    </CtaButton>
                     <a href={contact.whatsapp} target="_blank" rel="noopener noreferrer" className="cta-secondary">
                       <MessageCircle className="w-4 h-4" aria-hidden="true" />
                       {label('writeWhatsApp', locale)}
@@ -321,9 +324,9 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
                         : 'This apartment is being renovated. We cannot let it yet — but we are happy to let you know as soon as it is ready.'}
                     </p>
                     <div className="mt-6 flex flex-col gap-3">
-                      <CtaLink href="/contact" full>
+                      <CtaButton full onClick={() => openBooking(apartment)}>
                         {label('keepMePosted', locale)}
-                      </CtaLink>
+                      </CtaButton>
                       <CtaLink href="/apartments" variant="secondary" full>
                         {de ? 'Buchbare Apartments' : 'Available apartments'}
                       </CtaLink>
@@ -331,11 +334,11 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
                   </>
                 ) : (
                   <>
-                    <h2 className="display-3">{de ? 'Verfügbarkeit anfragen' : 'Request availability'}</h2>
+                    <h2 className="display-3">{de ? 'Buchen' : 'Book'}</h2>
                     <p className="body-copy mt-3 text-[14px]">
                       {de
-                        ? 'Sagen Sie uns Ihren Zeitraum. Wir prüfen persönlich und antworten mit Verfügbarkeit und Preis.'
-                        : 'Tell us your dates. We check personally and reply with availability and price.'}
+                        ? 'Personen, Zeitraum, Kontakt — in vier Schritten. Verfügbarkeit und Preis bestätigen wir persönlich, bevor etwas verbindlich wird.'
+                        : 'Guests, dates, contact — in four steps. We confirm availability and price personally before anything becomes binding.'}
                     </p>
 
                     {/* Price appears only once real rates exist. */}
@@ -347,7 +350,12 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
                     )}
 
                     <div className="mt-6 flex flex-col gap-3">
-                      <EnquiryButton apartmentSlug={apartment.slug} full />
+                      {/* Opens the same booking dialog the modal journey uses,
+                          so this crawlable route is a real entry point and not
+                          a lesser copy of it. */}
+                      <CtaButton full withArrow onClick={() => openBooking(apartment)}>
+                        {de ? 'Buchen' : 'Book'}
+                      </CtaButton>
                       <a
                         href={contact.whatsapp}
                         target="_blank"

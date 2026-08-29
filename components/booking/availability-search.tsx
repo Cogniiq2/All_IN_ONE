@@ -7,12 +7,23 @@
  * the front door of the booking journey and is built to stay in place when the
  * PMS arrives — the fields are exactly what the booking service will need.
  *
- * ── What it does today ───────────────────────────────────────────────────
+ * ── Where it now leads ───────────────────────────────────────────────────
+ * It no longer opens an enquiry. It starts the booking journey: submitting
+ * takes the visitor to the apartment selection with their choices attached,
+ *
+ *     /apartments?arrival=…&departure=…&guests=…
+ *
+ * and those values ride along through the detail view into the booking dialog,
+ * where they arrive already filled in. The values travel twice over — in the
+ * URL so a reload or a shared link keeps them, and in StayContext so an in-app
+ * navigation is instant (lib/booking/stay-context.tsx).
+ *
+ * ── What it may not claim ────────────────────────────────────────────────
  * `lib/booking/availability.ts` reports that no availability source is
- * connected, so the panel does not claim to check anything. Submitting carries
- * the dates and guest count straight into the short-term enquiry, pre-filled,
- * so nobody types them twice. When `hasLiveAvailability()` becomes true, this
- * component gains a result step and the copy below stops being needed.
+ * connected, so the panel does not claim to check anything and the button says
+ * "anfragen", not "prüfen". When `hasLiveAvailability()` becomes true the
+ * submit can filter the selection by a real answer, and the note below stops
+ * being needed.
  *
  * It must never be used for long-term rental. A tenancy has no nightly
  * availability, and offering dates for one would misrepresent the product —
@@ -20,10 +31,11 @@
  */
 
 import { useEffect, useId, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { CalendarDays } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
-import { useEnquiry } from '@/components/enquiry/enquiry-context';
-import { CtaButton, label } from '@/components/ui-kit/cta';
+import { CtaButton } from '@/components/ui-kit/cta';
+import { useStay } from '@/lib/booking/stay-context';
 import {
   hasLiveAvailability,
   nextDayIso,
@@ -40,7 +52,8 @@ export function AvailabilitySearch({
   className?: string;
 }) {
   const { locale } = useI18n();
-  const { openEnquiry } = useEnquiry();
+  const router = useRouter();
+  const { setStay, toQueryString } = useStay();
   const de = locale === 'de';
   const id = useId();
 
@@ -60,12 +73,15 @@ export function AvailabilitySearch({
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    openEnquiry({
-      kind: 'short-term',
+    const next = {
       arrival: toIsoDate(arrival),
       departure: toIsoDate(departure),
       guests: Number(guests) || undefined,
-    });
+    };
+    // Context first so the destination renders with the values already present,
+    // then the URL so a reload or a shared link carries them too.
+    setStay(next);
+    router.push(`/apartments${toQueryString(next)}`);
   };
 
   const fieldClass =
@@ -143,8 +159,8 @@ export function AvailabilitySearch({
           />
         </div>
 
-        <CtaButton type="submit" full className="lg:!w-auto">
-          {label('requestAvailability', locale)}
+        <CtaButton type="submit" full withArrow className="lg:!w-auto">
+          {de ? 'Apartments ansehen' : 'View apartments'}
         </CtaButton>
       </div>
 
@@ -156,8 +172,8 @@ export function AvailabilitySearch({
       {!hasLiveAvailability() && (
         <p className="mt-4 text-[12px] leading-relaxed text-muted-foreground">
           {de
-            ? 'Wir prüfen Ihren Zeitraum persönlich und melden uns mit Verfügbarkeit und Preis — meist am selben Tag. Eine Anfrage ist unverbindlich.'
-            : 'We check your dates personally and reply with availability and price — usually the same day. An enquiry commits you to nothing.'}
+            ? 'Wir zeigen Ihnen im nächsten Schritt unsere Apartments — Ihre Angaben nehmen wir mit. Verfügbarkeit und Preis bestätigen wir persönlich.'
+            : 'We show you our apartments in the next step, with your details carried over. Availability and price are confirmed by us personally.'}
         </p>
       )}
     </form>

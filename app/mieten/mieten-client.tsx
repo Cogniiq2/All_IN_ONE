@@ -22,12 +22,15 @@ import Link from 'next/link';
 import { ArrowRight, Building2, Home, MessageCircle, Phone } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
 import {
-  lettableUnits,
-  upcomingLettableUnits,
+  apartments,
+  commercialUnits,
+  supportsLongTerm,
+  type RentalUnit,
 } from '@/lib/content/apartments';
 import { brand, contact } from '@/lib/content/brand';
 import { Reveal } from '@/components/ui-kit/reveal';
-import { RentalUnitCard } from '@/components/rental/rental-unit-card';
+import { UnitCard, UNIT_GRID } from '@/components/units/unit-card';
+import { useUnitFlow } from '@/components/units/unit-flow-context';
 import { EnquiryButton } from '@/components/enquiry/enquiry-button';
 import { label } from '@/components/ui-kit/cta';
 
@@ -51,18 +54,21 @@ const steps = [
   },
 ];
 
-/** One card should not sit in half a two-column grid with a hole beside it. */
-function gridFor(count: number): string {
-  return count > 1 ? 'grid gap-6 lg:grid-cols-2 lg:gap-8' : 'grid gap-6 max-w-[720px]';
-}
-
 export function MietenClient() {
   const { locale } = useI18n();
   const de = locale === 'de';
+  const { openDetail } = useUnitFlow();
 
-  const residential = lettableUnits('long-term-residential');
-  const commercial = lettableUnits('long-term-commercial');
-  const upcoming = upcomingLettableUnits();
+  /*
+    All five units, grouped by what a tenancy over them would actually be — a
+    Wohnraummietvertrag or a Gewerbemietvertrag. Units in preparation stay in
+    their group rather than being exiled to a separate block: the card's badge
+    and its detail view already say they are not available, and grouping by
+    readiness would scatter the two buildings.
+  */
+  const residential: RentalUnit[] = apartments.filter(supportsLongTerm);
+  const commercial: RentalUnit[] = commercialUnits.filter(supportsLongTerm);
+  const openRent = (unit: RentalUnit) => openDetail(unit, 'rent');
 
   return (
     <>
@@ -78,8 +84,8 @@ export function MietenClient() {
             </h1>
             <p className="lede mt-6">
               {de
-                ? `Neben unseren Apartments für Aufenthalte auf Zeit vermieten wir ausgewählte Objekte in der Bayreuther Innenstadt auch dauerhaft — über einen regulären Mietvertrag, an Privatpersonen wie an Unternehmen. Das ist ein anderer Weg als eine Buchung: Sie fragen an, wir sprechen miteinander, Sie sehen sich die Räume an.`
-                : `Alongside our apartments for short stays, we also let selected properties in central Bayreuth on a long-term basis — under a conventional rental agreement, to private tenants and to businesses. This is a different path from a booking: you enquire, we talk, you view the rooms.`}
+                ? `Fünf Objekte in zwei Häusern in der Bayreuther Innenstadt: drei Wohnungen und zwei Gewerbeflächen im Erdgeschoss. Vermietet wird hier über einen regulären Mietvertrag, an Privatpersonen wie an Unternehmen. Das ist ein anderer Weg als eine Buchung: Sie fragen an, wir sprechen miteinander, Sie sehen sich die Räume an.`
+                : `Five properties in two buildings in central Bayreuth: three apartments and two ground-floor commercial units. What is let here is let under a conventional rental agreement, to private tenants and to businesses. This is a different path from a booking: you enquire, we talk, you view the rooms.`}
             </p>
             <div className="mt-8 flex flex-col sm:flex-row gap-3">
               <EnquiryButton kind="long-term" withArrow />
@@ -109,15 +115,15 @@ export function MietenClient() {
               </h2>
               <p className="lede mt-5">
                 {de
-                  ? 'Unsere Wohnungen in der Schulstraße sind Unterkünfte für Aufenthalte auf Zeit — sie stehen nicht als freie Mietwohnungen zur Verfügung. Eine dauerhafte Vermietung über einen Mietvertrag prüfen wir im Einzelfall auf Anfrage. Ob sie für Ihren Zeitraum möglich ist, sagen wir Ihnen persönlich.'
-                  : 'Our apartments on Schulstraße are accommodation for stays — they are not standing vacant as flats on the rental market. A conventional tenancy under a rental agreement is something we consider individually on request. Whether it is possible for your period is something we tell you personally.'}
+                  ? 'Unsere drei Wohnungen sind Unterkünfte für Aufenthalte auf Zeit — sie stehen nicht als freie Mietwohnungen zur Verfügung. Eine dauerhafte Vermietung über einen Wohnraummietvertrag prüfen wir im Einzelfall auf Anfrage. Ob sie für Ihren Zeitraum möglich ist, sagen wir Ihnen persönlich.'
+                  : 'Our three apartments are accommodation for stays — they are not standing vacant as flats on the rental market. A tenancy under a residential rental agreement is something we consider individually on request. Whether it is possible for your period is something we tell you personally.'}
               </p>
             </Reveal>
 
-            <div className={`mt-12 ${gridFor(residential.length)}`}>
+            <div className={`mt-12 ${UNIT_GRID}`}>
               {residential.map((unit, i) => (
-                <Reveal key={unit.slug} delay={i * 0.08}>
-                  <RentalUnitCard unit={unit} />
+                <Reveal key={unit.slug} delay={i * 0.08} className="h-full">
+                  <UnitCard unit={unit} mode="rent" priority={i === 0} onOpen={openRent} />
                 </Reveal>
               ))}
             </div>
@@ -139,40 +145,15 @@ export function MietenClient() {
               </h2>
               <p className="lede mt-5">
                 {de
-                  ? 'Im Erdgeschoss unserer Häuser liegen Flächen mit Schaufenstern zur Straße. Sie werden ausschließlich über einen Gewerbemietvertrag vermietet und stehen nicht als Unterkunft zur Verfügung.'
-                  : 'The ground floors of our buildings hold units with display windows onto the street. They are let exclusively under a commercial rental agreement and are not available as accommodation.'}
+                  ? 'In beiden Häusern liegt im Erdgeschoss eine Fläche mit Schaufenstern zur Straße. Sie werden ausschließlich über einen Gewerbemietvertrag vermietet und stehen nicht als Unterkunft zur Verfügung. Welche Nutzung jeweils zulässig ist, klären wir vor einem Vertrag gemeinsam.'
+                  : 'Both buildings have a ground-floor unit with display windows onto the street. They are let exclusively under a commercial rental agreement and are not available as accommodation. Which use is permissible in each case is established together before any contract.'}
               </p>
             </Reveal>
 
-            <div className={`mt-12 ${gridFor(commercial.length)}`}>
+            <div className={`mt-12 ${UNIT_GRID}`}>
               {commercial.map((unit, i) => (
-                <Reveal key={unit.slug} delay={i * 0.08}>
-                  <RentalUnitCard unit={unit} />
-                </Reveal>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* ── In preparation ───────────────────────────────────────────── */}
-      {upcoming.length > 0 && (
-        <section className="section-pad-sm" aria-labelledby="vorbereitung">
-          <div className="container-luxury">
-            <Reveal>
-              <h2 id="vorbereitung" className="display-3 mb-6">
-                {de ? 'In Vorbereitung' : 'In preparation'}
-              </h2>
-              <p className="body-copy mb-8">
-                {de
-                  ? 'Diese Objekte gehören uns, stehen aber noch nicht zur Vermietung. Wir führen sie hier auf, damit Sie wissen, was kommt — nicht, damit Sie sie schon anfragen.'
-                  : 'These properties are ours, but they are not yet available to let. They are listed here so you know what is coming — not so they can be enquired about yet.'}
-              </p>
-            </Reveal>
-            <div className={gridFor(upcoming.length)}>
-              {upcoming.map((unit, i) => (
-                <Reveal key={unit.slug} delay={i * 0.06}>
-                  <RentalUnitCard unit={unit} />
+                <Reveal key={unit.slug} delay={i * 0.08} className="h-full">
+                  <UnitCard unit={unit} mode="rent" onOpen={openRent} />
                 </Reveal>
               ))}
             </div>

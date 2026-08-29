@@ -101,12 +101,30 @@ export interface BaseUnit {
   positioning: Localized;
   /** Two to three sentences. Must not assert unverified specifics. */
   intro: Localized;
-  /** NEEDS CONFIRMATION — floor area in m². */
+  /**
+   * Approximate floor area in m². ALWAYS rendered with a "ca." / "approx."
+   * qualifier via `formatArea()` — the owners gave a round working figure, not
+   * a surveyed measurement, and a bare number in a property context reads as
+   * one. NEEDS CONFIRMATION: the measured Wohn-/Nutzfläche per unit.
+   */
   sizeSqm?: number;
   /** NEEDS CONFIRMATION — floor, and whether there is a lift. */
   floor?: Localized;
   /** Expected availability, for units in preparation. */
   expectedAvailability?: Localized;
+  /**
+   * Two or three paragraphs for the large detail modal. Positioning and intro
+   * carry the card; this carries the detail view. Must stay free of unverified
+   * specifics.
+   */
+  detail?: Localized[];
+  /**
+   * What the unit could suit under a LONG-TERM agreement, worded as an opening
+   * for conversation rather than a permitted-use statement. Zoning, change-of-use
+   * and any Nutzungsänderung are not established in this repository, so nothing
+   * here may read as a guarantee that a given use is allowed.
+   */
+  longTermUse?: Localized[];
 }
 
 export interface Apartment extends BaseUnit {
@@ -176,9 +194,36 @@ export const apartments: Apartment[] = [
       de: 'Ein Apartment in der Schulstraße, mitten in der Bayreuther Innenstadt. Es gehört unserer Familie, wird von uns selbst betreut und für jeden Aufenthalt persönlich vorbereitet. Grundriss, Ausstattung und Preise stimmen wir direkt mit Ihnen ab.',
       en: 'An apartment on Schulstraße, in the centre of Bayreuth. It belongs to our family, we look after it ourselves, and we prepare it personally for every stay. Layout, furnishings and rates are agreed with you directly.',
     },
-    // NEEDS CONFIRMATION: sizeSqm, rooms, maxGuests, bathrooms, floor,
-    // bedrooms, amenityGroups, floorPlan, goodFit, notSuitable,
-    // priceFromEur, minNights.
+    // Working figure given by the owners for every unit in both buildings.
+    // Rendered only through formatArea() as "ca. 120 m²".
+    // NEEDS CONFIRMATION: the measured Wohnfläche for this specific flat.
+    sizeSqm: 120,
+    detail: [
+      {
+        de: 'Das Apartment liegt in der Schulstraße, mitten in der Bayreuther Innenstadt. Es gehört unserer Familie, wird von uns selbst betreut und vor jedem Aufenthalt persönlich vorbereitet — kein Schlüsselkasten, keine Verwaltung dazwischen.',
+        en: 'The apartment is on Schulstraße, in the middle of central Bayreuth. It belongs to our family, we look after it ourselves, and we prepare it personally before every stay — no key box, no management company in between.',
+      },
+      {
+        de: 'Wer mit mehreren Personen anreist, kann beide Wohnungen im selben Haus zusammen anfragen. Für Familien und Festspielgruppen ist das häufig die bessere Lösung als zwei Hotelzimmer.',
+        en: 'If you are travelling as a larger group, both apartments in the same building can be requested together. For families and festival parties that is often better than two hotel rooms.',
+      },
+      {
+        de: 'Grundriss, Ausstattung und Preis stimmen wir direkt mit Ihnen ab — abhängig davon, wann Sie kommen, wie lange Sie bleiben und mit wie vielen Personen Sie anreisen.',
+        en: 'Layout, furnishings and price are agreed with you directly — depending on when you come, how long you stay and how many of you there are.',
+      },
+    ],
+    longTermUse: [
+      {
+        de: 'Längere Aufenthalte für Projekte, Entsendungen oder Übergangszeiten',
+        en: 'Longer stays for projects, secondments or transitional periods',
+      },
+      {
+        de: 'Dauerhafte Anmietung durch Privatpersonen oder Unternehmen — im Einzelfall',
+        en: 'A permanent tenancy for a private individual or a company — case by case',
+      },
+    ],
+    // NEEDS CONFIRMATION: rooms, maxGuests, bathrooms, floor, bedrooms,
+    // amenityGroups, floorPlan, goodFit, notSuitable, priceFromEur, minNights.
   },
   {
     slug: 'schulstrasse-ii',
@@ -197,6 +242,31 @@ export const apartments: Apartment[] = [
       de: 'Das zweite unserer beiden Apartments in der Schulstraße. Wer mit mehreren Personen anreist, kann beide Wohnungen im selben Haus zusammen anfragen — für Familien und Festspielgruppen ist das oft die bessere Lösung als zwei Hotelzimmer.',
       en: 'The second of our two apartments on Schulstraße. If you are travelling as a larger group, both apartments in the same building can be enquired about together — for families and festival parties that is often better than two hotel rooms.',
     },
+    sizeSqm: 120,
+    detail: [
+      {
+        de: 'Das zweite unserer beiden Apartments in der Schulstraße, im selben Haus wie Apartment I und ebenso von uns selbst betreut.',
+        en: 'The second of our two apartments on Schulstraße, in the same building as Apartment I and looked after by us in the same way.',
+      },
+      {
+        de: 'Beide Wohnungen lassen sich zusammen anfragen. Gerade während der Festspiele reist selten jemand allein an — zwei Wohnungen in einem Haus halten eine Gruppe zusammen, ohne dass alle im selben Raum schlafen.',
+        en: 'Both apartments can be requested together. During the festival in particular, few people travel alone — two apartments in one building keep a group together without everyone sleeping in the same room.',
+      },
+      {
+        de: 'Ausstattung und Preis besprechen wir persönlich mit Ihnen, sobald wir Ihren Zeitraum kennen.',
+        en: 'Furnishings and price are discussed with you personally once we know your dates.',
+      },
+    ],
+    longTermUse: [
+      {
+        de: 'Längere Aufenthalte für Projekte, Entsendungen oder Übergangszeiten',
+        en: 'Longer stays for projects, secondments or transitional periods',
+      },
+      {
+        de: 'Dauerhafte Anmietung durch Privatpersonen oder Unternehmen — im Einzelfall',
+        en: 'A permanent tenancy for a private individual or a company — case by case',
+      },
+    ],
     // NEEDS CONFIRMATION: same field list as Schulstraße I.
   },
   {
@@ -218,6 +288,27 @@ export const apartments: Apartment[] = [
       de: 'Unser drittes Apartment in der Opernstraße wird derzeit renoviert. Es ist noch nicht buchbar. Wenn Sie möchten, melden wir uns, sobald ein Termin für die Eröffnung feststeht.',
       en: 'Our third apartment on Opernstraße is currently being renovated. It is not yet bookable. If you would like, we will get in touch as soon as an opening date is set.',
     },
+    sizeSqm: 120,
+    detail: [
+      {
+        de: 'Unser drittes Apartment liegt in der Opernstraße. Das Haus wird derzeit renoviert, und die Wohnung ist noch nicht vermietbar — weder tageweise noch dauerhaft.',
+        en: 'Our third apartment is on Opernstraße. The building is currently being renovated and the apartment is not yet lettable — neither by the day nor on a contract.',
+      },
+      {
+        de: 'Wir zeigen sie hier, weil sie zu BoLaGio gehört und weil Gäste wissen sollen, was kommt. Was Sie sehen, sind Referenzbilder; Aufnahmen der fertigen Räume folgen, sobald es sie gibt.',
+        en: 'We show it here because it belongs to BoLaGio and because guests should know what is coming. The images you see are reference images; photographs of the finished rooms will follow once they exist.',
+      },
+      {
+        de: 'Sagen Sie uns Bescheid, wenn wir uns melden sollen, sobald ein Eröffnungstermin feststeht.',
+        en: 'Let us know if you would like us to be in touch as soon as an opening date is set.',
+      },
+    ],
+    longTermUse: [
+      {
+        de: 'Nach Abschluss der Renovierung grundsätzlich auch für eine dauerhafte Vermietung denkbar',
+        en: 'Once the renovation is finished, a permanent tenancy is conceivable in principle',
+      },
+    ],
     // NEEDS CONFIRMATION: expected completion date. Left undefined so the UI
     // says "in preparation" rather than promising a month that may slip.
   },
@@ -259,10 +350,43 @@ export const commercialUnits: CommercialUnit[] = [
       { de: 'Schaufenster zur Straße', en: 'Display windows onto the street' },
       { de: 'Erdgeschoss, ebenerdiger Zugang', en: 'Ground floor, street-level entrance' },
     ],
+    detail: [
+      {
+        de: 'Im Erdgeschoss unseres Hauses in der Schulstraße liegt eine Fläche von rund 120 m² mit Schaufenstern zur Straße. Sie wird ausschließlich über einen regulären Mietvertrag vermietet und steht nicht als Unterkunft zur Verfügung.',
+        en: 'On the ground floor of our Schulstraße building there is a unit of roughly 120 m² with display windows onto the street. It is let exclusively under a conventional rental agreement and is not available as accommodation.',
+      },
+      {
+        de: 'Die Lage in der Innenstadt bringt Laufkundschaft mit sich, besonders in der Festspielzeit. Was sich in der Fläche umsetzen lässt, hängt von Ihrem Vorhaben ab — und davon, was baurechtlich zulässig ist.',
+        en: 'The city-centre location brings passing trade, particularly during the festival season. What can be done with the space depends on your plans — and on what is permissible under building regulations.',
+      },
+      {
+        de: 'Grundriss, Zustand, Konditionen und der früheste mögliche Mietbeginn gehören in ein persönliches Gespräch. Wir nennen sie, sobald wir wissen, worum es geht.',
+        en: 'Layout, condition, terms and the earliest possible start belong in a personal conversation. We name them once we know what is being asked.',
+      },
+    ],
+    longTermUse: [
+      // Deliberately phrased as directions for a conversation, NOT as permitted
+      // uses. Zoning, any required Nutzungsänderung and the unit's previous use
+      // are not established anywhere in this repository.
+      {
+        de: 'Ladenfläche oder Showroom mit Schaufensterlage',
+        en: 'Retail or showroom space with a shopfront position',
+      },
+      {
+        de: 'Büro-, Praxis- oder Studionutzung',
+        en: 'Office, practice or studio use',
+      },
+      {
+        de: 'Andere Nutzungen nach Absprache — welche Nutzungsart zulässig ist, klären wir vor Vertragsabschluss gemeinsam.',
+        en: 'Other uses by arrangement — which type of use is permissible is something we establish together before any contract.',
+      },
+    ],
     // NEEDS CONFIRMATION: Kaltmiete, Nebenkosten, Kaution, exakte Fläche,
-    // Grundriss, Vornutzung, zulässige Nutzungsarten, frühester Mietbeginn,
-    // Stellplätze, Barrierefreiheit, Energieausweis (§ 87 GEG: die Kennwerte
-    // sind in einer Immobilienanzeige pflichtig, sobald einer vorliegt).
+    // Grundriss, Vornutzung, baurechtlich zulässige Nutzungsarten, frühester
+    // Mietbeginn, Stellplätze, Barrierefreiheit, Energieausweis (§ 87 GEG: die
+    // Kennwerte sind in einer Immobilienanzeige pflichtig, sobald einer
+    // vorliegt). Die Nutzungsvorschläge oben sind bewusst als Gesprächsangebot
+    // formuliert und NICHT als Zusage einer zulässigen Nutzung.
   },
   {
     slug: 'opernstrasse-gewerbeflaeche',
@@ -282,8 +406,28 @@ export const commercialUnits: CommercialUnit[] = [
       de: 'Im Erdgeschoss unseres Hauses in der Opernstraße ist eine weitere Gewerbefläche vorgesehen. Das Gebäude wird derzeit hergerichtet; die Fläche steht noch nicht zur Vermietung. Wenn Sie möchten, melden wir uns, sobald sie verfügbar ist.',
       en: 'A further commercial unit is planned for the ground floor of our Opernstraße building. The building is currently being prepared and the unit is not yet available to let. If you would like, we will be in touch once it is.',
     },
-    // NEEDS CONFIRMATION: everything — size, layout, intended use, and when the
-    // unit will actually be available. Nothing beyond "it is planned" is stated.
+    sizeSqm: 120,
+    detail: [
+      {
+        de: 'Im Erdgeschoss unseres Hauses in der Opernstraße ist eine weitere Gewerbefläche vorgesehen, ebenfalls mit Blick zur Straße. Das Gebäude wird gerade hergerichtet.',
+        en: 'A further commercial unit is planned for the ground floor of our Opernstraße building, likewise facing the street. The building is currently being prepared.',
+      },
+      {
+        de: 'Die Fläche steht noch nicht zur Vermietung, und wir nennen dafür bewusst noch keine Konditionen. Wenn Sie möchten, melden wir uns, sobald sie tatsächlich verfügbar ist.',
+        en: 'The unit is not yet available to let, and we deliberately quote no terms for it yet. If you would like, we will be in touch as soon as it genuinely becomes available.',
+      },
+    ],
+    longTermUse: [
+      {
+        de: 'Nach Fertigstellung als Gewerbefläche vorgesehen — Zuschnitt und zulässige Nutzung stehen noch nicht fest.',
+        en: 'Intended as commercial space once complete — layout and permissible use are not yet settled.',
+      },
+    ],
+    // NEEDS CONFIRMATION: everything of substance — measured area, layout,
+    // permissible use, condition, terms, and when the unit will actually be
+    // available. The 120 m² is the owners' working figure for units in both
+    // buildings and is shown only as "ca.". Nothing else beyond "it is planned"
+    // is stated anywhere in the UI.
   },
 ];
 
@@ -324,6 +468,17 @@ export function lettingStatusOf(unit: RentalUnit): Localized {
   if (unit.status === 'in-preparation') return LETTING_STATUS_LABEL['in-preparation'];
   if (supportsShortTerm(unit)) return { de: 'Auf Anfrage', en: 'On request' };
   return LETTING_STATUS_LABEL.available;
+}
+
+/**
+ * The only way a floor area reaches the UI.
+ *
+ * Every surface goes through this, so no component can print a bare "120 m²"
+ * that would read as a surveyed figure in a property listing.
+ */
+export function formatArea(sizeSqm: number | undefined, locale: Locale): string | undefined {
+  if (!sizeSqm) return undefined;
+  return locale === 'de' ? `ca. ${sizeSqm} m²` : `approx. ${sizeSqm} m²`;
 }
 
 /** Short public label for a unit's long-term mode. */
