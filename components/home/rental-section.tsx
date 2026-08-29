@@ -12,8 +12,12 @@
  * a guest looking for a few nights never has to decide between two products.
  * A visitor who wants to rent finds it in the navigation instead.
  *
- * Both columns are counted from the data, so a new unit or building appears
- * here without touching this file.
+ * Both columns are driven by the data, so a new unit or building appears here
+ * without touching this file.
+ *
+ * The residential column deliberately does NOT print a unit count. Those flats
+ * are let by the night; counting them as rental stock would advertise vacancies
+ * that do not exist. Only genuinely on-the-market units are counted.
  */
 
 import Link from 'next/link';
@@ -40,9 +44,9 @@ export function RentalSection() {
       icon: Home,
       title: de ? 'Wohnraum' : 'Residential',
       body: de
-        ? 'Ausgewählte Wohnungen können statt tageweise auch dauerhaft über einen Wohnraummietvertrag vermietet werden. Ob das für einen bestimmten Zeitraum möglich ist, klären wir persönlich.'
-        : 'Selected apartments can be let on a residential rental agreement instead of by the day. Whether that works for a given period is something we settle personally.',
-      count: residential.length,
+        ? 'Unsere Wohnungen sind Unterkünfte auf Zeit, keine freien Mietwohnungen. Eine dauerhafte Vermietung über einen Wohnraummietvertrag prüfen wir im Einzelfall auf Anfrage.'
+        : 'Our apartments are accommodation for stays, not flats standing vacant on the rental market. A residential tenancy is something we consider individually on request.',
+      meta: de ? 'Im Einzelfall auf Anfrage' : 'Considered individually on request',
     },
     commercial.length > 0 && {
       icon: Building2,
@@ -50,13 +54,20 @@ export function RentalSection() {
       body: de
         ? 'Im Erdgeschoss unserer Häuser liegen Flächen mit Schaufenstern zur Straße — ausschließlich zur Miete über einen Gewerbemietvertrag, nicht als Unterkunft.'
         : 'The ground floors of our buildings hold units with display windows onto the street — let exclusively under a commercial rental agreement, never as accommodation.',
-      count: commercial.length,
+      meta:
+        commercial.length === 1
+          ? de
+            ? '1 Objekt zu vermieten'
+            : '1 property available to let'
+          : de
+          ? `${commercial.length} Objekte zu vermieten`
+          : `${commercial.length} properties available to let`,
     },
   ].filter(Boolean) as {
     icon: typeof Home;
     title: string;
     body: string;
-    count: number;
+    meta: string;
   }[];
 
   return (
@@ -88,13 +99,7 @@ export function RentalSection() {
               <h3 className="display-3 mt-5">{column.title}</h3>
               <p className="body-copy mt-3 text-[14px]">{column.body}</p>
               <p className="mt-5 text-[12px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                {column.count === 1
-                  ? de
-                    ? '1 Objekt'
-                    : '1 property'
-                  : de
-                  ? `${column.count} Objekte`
-                  : `${column.count} properties`}
+                {column.meta}
               </p>
             </div>
           ))}

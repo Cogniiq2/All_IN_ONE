@@ -19,7 +19,7 @@ import { ArrowRight, Building2, Home, Ruler } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
 import {
   isCommercial,
-  LETTING_STATUS_LABEL,
+  lettingStatusOf,
   longTermModesOf,
   supportsShortTerm,
   type RentalUnit,
@@ -90,7 +90,7 @@ export function RentalUnitCard({
           }}
         >
           <Icon className="w-3.5 h-3.5" aria-hidden="true" />
-          {LETTING_STATUS_LABEL[unit.status][locale]}
+          {lettingStatusOf(unit)[locale]}
         </span>
 
         {modes.map((mode) => (

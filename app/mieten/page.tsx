@@ -19,13 +19,16 @@ import { MietenClient } from './mieten-client';
  */
 export const metadata: Metadata = {
   title: 'Mieten in Bayreuth — Wohnraum und Gewerbeflächen',
+  // States what is actually on the market (the commercial unit) and what is
+  // not (the flats, which are accommodation). No availability, rent or contract
+  // is promised — those are not verified and are not the site's to promise.
   description:
-    'Ausgewählte Objekte von BoLaGio in der Bayreuther Innenstadt zur regulären Vermietung über einen Mietvertrag: Wohnraum und eine Gewerbefläche im Erdgeschoss. Beratung und Besichtigung auf Anfrage.',
+    'Gewerbefläche im Erdgeschoss in der Bayreuther Innenstadt zur Miete über einen Gewerbemietvertrag. Wohnraum vermieten wir im Einzelfall auf Anfrage — unsere Apartments sind Unterkünfte auf Zeit. Beratung und Besichtigung auf Anfrage.',
   alternates: { canonical: `${SITE_URL}/mieten` },
   openGraph: {
     title: 'Mieten in Bayreuth — Wohnraum und Gewerbeflächen | BoLaGio',
     description:
-      'Wohnraum und Gewerbeflächen in der Bayreuther Innenstadt zur Miete über einen regulären Mietvertrag. Persönliche Beratung, Besichtigung auf Anfrage.',
+      'Gewerbefläche zur Miete in der Bayreuther Innenstadt, Wohnraum im Einzelfall auf Anfrage. Persönliche Beratung, Besichtigung auf Anfrage.',
     url: `${SITE_URL}/mieten`,
   },
 };

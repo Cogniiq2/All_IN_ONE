@@ -105,12 +105,12 @@ export function MietenClient() {
                 {de ? 'Wohnraum' : 'Residential'}
               </p>
               <h2 id="wohnraum" className="display-2 mt-4">
-                {de ? 'Wohnungen zur Miete' : 'Apartments to rent'}
+                {de ? 'Langzeitmiete auf Anfrage' : 'Long-term rental on request'}
               </h2>
               <p className="lede mt-5">
                 {de
-                  ? 'Unsere Wohnungen in der Schulstraße sind in erster Linie Unterkünfte für Aufenthalte auf Zeit. Für längere Zeiträume ist eine reguläre Vermietung grundsätzlich denkbar — ob und ab wann sie möglich ist, hängt vom Zeitraum ab und wird persönlich besprochen.'
-                  : 'Our apartments on Schulstraße are primarily accommodation for short stays. For longer periods a conventional tenancy is possible in principle — whether and from when depends on the period, and is discussed personally.'}
+                  ? 'Unsere Wohnungen in der Schulstraße sind Unterkünfte für Aufenthalte auf Zeit — sie stehen nicht als freie Mietwohnungen zur Verfügung. Eine dauerhafte Vermietung über einen Mietvertrag prüfen wir im Einzelfall auf Anfrage. Ob sie für Ihren Zeitraum möglich ist, sagen wir Ihnen persönlich.'
+                  : 'Our apartments on Schulstraße are accommodation for stays — they are not standing vacant as flats on the rental market. A conventional tenancy under a rental agreement is something we consider individually on request. Whether it is possible for your period is something we tell you personally.'}
               </p>
             </Reveal>
 

@@ -304,6 +304,28 @@ export const LETTING_STATUS_LABEL: Record<UnitStatus, Localized> = {
   'in-preparation': { de: 'In Vorbereitung', en: 'In preparation' },
 };
 
+/**
+ * What a unit's long-term status honestly is, which is NOT the same for every
+ * available unit.
+ *
+ * A unit offered only under a rental agreement — the commercial ground floor —
+ * really is on the market, so "Zu vermieten" is accurate.
+ *
+ * A flat that is primarily short-term accommodation is NOT standing empty
+ * waiting for a tenant. Labelling it "Zu vermieten" would advertise a vacancy
+ * that does not exist and imply a tenancy is there for the taking. Long-term
+ * use of those flats is considered case by case, so they are marked as exactly
+ * that: on request.
+ *
+ * Derived from `rentalModes`, so a unit that later stops being let by the night
+ * changes label by changing data.
+ */
+export function lettingStatusOf(unit: RentalUnit): Localized {
+  if (unit.status === 'in-preparation') return LETTING_STATUS_LABEL['in-preparation'];
+  if (supportsShortTerm(unit)) return { de: 'Auf Anfrage', en: 'On request' };
+  return LETTING_STATUS_LABEL.available;
+}
+
 /** Short public label for a unit's long-term mode. */
 export const LONG_TERM_MODE_LABEL: Record<LongTermMode, Localized> = {
   'long-term-residential': { de: 'Wohnraum', en: 'Residential' },
