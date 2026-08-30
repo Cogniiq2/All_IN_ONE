@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { motion, useReducedMotion, useScroll, useTransform } from 'framer-motion';
 import Link from 'next/link';
@@ -22,12 +22,11 @@ import { EnquiryButton } from '@/components/enquiry/enquiry-button';
  * immediately. Under prefers-reduced-motion the wordmark is simply present.
  */
 function BrandEntrance() {
-  const reduce = useReducedMotion();
-
-  if (reduce) {
-    return <Wordmark size="xl" invert />;
-  }
-
+  /*
+   * No reduced-motion branch: returning a bare wordmark for those users made
+   * the server and client render different trees. MotionConfig in ClientLayout
+   * drops the per-letter rise and leaves the fade.
+   */
   return (
     <span className="relative inline-flex items-center" style={{ minHeight: '1.15em' }}>
       {/* Monogram — leads, then hands over */}
@@ -100,8 +99,13 @@ const NUMERAL: Record<number, { de: string; en: string }> = {
 export function Hero() {
   const { locale } = useI18n();
   const de = locale === 'de';
-  const reduce = useReducedMotion();
   const ref = useRef<HTMLElement>(null);
+
+  const reduce = useReducedMotion();
+  const [parallax, setParallax] = useState(false);
+  useEffect(() => {
+    if (!reduce) setParallax(true);
+  }, [reduce]);
 
   const countNumber = bookableApartments().length;
   const count = NUMERAL[countNumber]?.[locale] ?? String(countNumber);
@@ -124,13 +128,20 @@ export function Hero() {
                  -mt-[70px] lg:-mt-[84px]"
       style={{ background: 'hsl(var(--ink))' }}
     >
+      {/*
+        Parallax is enabled only after mount, and never for a visitor who asked
+        for reduced motion. Reading that preference during render would make the
+        first client render disagree with the server; `parallax` is false in both
+        and turns on a tick later, so hydration matches and nobody who opted out
+        ever sees the image move.
+      */}
       <motion.div
         className="absolute inset-0"
-        style={{ y: reduce ? 0 : imageY, scale: 1.08 }}
+        style={{ y: parallax ? imageY : 0, scale: 1.08 }}
       >
         <motion.div
           className="relative w-full h-full"
-          initial={reduce ? false : { scale: 1.04, opacity: 0.82 }}
+          initial={{ scale: 1.04, opacity: 0.82 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ duration: 1.6, ease: [0.22, 1, 0.36, 1] }}
         >
@@ -183,7 +194,7 @@ export function Hero() {
           <motion.h1
             className="display-1"
             style={{ color: 'hsl(var(--on-dark))' }}
-            initial={reduce ? false : { opacity: 0, y: 18 }}
+            initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.35, duration: 0.75, ease: [0.22, 1, 0.36, 1] }}
           >
@@ -207,7 +218,7 @@ export function Hero() {
           <motion.p
             className="mt-6 max-w-[52ch] text-[17px] leading-relaxed"
             style={{ color: 'hsl(var(--on-dark-muted))' }}
-            initial={reduce ? false : { opacity: 0, y: 14 }}
+            initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.5, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
           >
@@ -218,7 +229,7 @@ export function Hero() {
 
           <motion.div
             className="mt-10 flex flex-col sm:flex-row gap-3"
-            initial={reduce ? false : { opacity: 0, y: 14 }}
+            initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.62, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
           >
@@ -237,7 +248,7 @@ export function Hero() {
           <motion.p
             className="mt-7 text-[13px] leading-relaxed"
             style={{ color: 'hsl(var(--on-dark-muted))' }}
-            initial={reduce ? false : { opacity: 0 }}
+            initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.8, duration: 0.6 }}
           >
