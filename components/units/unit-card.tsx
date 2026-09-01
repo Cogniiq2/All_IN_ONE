@@ -21,9 +21,9 @@
 import { ArrowRight } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
 import { UnitVisual } from '@/components/units/unit-visual';
+import { coverFor } from '@/lib/content/property-media';
 import {
   formatArea,
-  galleryFor,
   isCommercial,
   lettingStatusOf,
   longTermModesOf,
@@ -51,7 +51,9 @@ export function UnitCard({
   const de = locale === 'de';
   const commercial = isCommercial(unit);
   const upcoming = unit.status === 'in-preparation';
-  const cover = galleryFor(unit.slug)[0];
+  // Real photography where the unit has it, the reference set where it does
+  // not. One resolver, so a card never has to know which.
+  const cover = coverFor(unit, locale);
   const area = formatArea(unit.sizeSqm, locale);
 
 
@@ -92,7 +94,8 @@ export function UnitCard({
             the detail view, together with the full note — see UnitVisual.
           */}
           <UnitVisual
-            image={cover}
+            image={cover?.image}
+            alt={cover?.alt}
             street={unit.street}
             commercial={commercial}
             priority={priority}

@@ -4,7 +4,15 @@ import { useCallback, useEffect, useState } from 'react';
 import Image from 'next/image';
 import { ChevronLeft, ChevronRight, ImageOff } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
-import { REFERENCE_IMAGE_LABEL, REFERENCE_IMAGE_NOTE, type TempImage } from '@/lib/content/media';
+import { REFERENCE_IMAGE_LABEL, REFERENCE_IMAGE_NOTE } from '@/lib/content/media';
+
+/** A frame with its alt text already resolved for the current language. */
+export interface GalleryImage {
+  src: string;
+  width: number;
+  height: number;
+  alt: string;
+}
 
 /**
  * Apartment gallery.
@@ -13,8 +21,21 @@ import { REFERENCE_IMAGE_LABEL, REFERENCE_IMAGE_NOTE, type TempImage } from '@/l
  * keyboard support, and a visible marker while the images are still
  * provisional. When an apartment has no photographs at all it shows a composed
  * empty state rather than a broken frame.
+ *
+ * `verified` says whether these are photographs of this exact apartment. It
+ * drops the "Referenzbild" marker and the note beneath — both are statements
+ * about provenance, and repeating them over real photography of the real flat
+ * would be its own kind of untruth. It also switches the lead frame to showing
+ * the whole picture: this photography is portrait, and a 16:10 frame filled by
+ * it loses most of the room.
  */
-export function Gallery({ images }: { images: TempImage[] }) {
+export function Gallery({
+  images,
+  verified = false,
+}: {
+  images: GalleryImage[];
+  verified?: boolean;
+}) {
   const { locale } = useI18n();
   const de = locale === 'de';
   const [index, setIndex] = useState(0);
@@ -68,14 +89,16 @@ export function Gallery({ images }: { images: TempImage[] }) {
         <Image
           key={active.src}
           src={active.src}
-          alt={active.alt[locale]}
+          alt={active.alt}
           fill
           priority
           sizes="(max-width: 1024px) 100vw, 760px"
-          className="object-cover"
+          className={verified ? 'object-contain' : 'object-cover'}
         />
 
-        <span className="absolute top-3 left-3 ref-badge">{REFERENCE_IMAGE_LABEL[locale]}</span>
+        {!verified && (
+          <span className="absolute top-3 left-3 ref-badge">{REFERENCE_IMAGE_LABEL[locale]}</span>
+        )}
 
         {count > 1 && (
           <>
@@ -129,9 +152,11 @@ export function Gallery({ images }: { images: TempImage[] }) {
         </div>
       )}
 
-      <figcaption className="mt-3 text-[12px] text-muted-foreground">
-        {REFERENCE_IMAGE_NOTE[locale]}
-      </figcaption>
+      {!verified && (
+        <figcaption className="mt-3 text-[12px] text-muted-foreground">
+          {REFERENCE_IMAGE_NOTE[locale]}
+        </figcaption>
+      )}
     </figure>
   );
 }

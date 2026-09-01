@@ -91,12 +91,10 @@ function CloseButton({ floating = false }: { floating?: boolean }) {
 export function LargeModal({
   open,
   onOpenChange,
-  labelledBy,
   children,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  labelledBy?: string;
   children: ReactNode;
 }) {
   const reduce = useReducedMotion();
@@ -105,7 +103,7 @@ export function LargeModal({
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Backdrop strong />
-        <Dialog.Content asChild aria-labelledby={labelledBy}>
+        <Dialog.Content asChild>
           <div className="pointer-events-none fixed inset-0 z-50 flex items-stretch justify-center
                           p-3 sm:p-6 lg:p-10">
             <motion.div
@@ -129,6 +127,28 @@ export function LargeModal({
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  );
+}
+
+/**
+ * The accessible name of a LargeModal.
+ *
+ * Radix wants a `Dialog.Title` inside every dialog and says so in the console
+ * when it does not get one; `aria-labelledby` alone satisfies a screen reader
+ * but not the primitive's own check. `asChild` means this adds no element of
+ * its own — the heading passed in is the title, styled exactly as before.
+ */
+export function LargeModalTitle({
+  className = '',
+  children,
+}: {
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Dialog.Title asChild>
+      <h2 className={className}>{children}</h2>
+    </Dialog.Title>
   );
 }
 

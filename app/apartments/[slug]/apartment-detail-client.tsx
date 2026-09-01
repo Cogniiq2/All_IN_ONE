@@ -12,6 +12,7 @@ import {
   Users,
 } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
+import { imageAlt, propertyMediaFor, verifiedCoverFor } from '@/lib/content/property-media';
 import {
   galleryFor,
   getApartment,
@@ -63,7 +64,25 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
   const de = locale === 'de';
   const { openBooking } = useUnitFlow();
   const apartment = getApartment(slug) as Apartment;
-  const images = galleryFor(slug);
+  /**
+   * Real photography of this flat where it exists, the provisional reference
+   * set where it does not. Resolved through the same media layer the cards and
+   * the detail modal use, so this page can never show a different picture of
+   * the same apartment.
+   */
+  const media = propertyMediaFor(slug);
+  const verified = Boolean(media);
+  const cover = verifiedCoverFor(slug);
+  const images = media
+    ? (media.floorPlan ? [...media.sections, media.floorPlan] : media.sections)
+        .flatMap((section) =>
+          section.images.map((image) => ({ ...image, alt: imageAlt(section, apartment, locale) }))
+        )
+        // The chosen cover leads, so this page opens on the same photograph as
+        // the card and the detail view rather than on whatever the camera
+        // numbered first.
+        .sort((a, b) => Number(b.src === cover?.src) - Number(a.src === cover?.src))
+    : galleryFor(slug).map((image) => ({ ...image, alt: image.alt[locale] }));
   const upcoming = apartment.status === 'in-preparation';
   const detailed = hasVerifiedDetails(apartment);
   /**
@@ -139,7 +158,7 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
             {/* ── Main column ─────────────────────────────────────── */}
             <div>
               <Reveal>
-                <Gallery images={images} />
+                <Gallery images={images} verified={verified} />
               </Reveal>
 
               <Reveal>

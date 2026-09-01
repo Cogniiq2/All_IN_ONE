@@ -38,8 +38,24 @@ import Image from 'next/image';
 import { useI18n } from '@/lib/i18n';
 import { REFERENCE_IMAGE_LABEL, type TempImage } from '@/lib/content/media';
 
+/**
+ * Both kinds of picture this component takes.
+ *
+ * A reference image carries its own alt text, because it is a stock interior
+ * and only the picture itself can be described. A verified photograph is of a
+ * known room in a known unit, so its caller supplies the alt — see
+ * `imageAlt` in lib/content/property-media.ts.
+ */
+export interface VisualImage {
+  src: string;
+  width: number;
+  height: number;
+  alt?: TempImage['alt'];
+}
+
 export function UnitVisual({
   image,
+  alt,
   street,
   commercial = false,
   priority = false,
@@ -47,28 +63,52 @@ export function UnitVisual({
   className = '',
   /** Corner provenance marker. Off on listing cards, on everywhere else. */
   showBadge = true,
+  /**
+   * How the photograph meets its frame.
+   *
+   *   'cover'    fills the frame, trimming whatever does not fit. Right for a
+   *              card, where every tile in the grid must be the same shape.
+   *   'contain'  the whole photograph, always. Right for the detail view,
+   *              where the point is to look at it: this photography is mostly
+   *              3:4 portrait, and a frame wider than that was cutting the top
+   *              and bottom off the room. The letterbox left over is the
+   *              brand's own quiet ground, not a stretched picture.
+   */
+  fit = 'cover',
+  /** Whether the hover scale runs. Off wherever the frame is not a link. */
+  zoomOnHover = true,
 }: {
-  image?: TempImage;
+  image?: VisualImage;
+  alt?: string;
   street: string;
   commercial?: boolean;
   priority?: boolean;
   sizes?: string;
   className?: string;
   showBadge?: boolean;
+  fit?: 'cover' | 'contain';
+  zoomOnHover?: boolean;
 }) {
   const { locale } = useI18n();
 
   if (image) {
+    const described = alt ?? image.alt?.[locale] ?? '';
     return (
-      <div className={`relative overflow-hidden bg-secondary ${className}`}>
+      <div
+        className={`relative overflow-hidden ${className}`}
+        // The ground behind a contained photograph is the brand's own quiet
+        // neutral, so the letterbox reads as a mount rather than as a gap.
+        style={{ background: 'hsl(var(--secondary))' }}
+      >
         <Image
           src={image.src}
-          alt={image.alt[locale]}
+          alt={described}
           fill
           priority={priority}
           sizes={sizes}
-          className="object-cover transition-transform duration-[900ms] ease-[cubic-bezier(0.22,1,0.36,1)]
-                     group-hover:scale-[1.04]"
+          className={`${fit === 'contain' ? 'object-contain' : 'object-cover'} transition-transform
+                      duration-[900ms] ease-[cubic-bezier(0.22,1,0.36,1)]
+                      ${zoomOnHover ? 'group-hover:scale-[1.04]' : ''}`}
         />
         {showBadge && (
           <span className="ref-badge absolute bottom-3 right-3">

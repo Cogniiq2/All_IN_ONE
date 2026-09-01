@@ -16,12 +16,12 @@
  * here, so adding a building is a data change.
  */
 
-import { useId } from 'react';
 import { ArrowRight, Building2, CalendarDays, Hammer, Home, MapPin, Ruler } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
+import { coverFor, propertyMediaFor } from '@/lib/content/property-media';
+import { PropertyGallery } from '@/components/property/property-gallery';
 import {
   formatArea,
-  galleryFor,
   isCommercial,
   lettingStatusOf,
   STATUS_LABEL,
@@ -32,7 +32,7 @@ import { REFERENCE_IMAGE_NOTE } from '@/lib/content/media';
 import { nightsBetween } from '@/lib/booking/availability';
 import { formatDate } from '@/lib/booking/date-format';
 import { useStay } from '@/lib/booking/stay-context';
-import { LargeModal, LargeModalClose } from '@/components/ui-kit/modal';
+import { LargeModal, LargeModalClose, LargeModalTitle } from '@/components/ui-kit/modal';
 import { UnitVisual } from '@/components/units/unit-visual';
 import { useUnitFlow } from '@/components/units/unit-flow-context';
 import { CtaButton, label } from '@/components/ui-kit/cta';
@@ -42,12 +42,13 @@ export function UnitDetailModal() {
   const de = locale === 'de';
   const { unit, journey, stage, openBooking, openAppointment, close } = useUnitFlow();
   const { stay } = useStay();
-  const titleId = useId();
-
   const open = stage === 'detail' && Boolean(unit);
   if (!unit) return <LargeModal open={false} onOpenChange={() => close()}>{null}</LargeModal>;
 
-  const images = galleryFor(unit.slug);
+  // One resolver for the cover, one for the gallery. A unit either has
+  // photography of its own or it does not; nothing here branches on which unit.
+  const cover = coverFor(unit, locale);
+  const gallery = propertyMediaFor(unit.slug);
   const commercial = isCommercial(unit);
   const upcoming = unit.status === 'in-preparation';
   const area = formatArea(unit.sizeSqm, locale);
@@ -61,18 +62,30 @@ export function UnitDetailModal() {
   ].filter(Boolean) as { icon: typeof MapPin; text: string }[];
 
   return (
-    <LargeModal open={open} onOpenChange={(next) => !next && close()} labelledBy={titleId}>
+    <LargeModal open={open} onOpenChange={(next) => !next && close()}>
       <LargeModalClose />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="grid lg:grid-cols-[1.15fr_1fr]">
           {/* ── Imagery ───────────────────────────────────────────── */}
           <div className="relative lg:sticky lg:top-0 lg:h-full">
+            {/*
+              Contained, not cropped. This photography is mostly 3:4 portrait
+              and the frame is wider than that, so filling it was cutting the
+              top and the bottom off the room — the ceiling and the floor, which
+              is most of what tells you about a space. The whole photograph is
+              shown on the brand's own neutral ground instead. The frame, the
+              two-column composition and the proportions are unchanged.
+            */}
             <UnitVisual
-              image={images[0]}
+              image={cover?.image}
+              alt={cover?.alt}
               street={unit.street}
               commercial={commercial}
               priority
+              fit="contain"
+              zoomOnHover={false}
+              showBadge={!cover?.verified}
               sizes="(max-width: 1024px) 100vw, 640px"
               className="aspect-[4/3] w-full lg:aspect-auto lg:h-full lg:min-h-[520px]"
             />
@@ -99,7 +112,9 @@ export function UnitDetailModal() {
               </span>
             </div>
 
-            <h2 id={titleId} className="display-2 mt-4">{unit.name[locale]}</h2>
+            <LargeModalTitle className="display-2 mt-4">
+              {unit.name[locale]}
+            </LargeModalTitle>
             <p className="mt-3 text-[14px] font-medium" style={{ color: 'hsl(var(--champagne-dark))' }}>
               {unit.positioning[locale]}
             </p>
@@ -122,7 +137,8 @@ export function UnitDetailModal() {
               ))}
             </div>
 
-            {images.length > 0 && (
+            {/* Only says "these are reference images" while they still are. */}
+            {cover && !cover.verified && (
               <p className="mt-6 text-[12px] leading-relaxed" style={{ color: 'hsl(var(--muted-foreground))' }}>
                 {REFERENCE_IMAGE_NOTE[locale]}
               </p>
@@ -145,6 +161,15 @@ export function UnitDetailModal() {
             </div>
           </div>
         </div>
+
+        {/*
+          The gallery, below the approved top area and inside the same scrolling
+          container — so the detail view simply gained a length, and the visitor
+          scrolls down into the rooms. A unit without photography of its own
+          renders nothing here at all: an empty room heading would be worse than
+          no gallery, and no unit borrows another's photographs.
+        */}
+        {gallery && <PropertyGallery media={gallery} unit={unit} />}
       </div>
     </LargeModal>
   );
