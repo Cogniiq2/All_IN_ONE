@@ -124,6 +124,53 @@
     border-radius: var(--radius-xs);
   }
 
+  /*
+     Native date inputs.
+
+     The control stays native — the platform picker, keyboard entry and
+     assistive-technology support are worth far more than a styled placeholder.
+     What is normalised here is only the box it lives in, because two engine
+     defaults break a grid row:
+
+       min-width   a date input reports a wide intrinsic minimum. A grid track
+                   will not shrink below it, so the field overflows its column
+                   and collides with the one beside it. Zero lets the track
+                   decide the width, as it does for every other field.
+       height      WebKit centres the segments itself when the box has a fixed
+                   height; the inner control is left at auto so it is never
+                   taller than the space it was given and cannot render clipped.
+
+     The picker indicator is pulled to the right edge of the field and given a
+     little room, so it always sits inside its own box rather than crowding the
+     text or spilling toward the next field.
+  */
+  input[type='date'] {
+    min-width: 0;
+    /* iOS otherwise renders date inputs at an intrinsic width and left-aligns
+       their text differently from every other field on the page. */
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  input[type='date']::-webkit-date-and-time-value {
+    text-align: left;
+  }
+
+  input[type='date']::-webkit-datetime-edit {
+    padding: 0;
+  }
+
+  input[type='date']::-webkit-calendar-picker-indicator {
+    margin-left: 0.5rem;
+    cursor: pointer;
+    opacity: 0.55;
+    transition: opacity 0.2s ease;
+  }
+
+  input[type='date']::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
       animation-duration: 0.01ms !important;

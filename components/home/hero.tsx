@@ -11,7 +11,6 @@ import { brand } from '@/lib/content/brand';
 import { heroImage, REFERENCE_IMAGE_LABEL } from '@/lib/content/media';
 import { Wordmark } from '@/components/brand/logo';
 import { CtaLink, label } from '@/components/ui-kit/cta';
-import { EnquiryButton } from '@/components/enquiry/enquiry-button';
 
 /**
  * The signature entrance.
@@ -222,10 +221,20 @@ export function Hero() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.62, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
           >
+            {/*
+              The primary CTA begins the booking journey where it actually
+              begins — at the apartments. It opens no dialog: nothing can be
+              booked before a unit is chosen.
+
+              The secondary scrolls to the apartments section further down this
+              same page, so the two are not two buttons to one destination.
+            */}
             <CtaLink href="/apartments" invert withArrow>
+              {label('bookNow', locale)}
+            </CtaLink>
+            <CtaLink href="#apartments" variant="secondary" invert>
               {label('exploreApartments', locale)}
             </CtaLink>
-            <EnquiryButton variant="secondary" invert />
           </motion.div>
 
           {/*

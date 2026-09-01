@@ -25,7 +25,7 @@
 import { useId } from 'react';
 import { useI18n } from '@/lib/i18n';
 import { DATE_FORMAT_HINT } from '@/lib/booking/date-format';
-import { inputClass, labelClass } from '@/components/enquiry/enquiry-fields';
+import { labelClass } from '@/components/enquiry/enquiry-fields';
 
 /**
  * One fixed control height for the whole family of fields.
@@ -36,6 +36,32 @@ import { inputClass, labelClass } from '@/components/enquiry/enquiry-fields';
  * makes a row of them align exactly.
  */
 export const CONTROL_HEIGHT = 'h-[50px]';
+
+/**
+ * The date input's own class, deliberately NOT the shared `inputClass` with a
+ * height bolted on. Two differences matter, and both are bug fixes:
+ *
+ *   py-0        a native date input lays its own spin/segment boxes out inside
+ *               the content box. Fixed height PLUS vertical padding leaves that
+ *               inner control taller than the space it is given, and engines
+ *               that do not overflow it visibly instead render the field looking
+ *               clipped or empty. The height alone centres it; the padding is
+ *               what has to go.
+ *
+ *   min-w-0     a date input has a wide intrinsic minimum width — wider than a
+ *               grid track may want to be. Without this the input refuses to
+ *               shrink, pushes its track past the size the grid assigned, and
+ *               the fields either overlap or shunt the CTA out of the panel.
+ *               `min-w-0` on the wrapper is not enough: the floor lives on the
+ *               input itself.
+ *
+ * Everything else — background, border, radius, focus treatment, type size — is
+ * character for character the shared field style.
+ */
+export const dateInputClass =
+  `block w-full min-w-0 ${CONTROL_HEIGHT} px-3.5 py-0 bg-secondary/40 border border-border ` +
+  'rounded-md text-[15px] text-foreground transition-colors ' +
+  'focus:outline-none focus:border-champagne focus:bg-secondary/70';
 
 export function DateField({
   id,
@@ -95,7 +121,7 @@ export function DateField({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         aria-describedby={hintId}
-        className={`${inputClass} ${CONTROL_HEIGHT}`}
+        className={dateInputClass}
       />
     </div>
   );

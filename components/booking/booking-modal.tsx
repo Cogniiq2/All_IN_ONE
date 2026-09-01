@@ -43,7 +43,7 @@ import {
   type ConfirmedStay,
 } from '@/lib/booking/calendar';
 import { useStay } from '@/lib/booking/stay-context';
-import { DialogModal, Step } from '@/components/ui-kit/modal';
+import { DialogModal, Step, StepActions } from '@/components/ui-kit/modal';
 import { StayCalendar } from '@/components/booking/stay-calendar';
 import { useUnitFlow } from '@/components/units/unit-flow-context';
 import { CtaButton } from '@/components/ui-kit/cta';
@@ -255,29 +255,31 @@ export function BookingModal() {
 
               {status === 'error' && <div className="mt-5"><SubmitError locale={locale} /></div>}
 
-              <div className="mt-8 flex items-center gap-3">
-                {step > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => go(-1)}
-                    className="cta-secondary !min-h-[48px] !px-4"
-                    aria-label={de ? 'Zurück' : 'Back'}
-                  >
-                    <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-                  </button>
-                )}
-                {step < LAST_STEP ? (
-                  <CtaButton full withArrow onClick={() => go(1)}>
-                    {de ? 'Weiter' : 'Continue'}
-                  </CtaButton>
-                ) : (
-                  <CtaButton full disabled={status === 'sending'} onClick={submit}>
-                    {status === 'sending'
-                      ? <Sending />
-                      : de ? 'Buchung anfragen' : 'Request booking'}
-                  </CtaButton>
-                )}
-              </div>
+              <StepActions>
+                <div className="flex items-center gap-3">
+                  {step > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => go(-1)}
+                      className="cta-secondary !min-h-[48px] !px-4"
+                      aria-label={de ? 'Zurück' : 'Back'}
+                    >
+                      <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  )}
+                  {step < LAST_STEP ? (
+                    <CtaButton full withArrow onClick={() => go(1)}>
+                      {de ? 'Weiter' : 'Continue'}
+                    </CtaButton>
+                  ) : (
+                    <CtaButton full disabled={status === 'sending'} onClick={submit}>
+                      {status === 'sending'
+                        ? <Sending />
+                        : de ? 'Buchung anfragen' : 'Request booking'}
+                    </CtaButton>
+                  )}
+                </div>
+              </StepActions>
 
               {step === LAST_STEP && (
                 <p className="mt-4 text-center text-[12px] leading-relaxed"

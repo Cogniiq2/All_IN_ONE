@@ -5,16 +5,16 @@ import { ArrowRight, Building2, CalendarDays, MapPin, MessageCircle, Phone, Send
 import { useI18n } from '@/lib/i18n';
 import { brand, contact } from '@/lib/content/brand';
 import { Reveal } from '@/components/ui-kit/reveal';
-import { useEnquiry } from '@/components/enquiry/enquiry-context';
 import { EnquiryButton } from '@/components/enquiry/enquiry-button';
 import { label } from '@/components/ui-kit/cta';
 
 /**
  * Contact.
  *
- * One form exists on this site — the enquiry dialog — and this page opens it
- * rather than maintaining a second, subtly different copy of it. That keeps
- * the loading, success and error behaviour identical everywhere.
+ * It maintains no form of its own. Each channel points at the journey that
+ * already owns it — the accommodation channel hands the visitor the apartments,
+ * where a booking actually starts — so there is no second, subtly different
+ * copy of a flow to keep in step.
  *
  * No email address is shown: none has been confirmed. See contact.email in
  * lib/content/brand.ts. Nothing here invents one.
@@ -29,7 +29,6 @@ import { label } from '@/components/ui-kit/cta';
 export default function ContactClient() {
   const { locale } = useI18n();
   const de = locale === 'de';
-  const { openEnquiry } = useEnquiry();
 
   const channels = [
     {
@@ -38,10 +37,12 @@ export default function ContactClient() {
       body: de
         ? 'Der direkteste Weg: Zeitraum, Personenzahl, fertig. Verfügbarkeit und Preis bestätigen wir persönlich.'
         : 'The most direct route: dates, number of guests, done. We confirm availability and price personally.',
+      // Generic booking entry: it stands in front of no particular apartment, so
+      // it hands the visitor the apartments rather than opening a form.
       action: (
-        <button onClick={() => openEnquiry({ kind: 'short-term' })} className="link-quiet">
+        <Link href="/apartments" className="link-quiet">
           {label('bookNow', locale)}
-        </button>
+        </Link>
       ),
     },
     {

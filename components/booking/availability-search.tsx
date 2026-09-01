@@ -97,17 +97,30 @@ export function AvailabilitySearch({
    * CONTROL_HEIGHT, and each label is a single line, so the row aligns exactly
    * — top, bottom and baseline.
    *
-   * The 1fr columns are `minmax(0,1fr)` and each cell carries `min-w-0`: a
-   * native date input has a wide intrinsic minimum, and without that floor
-   * removed the tracks refuse to shrink and push the CTA out of the panel at
-   * narrower desktop widths.
+   * ── Why the tracks cannot collide ──────────────────────────────────────
+   * A native date input carries a wide intrinsic minimum width, and a grid
+   * track never shrinks below the minimum of what it holds. Left alone that
+   * floor makes the two date columns overflow their share of the row, which is
+   * what pushes the fields into one another and shunts the CTA out of the
+   * panel. Three things remove it, and all three are needed:
+   *
+   *   minmax(0, 1fr)   on the flexible columns, so the track itself may go
+   *                    narrower than its content's minimum;
+   *   min-w-0          on every cell, so the wrapper does not reinstate it;
+   *   min-w-0          on the input element (see `dateInputClass`), which is
+   *                    where the floor actually lives.
+   *
+   * The guests column and the CTA sit in fixed and auto tracks, so neither can
+   * be squeezed by its neighbours, and `gap` is a real gutter the tracks are
+   * laid out around rather than margin that content can eat into.
    *
    * Nothing about the panel's surface — padding, radius, shadow, colour, type
    * scale, placement — is touched.
    */
   const fieldClass =
-    `w-full ${CONTROL_HEIGHT} px-3.5 py-2.5 bg-secondary/40 border border-border rounded-md text-[15px] ` +
-    'text-foreground transition-colors focus:outline-none focus:border-champagne focus:bg-secondary/70';
+    `block w-full min-w-0 ${CONTROL_HEIGHT} px-3.5 py-0 bg-secondary/40 border border-border ` +
+    'rounded-md text-[15px] text-foreground transition-colors ' +
+    'focus:outline-none focus:border-champagne focus:bg-secondary/70';
 
   const fieldLabel =
     'block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground mb-1.5';
@@ -136,8 +149,9 @@ export function AvailabilitySearch({
       </div>
 
       <div
-        className="mt-5 grid gap-3 sm:grid-cols-2
-                   lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7rem_auto] lg:items-end lg:gap-4"
+        className="mt-5 grid min-w-0 gap-x-3 gap-y-4 sm:grid-cols-2
+                   lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6.5rem_minmax(0,auto)]
+                   lg:items-end lg:gap-x-4"
       >
         <DateField
           id={`${id}-arrival`}
@@ -158,7 +172,7 @@ export function AvailabilitySearch({
         />
 
         <div className="min-w-0">
-          <label htmlFor={`${id}-guests`} className={fieldLabel}>
+          <label htmlFor={`${id}-guests`} className={`${fieldLabel} truncate`}>
             {de ? 'Personen' : 'Guests'}
           </label>
           <input

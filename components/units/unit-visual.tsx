@@ -15,6 +15,23 @@
  * a shop unit would be a false depiction rather than a placeholder, so they get
  * the panel until real photography exists. It is drawn to be worth looking at,
  * so a card without a photograph still holds its place in the grid.
+ *
+ * ── Where the provenance marker is shown ─────────────────────────────────
+ * `showBadge` decides whether the corner marker is painted. Listing cards pass
+ * `false`: a grid of tiles each wearing a dark chip reads as a watermarked
+ * stock sheet rather than a collection, and the marker is repeated five times
+ * before anyone has looked at anything.
+ *
+ * It is turned off on the card ONLY — never on a surface where the image is
+ * actually being examined. Open the unit and the marker is there on the large
+ * image, with the full note under the copy; the same is true of the gallery on
+ * an apartment page and of the hero. The registry itself
+ * (lib/content/media.ts) is untouched: the provenance is still recorded and
+ * still displayed, one tap from every card.
+ *
+ * The drawn panel keeps its `role="img"` and its aria-label naming it an
+ * illustration in every case, so nothing is presented to assistive technology
+ * as a photograph of the unit.
  */
 
 import Image from 'next/image';
@@ -28,6 +45,8 @@ export function UnitVisual({
   priority = false,
   sizes = '(max-width: 768px) 100vw, 420px',
   className = '',
+  /** Corner provenance marker. Off on listing cards, on everywhere else. */
+  showBadge = true,
 }: {
   image?: TempImage;
   street: string;
@@ -35,6 +54,7 @@ export function UnitVisual({
   priority?: boolean;
   sizes?: string;
   className?: string;
+  showBadge?: boolean;
 }) {
   const { locale } = useI18n();
 
@@ -50,9 +70,11 @@ export function UnitVisual({
           className="object-cover transition-transform duration-[900ms] ease-[cubic-bezier(0.22,1,0.36,1)]
                      group-hover:scale-[1.04]"
         />
-        <span className="ref-badge absolute bottom-3 right-3">
-          {REFERENCE_IMAGE_LABEL[locale]}
-        </span>
+        {showBadge && (
+          <span className="ref-badge absolute bottom-3 right-3">
+            {REFERENCE_IMAGE_LABEL[locale]}
+          </span>
+        )}
       </div>
     );
   }
@@ -114,10 +136,14 @@ export function UnitVisual({
         </p>
       </div>
 
-      {/* Never let a drawing be mistaken for a photograph of the unit. */}
-      <span className="ref-badge absolute bottom-3 right-3">
-        {locale === 'de' ? 'Foto folgt' : 'Photo to follow'}
-      </span>
+      {/* Never let a drawing be mistaken for a photograph of the unit. The
+          aria-label above says so in every case; the visible chip is dropped on
+          listing cards for the same reason as the photographic one. */}
+      {showBadge && (
+        <span className="ref-badge absolute bottom-3 right-3">
+          {locale === 'de' ? 'Foto folgt' : 'Photo to follow'}
+        </span>
+      )}
     </div>
   );
 }

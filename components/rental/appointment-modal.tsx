@@ -41,7 +41,7 @@ import {
   type ConfirmedAppointment,
 } from '@/lib/booking/calendar';
 import { isCommercial, longTermModesOf } from '@/lib/content/apartments';
-import { DialogModal, Step } from '@/components/ui-kit/modal';
+import { DialogModal, Step, StepActions } from '@/components/ui-kit/modal';
 import { useUnitFlow } from '@/components/units/unit-flow-context';
 import { CtaButton } from '@/components/ui-kit/cta';
 import { DateField } from '@/components/ui-kit/date-field';
@@ -224,27 +224,29 @@ export function AppointmentModal() {
 
               {status === 'error' && <div className="mt-5"><SubmitError locale={locale} /></div>}
 
-              <div className="mt-8 flex items-center gap-3">
-                {step > 1 && (
-                  <button type="button" onClick={() => go(-1)}
-                          className="cta-secondary !min-h-[48px] !px-4"
-                          aria-label={de ? 'Zurück' : 'Back'}>
-                    <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-                  </button>
-                )}
-                {step < LAST_STEP ? (
-                  <CtaButton full withArrow onClick={() => go(1)}>{de ? 'Weiter' : 'Continue'}</CtaButton>
-                ) : (
-                  <CtaButton full disabled={status === 'sending'} onClick={submit}>
-                    {status === 'sending' ? (
-                      <span className="inline-flex items-center gap-2">
-                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                        {de ? 'Wird gesendet …' : 'Sending …'}
-                      </span>
-                    ) : de ? 'Termin anfragen' : 'Request appointment'}
-                  </CtaButton>
-                )}
-              </div>
+              <StepActions>
+                <div className="flex items-center gap-3">
+                  {step > 1 && (
+                    <button type="button" onClick={() => go(-1)}
+                            className="cta-secondary !min-h-[48px] !px-4"
+                            aria-label={de ? 'Zurück' : 'Back'}>
+                      <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  )}
+                  {step < LAST_STEP ? (
+                    <CtaButton full withArrow onClick={() => go(1)}>{de ? 'Weiter' : 'Continue'}</CtaButton>
+                  ) : (
+                    <CtaButton full disabled={status === 'sending'} onClick={submit}>
+                      {status === 'sending' ? (
+                        <span className="inline-flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                          {de ? 'Wird gesendet …' : 'Sending …'}
+                        </span>
+                      ) : de ? 'Termin anfragen' : 'Request appointment'}
+                    </CtaButton>
+                  )}
+                </div>
+              </StepActions>
 
               {step === LAST_STEP && (
                 <p className="mt-4 text-center text-[12px] leading-relaxed"
@@ -367,14 +369,21 @@ function StepTiming({
         {de ? 'Eine grobe Richtung genügt.' : 'A rough sense is enough.'}
       </p>
 
-      <div className="mt-6">
+      {/*
+        The three groups sit on a tighter rhythm than the other steps: this is
+        the tallest step in the dialog, and on a 768px-high laptop or an iPad in
+        landscape the extra air was what pushed the footer to the very bottom of
+        the viewport. Nothing changed but the spacing — same chips, same order,
+        same wording, same behaviour.
+      */}
+      <div className="mt-5">
         <p className={labelClass}>{de ? 'Gewünschter Beginn' : 'Preferred start'}</p>
         <div className="grid grid-cols-2 gap-2.5">
           {TIMING.map((t) => {
             const active = timing === t.id;
             return (
               <button key={t.id} type="button" onClick={() => setTiming(t.id)} aria-pressed={active}
-                      className="min-h-[52px] px-3.5 py-2.5 text-left text-[13.5px] transition-colors"
+                      className="min-h-[48px] px-3.5 py-2 text-left text-[13.5px] transition-colors"
                       style={{
                         borderRadius: 'var(--radius-sm)',
                         border: `1px solid ${active ? 'hsl(var(--champagne-dark))' : 'hsl(var(--border))'}`,
@@ -387,7 +396,7 @@ function StepTiming({
         </div>
       </div>
 
-      <div className="mt-6">
+      <div className="mt-5">
         <DateField
           id="appt-start"
           label={de ? 'Konkretes Datum' : 'A specific date'}
@@ -398,7 +407,7 @@ function StepTiming({
         />
       </div>
 
-      <div className="mt-6">
+      <div className="mt-5">
         <p className={labelClass}>{de ? 'Voraussichtliche Mietdauer' : 'Expected duration'}</p>
         <div className="flex flex-wrap gap-2">
           {DURATION.map((d) => {

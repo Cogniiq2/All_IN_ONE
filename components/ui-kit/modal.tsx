@@ -146,6 +146,23 @@ export function LargeModalClose() {
  *
  * One step down in scale from LargeModal, so opening it from inside the detail
  * view reads as narrowing in rather than opening another page.
+ *
+ * ── Height ───────────────────────────────────────────────────────────────
+ * The card is capped and always keeps a visible margin above and below, so it
+ * reads as a card floating on the page rather than a second screen pinned to
+ * the edges. Without the cap a tall step — the rental dialog's timing step, on
+ * a 768px-high laptop or an iPad in landscape — grew until it filled the whole
+ * viewport with a 16px sliver left at each end.
+ *
+ * `svh` is the small viewport height: on a phone it measures the space left
+ * with the browser's own chrome showing, so the card cannot end up taller than
+ * what is actually visible. `min(…, 100%)` keeps it inside the padded wrapper
+ * as well, and an engine that does not know `svh` drops the whole declaration
+ * and falls back to the `max-h-full` class — the previous behaviour, never
+ * something broken.
+ *
+ * Only the header and the footer are fixed; the step body between them scrolls
+ * on its own, so the page behind never has to scroll to reach the CTA.
  */
 export function DialogModal({
   open,
@@ -169,7 +186,8 @@ export function DialogModal({
       <Dialog.Portal>
         <Backdrop />
         <Dialog.Content asChild>
-          <div className="pointer-events-none fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="pointer-events-none fixed inset-0 z-[60] flex items-center justify-center
+                          p-4 sm:p-6 lg:p-8">
             <motion.div
               initial={reduce ? false : { opacity: 0, y: 18, scale: 0.985 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -182,6 +200,9 @@ export function DialogModal({
                 // family of surface, one step down in scale.
                 borderRadius: 'var(--radius-xl)',
                 border: '1px solid hsl(var(--border))',
+                // See the note above: capped so the card always floats, with
+                // the `max-h-full` class as the fallback.
+                maxHeight: 'min(86svh, 100%)',
               }}
             >
               <div className="flex items-start justify-between gap-4 border-b border-border/70 px-6 pb-5 pt-6">
@@ -204,6 +225,31 @@ export function DialogModal({
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  );
+}
+
+/**
+ * The action row of a dialog step, pinned to the bottom of the scrollport.
+ *
+ * A step is as tall as its content, and the tallest of them — the rental
+ * dialog's timing step, the booking dialog's calendar — is taller than a
+ * 768px-high laptop can show. In flow, the primary action was the first thing
+ * to fall off the bottom edge: the visitor had to scroll inside the card to
+ * find the button that moves them forward.
+ *
+ * Sticky rather than fixed, so it belongs to the step it acts on and slides
+ * with it during the step transition. The hairline above it is the same rule
+ * that already separates the dialog's header from its body, so a scrolled step
+ * reads as one surface with a header and a footer rather than a new element.
+ */
+export function StepActions({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className="sticky bottom-0 z-10 -mx-6 mt-8 border-t border-border/70 px-6 pb-1 pt-4"
+      style={{ background: 'hsl(var(--background))' }}
+    >
+      {children}
+    </div>
   );
 }
 

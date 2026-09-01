@@ -7,19 +7,27 @@
  * regardless of context and overlapped content. Contact is now offered where
  * a decision is actually being made, and only on small screens where the page
  * CTA has scrolled away.
+ *
+ * ── Apartment-specific, so it books ──────────────────────────────────────
+ * Unlike the generic "Jetzt buchen" in the navbar or the hero, this bar always
+ * stands in front of one known apartment — it only renders on that apartment's
+ * page. So it opens the booking dialog for that unit, exactly as the sidebar
+ * CTA above it does, rather than the older enquiry form it used to open.
  */
 
 import { useEffect, useState } from 'react';
 import { MessageCircle } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
 import { contact } from '@/lib/content/brand';
-import { useEnquiry } from '@/components/enquiry/enquiry-context';
+import { getApartment } from '@/lib/content/apartments';
+import { useUnitFlow } from '@/components/units/unit-flow-context';
 import { label } from '@/components/ui-kit/cta';
 
 export function StickyEnquiryBar({ apartmentSlug }: { apartmentSlug?: string }) {
   const { locale } = useI18n();
-  const { openEnquiry } = useEnquiry();
+  const { openBooking } = useUnitFlow();
   const [visible, setVisible] = useState(false);
+  const apartment = apartmentSlug ? getApartment(apartmentSlug) : undefined;
 
   useEffect(() => {
     const onScroll = () => setVisible(window.scrollY > 480);
@@ -44,7 +52,7 @@ export function StickyEnquiryBar({ apartmentSlug }: { apartmentSlug?: string }) 
     >
       <div className="flex items-center gap-3 px-4 py-3">
         <button
-          onClick={() => openEnquiry({ kind: 'short-term', unitSlug: apartmentSlug })}
+          onClick={() => apartment && openBooking(apartment)}
           className="cta-primary flex-1"
           tabIndex={visible ? 0 : -1}
         >

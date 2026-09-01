@@ -87,11 +87,16 @@ export function UnitCard({
         aria-label={`${unit.name[locale]} — ${cta}`}
       >
         <div className="relative">
+          {/*
+            No provenance chip on the card. It returns on the large image inside
+            the detail view, together with the full note — see UnitVisual.
+          */}
           <UnitVisual
             image={cover}
             street={unit.street}
             commercial={commercial}
             priority={priority}
+            showBadge={false}
             className="aspect-[4/3] w-full"
           />
           <span
