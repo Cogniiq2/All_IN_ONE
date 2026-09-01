@@ -24,6 +24,9 @@ import { useI18n } from '@/lib/i18n';
 import {
   apartments,
   commercialUnits,
+  countWord,
+  countWordInline,
+  streetCount,
   supportsLongTerm,
   type RentalUnit,
 } from '@/lib/content/apartments';
@@ -60,15 +63,19 @@ export function MietenClient() {
   const { openDetail } = useUnitFlow();
 
   /*
-    All five units, grouped by what a tenancy over them would actually be — a
-    Wohnraummietvertrag or a Gewerbemietvertrag. Units in preparation stay in
-    their group rather than being exiled to a separate block: the card's badge
-    and its detail view already say they are not available, and grouping by
-    readiness would scatter the two buildings.
+    Every unit that may be let on a contract, grouped by what that contract
+    would actually be — a Wohnraummietvertrag or a Gewerbemietvertrag. Units in
+    preparation stay in their group rather than being exiled to a separate
+    block: the card's badge and its detail view already say they are not
+    available, and grouping by readiness would scatter the buildings.
   */
   const residential: RentalUnit[] = apartments.filter(supportsLongTerm);
   const commercial: RentalUnit[] = commercialUnits.filter(supportsLongTerm);
   const openRent = (unit: RentalUnit) => openDetail(unit, 'rent');
+
+  // Counted, never stated: the intro sentences below follow the inventory.
+  const total = residential.length + commercial.length;
+  const buildings = streetCount([...residential, ...commercial]);
 
   return (
     <>
@@ -84,8 +91,8 @@ export function MietenClient() {
             </h1>
             <p className="lede mt-6">
               {de
-                ? `Fünf Objekte in zwei Häusern in der Bayreuther Innenstadt: drei Wohnungen und zwei Gewerbeflächen im Erdgeschoss. Vermietet wird hier über einen regulären Mietvertrag, an Privatpersonen wie an Unternehmen. Das ist ein anderer Weg als eine Buchung: Sie fragen an, wir sprechen miteinander, Sie sehen sich die Räume an.`
-                : `Five properties in two buildings in central Bayreuth: three apartments and two ground-floor commercial units. What is let here is let under a conventional rental agreement, to private tenants and to businesses. This is a different path from a booking: you enquire, we talk, you view the rooms.`}
+                ? `${countWord(total, 'de')} Objekte in ${countWordInline(buildings, 'de')} ${buildings === 1 ? 'Haus' : 'Häusern'} in der Bayreuther Innenstadt: ${countWordInline(residential.length, 'de')} ${residential.length === 1 ? 'Wohnung' : 'Wohnungen'} und ${countWordInline(commercial.length, 'de')} ${commercial.length === 1 ? 'Gewerbefläche' : 'Gewerbeflächen'} im Erdgeschoss. Vermietet wird hier über einen regulären Mietvertrag, an Privatpersonen wie an Unternehmen. Das ist ein anderer Weg als eine Buchung: Sie fragen an, wir sprechen miteinander, Sie sehen sich die Räume an.`
+                : `${countWord(total, 'en')} properties in ${countWordInline(buildings, 'en')} ${buildings === 1 ? 'building' : 'buildings'} in central Bayreuth: ${countWordInline(residential.length, 'en')} ${residential.length === 1 ? 'apartment' : 'apartments'} and ${countWordInline(commercial.length, 'en')} ground-floor commercial ${commercial.length === 1 ? 'unit' : 'units'}. What is let here is let under a conventional rental agreement, to private tenants and to businesses. This is a different path from a booking: you enquire, we talk, you view the rooms.`}
             </p>
             <div className="mt-8 flex flex-col sm:flex-row gap-3">
               <EnquiryButton kind="long-term" withArrow />
@@ -115,8 +122,8 @@ export function MietenClient() {
               </h2>
               <p className="lede mt-5">
                 {de
-                  ? 'Unsere drei Wohnungen sind Unterkünfte für Aufenthalte auf Zeit — sie stehen nicht als freie Mietwohnungen zur Verfügung. Eine dauerhafte Vermietung über einen Wohnraummietvertrag prüfen wir im Einzelfall auf Anfrage. Ob sie für Ihren Zeitraum möglich ist, sagen wir Ihnen persönlich.'
-                  : 'Our three apartments are accommodation for stays — they are not standing vacant as flats on the rental market. A tenancy under a residential rental agreement is something we consider individually on request. Whether it is possible for your period is something we tell you personally.'}
+                  ? `Unsere ${countWordInline(residential.length, 'de')} Wohnungen sind Unterkünfte für Aufenthalte auf Zeit — sie stehen nicht als freie Mietwohnungen zur Verfügung. Eine dauerhafte Vermietung über einen Wohnraummietvertrag prüfen wir im Einzelfall auf Anfrage. Ob sie für Ihren Zeitraum möglich ist, sagen wir Ihnen persönlich.`
+                  : `Our ${countWordInline(residential.length, 'en')} apartments are accommodation for stays — they are not standing vacant as flats on the rental market. A tenancy under a residential rental agreement is something we consider individually on request. Whether it is possible for your period is something we tell you personally.`}
               </p>
             </Reveal>
 

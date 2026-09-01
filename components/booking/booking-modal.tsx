@@ -20,6 +20,13 @@
  * confirms, not a completed reservation. When the PMS and the payment provider
  * are connected, step 4 gains the provider handoff and step 5's wording follows
  * `canBookOnline()` — the steps around them do not move.
+ *
+ * ── The calendar entry ───────────────────────────────────────────────────
+ * Step 5 offers "Zum Kalender hinzufügen" only when the backend answers with a
+ * confirmed booking. It does not today, so the action is simply absent and the
+ * screen says the booking is not confirmed and nothing was charged. It appears
+ * by itself once real confirmations start coming back — see the rule at the top
+ * of lib/booking/calendar.ts.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -28,12 +35,20 @@ import { ArrowLeft, Banknote, Check, CreditCard, Loader as Loader2, Minus, Plus,
 import { useI18n } from '@/lib/i18n';
 import { brand, ENQUIRY_ENDPOINT } from '@/lib/content/brand';
 import { canBookOnline, nightsBetween } from '@/lib/booking/availability';
+import { formatDateOrDash } from '@/lib/booking/date-format';
+import {
+  readConfirmedStay,
+  readResponsePayload,
+  stayEvent,
+  type ConfirmedStay,
+} from '@/lib/booking/calendar';
 import { useStay } from '@/lib/booking/stay-context';
 import { DialogModal, Step } from '@/components/ui-kit/modal';
 import { StayCalendar } from '@/components/booking/stay-calendar';
 import { useUnitFlow } from '@/components/units/unit-flow-context';
 import { CtaButton } from '@/components/ui-kit/cta';
 import { ContactFields, EMAIL_PATTERN, SubmitError } from '@/components/enquiry/enquiry-fields';
+import { AddToCalendar } from '@/components/booking/add-to-calendar';
 
 type Status = 'idle' | 'sending' | 'success' | 'error';
 
@@ -66,6 +81,14 @@ export function BookingModal() {
   const [dates, setDates] = useState({ arrival: stay.arrival, departure: stay.departure });
   const [method, setMethod] = useState<MethodId>('card');
   const [contact, setContact] = useState({ name: '', email: '', phone: '' });
+  /**
+   * Set only when the backend answers with a confirmed booking. It cannot be
+   * set from the form: while no availability source and no live payment stand
+   * behind the request, the endpoint has nothing to confirm and this stays
+   * null, so the confirmation screen offers no calendar entry and calls the
+   * submission a request. See lib/booking/calendar.ts.
+   */
+  const [confirmed, setConfirmed] = useState<ConfirmedStay | null>(null);
 
   // Adopt whatever the hero bar and detail view already know, on each open.
   useEffect(() => {
@@ -76,6 +99,7 @@ export function BookingModal() {
     setDirection(1);
     setStatus('idle');
     setTouched(false);
+    setConfirmed(null);
   }, [open, stay.arrival, stay.departure, stay.guests]);
 
   const nights = nightsBetween(dates.arrival, dates.departure);
@@ -131,6 +155,9 @@ export function BookingModal() {
         }),
       });
       if (!response.ok) throw new Error(`Booking request failed with ${response.status}`);
+      // A confirmation, if the backend sent one. Today it does not, and the
+      // success screen stays a request confirmation with no calendar action.
+      setConfirmed(readConfirmedStay(await readResponsePayload(response)) ?? null);
       setDirection(1);
       setStatus('success');
     } catch {
@@ -167,7 +194,14 @@ export function BookingModal() {
       <div className="px-6 py-6">
         <AnimatePresence mode="wait" initial={false}>
           {status === 'success' ? (
-            <SuccessState key="done" firstName={contact.name.split(' ')[0]} upcoming={upcoming} onClose={close} />
+            <SuccessState
+              key="done"
+              firstName={contact.name.split(' ')[0]}
+              upcoming={upcoming}
+              confirmed={confirmed}
+              unitName={unit.name[locale]}
+              onClose={close}
+            />
           ) : upcoming ? (
             <Step key="notify" direction={1}>
               <ContactFields
@@ -454,9 +488,8 @@ function StepPayment({
 }) {
   const { locale } = useI18n();
   const de = locale === 'de';
-  const fmt = (d?: string) =>
-    d ? new Date(`${d}T00:00:00Z`).toLocaleDateString(de ? 'de-DE' : 'en-GB',
-      { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '—';
+  // One date shape across the whole site — see lib/booking/date-format.ts.
+  const fmt = (d?: string) => formatDateOrDash(d);
 
   return (
     <div>
@@ -539,8 +572,15 @@ function Row({ label, value, muted = false }: { label: string; value: string; mu
 /* ── Confirmation ───────────────────────────────────────────────────────── */
 
 function SuccessState({
-  firstName, upcoming, onClose,
-}: { firstName: string; upcoming: boolean; onClose: () => void }) {
+  firstName, upcoming, confirmed, unitName, onClose,
+}: {
+  firstName: string;
+  upcoming: boolean;
+  /** A booking the backend actually confirmed, or null. Never inferred here. */
+  confirmed: ConfirmedStay | null;
+  unitName: string;
+  onClose: () => void;
+}) {
   const { locale } = useI18n();
   const de = locale === 'de';
   const reduce = useReducedMotion();
@@ -556,6 +596,8 @@ function SuccessState({
       <h3 className="display-3 mt-7">
         {upcoming
           ? de ? 'Wir melden uns' : 'We will be in touch'
+          : confirmed
+          ? de ? 'Ihre Buchung ist bestätigt' : 'Your booking is confirmed'
           : de ? 'Ihre Buchungsanfrage ist bei uns' : 'Your booking request has arrived'}
       </h3>
       <p className="body-copy mx-auto mt-3 text-[14.5px]">
@@ -563,11 +605,27 @@ function SuccessState({
           ? de
             ? `Danke, ${firstName}. Wir sagen Ihnen Bescheid, sobald dieses Apartment buchbar ist.`
             : `Thank you, ${firstName}. We will let you know as soon as this apartment can be booked.`
+          : confirmed
+          ? de
+            ? `Danke, ${firstName}. Ihr Aufenthalt vom ${formatDateOrDash(confirmed.arrival)} bis ${formatDateOrDash(confirmed.departure)} ist bestätigt. Alle Anreisedetails schicken wir Ihnen per E-Mail.`
+            : `Thank you, ${firstName}. Your stay from ${formatDateOrDash(confirmed.arrival)} to ${formatDateOrDash(confirmed.departure)} is confirmed. We are sending you all the arrival details by email.`
           : de
           ? `Danke, ${firstName}. Wir prüfen Ihren Zeitraum persönlich und melden uns mit Bestätigung, Preis und Zahlungsweg — meist am selben Tag.`
           : `Thank you, ${firstName}. We check your dates personally and come back with confirmation, price and payment details — usually the same day.`}
       </p>
-      {!upcoming && (
+
+      {/*
+        The calendar entry belongs to a confirmed stay and to nothing else. A
+        request that a person still has to answer gets the sentence below
+        instead, which says exactly where it stands.
+      */}
+      {!upcoming && confirmed && (
+        <div className="mt-7 flex justify-center">
+          <AddToCalendar event={stayEvent(confirmed, unitName, locale)} />
+        </div>
+      )}
+
+      {!upcoming && !confirmed && (
         <p className="mx-auto mt-4 max-w-[42ch] text-[12px] leading-relaxed"
            style={{ color: 'hsl(var(--muted-foreground))' }}>
           {de

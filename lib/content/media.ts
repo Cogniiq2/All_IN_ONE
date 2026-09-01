@@ -79,10 +79,12 @@ export const heroImage = living;
 /**
  * Provisional gallery sets, keyed by unit slug.
  *
- * Opernstraße now draws on the same reference set so its card and detail view
- * hold their own beside the Schulstraße flats. Every frame still carries the
- * "Referenzbild" marker, so nothing claims to show that specific apartment —
- * and its `status` keeps it out of every bookable path regardless.
+ * The three Opernstraße flats draw on the same reference set so their cards and
+ * detail views hold their own beside the Schulstraße flats. Every frame still
+ * carries the "Referenzbild" marker, so nothing claims to show that specific
+ * apartment — and their `status` keeps them out of every bookable path
+ * regardless. The order is varied per unit only so the grid does not read as
+ * one photograph repeated five times; it asserts nothing about the rooms.
  *
  * The two commercial units are deliberately ABSENT. The only photographs in
  * this repository are residential interiors; putting one on a shop unit would
@@ -93,5 +95,7 @@ export const heroImage = living;
 export const tempGalleries: Record<string, TempImage[]> = {
   'schulstrasse-i': [living, bedroom, loft],
   'schulstrasse-ii': [loft, living, bedroom],
-  'opernstrasse': [bedroom, loft, living],
+  'opernstrasse-i': [bedroom, loft, living],
+  'opernstrasse-ii': [living, loft, bedroom],
+  'opernstrasse-iii': [loft, bedroom, living],
 };

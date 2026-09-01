@@ -12,7 +12,7 @@ import { SITE_URL } from '@/lib/content/brand';
 export const metadata: Metadata = {
   title: 'BoLaGio — Familiengeführte Apartments in Bayreuth',
   description:
-    'Apartments in der Bayreuther Innenstadt, geführt von der Familie, der sie gehören. Verfügbarkeit direkt anfragen — persönlich beantwortet. Ausgewählte Objekte auch zur regulären Vermietung.',
+    'Apartments in der Bayreuther Innenstadt, geführt von der Familie, der sie gehören. Direkt buchen — persönlich bestätigt, ohne Plattform dazwischen. Ausgewählte Objekte auch zur regulären Vermietung.',
   alternates: { canonical: SITE_URL },
 };
 

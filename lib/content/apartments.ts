@@ -4,7 +4,7 @@
  *
  * Accommodation units (Apartment[]):
  *   • two apartments in the Schulstraße (lettable)
- *   • one apartment in the Opernstraße (renovation in progress, NOT bookable)
+ *   • three apartments in the Opernstraße (renovation in progress, NOT bookable)
  *
  * Commercial units (CommercialUnit[]):
  *   • the ground-floor storefront unit in the Schulstraße
@@ -269,11 +269,26 @@ export const apartments: Apartment[] = [
     ],
     // NEEDS CONFIRMATION: same field list as Schulstraße I.
   },
+  /*
+   * ── Opernstraße I–III ───────────────────────────────────────────────────
+   * Three apartments in the Opernstraße, all still in renovation. They are
+   * numbered like the Schulstraße flats so the inventory reads consistently;
+   * the first was previously carried without a numeral and its old slug
+   * redirects to the numbered one (see next.config.js).
+   *
+   * All three share `status: 'in-preparation'`, which is what actually keeps
+   * them out of `bookableApartments()`, out of the sitemap and out of every
+   * payment path. Nothing about them is written as a promise of a date.
+   *
+   * NEEDS CONFIRMATION for all three: whether they sit in one building or
+   * several, the floor of each, room counts, sleeping layout, amenities and
+   * the expected completion date. None of that is asserted below.
+   */
   {
-    slug: 'opernstrasse',
+    slug: 'opernstrasse-i',
     name: {
-      de: 'Apartment Opernstraße',
-      en: 'Apartment Opernstraße',
+      de: 'Apartment Opernstraße I',
+      en: 'Apartment Opernstraße I',
     },
     status: 'in-preparation',
     // Both modes are *intended*. `status` keeps the unit out of every active
@@ -285,17 +300,17 @@ export const apartments: Apartment[] = [
       en: 'In preparation — renovation under way.',
     },
     intro: {
-      de: 'Unser drittes Apartment in der Opernstraße wird derzeit renoviert. Es ist noch nicht buchbar. Wenn Sie möchten, melden wir uns, sobald ein Termin für die Eröffnung feststeht.',
-      en: 'Our third apartment on Opernstraße is currently being renovated. It is not yet bookable. If you would like, we will get in touch as soon as an opening date is set.',
+      de: 'Das erste unserer Apartments in der Opernstraße wird derzeit renoviert. Es ist noch nicht buchbar. Wenn Sie möchten, melden wir uns, sobald ein Termin für die Eröffnung feststeht.',
+      en: 'The first of our apartments on Opernstraße is currently being renovated. It is not yet bookable. If you would like, we will get in touch as soon as an opening date is set.',
     },
     sizeSqm: 120,
     detail: [
       {
-        de: 'Unser drittes Apartment liegt in der Opernstraße. Das Haus wird derzeit renoviert, und die Wohnung ist noch nicht vermietbar — weder tageweise noch dauerhaft.',
-        en: 'Our third apartment is on Opernstraße. The building is currently being renovated and the apartment is not yet lettable — neither by the day nor on a contract.',
+        de: 'Dieses Apartment liegt in der Opernstraße. Es wird derzeit renoviert und ist noch nicht vermietbar — weder tageweise noch dauerhaft.',
+        en: 'This apartment is on Opernstraße. It is currently being renovated and is not yet lettable — neither by the day nor on a contract.',
       },
       {
-        de: 'Wir zeigen sie hier, weil sie zu BoLaGio gehört und weil Gäste wissen sollen, was kommt. Was Sie sehen, sind Referenzbilder; Aufnahmen der fertigen Räume folgen, sobald es sie gibt.',
+        de: 'Wir zeigen es hier, weil es zu BoLaGio gehört und weil Gäste wissen sollen, was kommt. Was Sie sehen, sind Referenzbilder; Aufnahmen der fertigen Räume folgen, sobald es sie gibt.',
         en: 'We show it here because it belongs to BoLaGio and because guests should know what is coming. The images you see are reference images; photographs of the finished rooms will follow once they exist.',
       },
       {
@@ -311,6 +326,91 @@ export const apartments: Apartment[] = [
     ],
     // NEEDS CONFIRMATION: expected completion date. Left undefined so the UI
     // says "in preparation" rather than promising a month that may slip.
+  },
+  {
+    slug: 'opernstrasse-ii',
+    name: {
+      de: 'Apartment Opernstraße II',
+      en: 'Apartment Opernstraße II',
+    },
+    status: 'in-preparation',
+    rentalModes: ['short-term', 'long-term-residential'],
+    street: 'Opernstraße',
+    positioning: {
+      de: 'In Vorbereitung — Renovierung läuft.',
+      en: 'In preparation — renovation under way.',
+    },
+    intro: {
+      de: 'Das zweite unserer Apartments in der Opernstraße. Es wird gerade hergerichtet und ist noch nicht buchbar. Zuschnitt, Ausstattung und Preis nennen wir erst, wenn sie feststehen.',
+      en: 'The second of our apartments on Opernstraße. It is currently being prepared and is not yet bookable. Layout, furnishings and price are named only once they are settled.',
+    },
+    // The owners' working figure for units in both buildings, shown only
+    // through formatArea() as "ca. 120 m²".
+    // NEEDS CONFIRMATION: the measured Wohnfläche for this specific flat.
+    sizeSqm: 120,
+    detail: [
+      {
+        de: 'Das zweite unserer Apartments in der Opernstraße. Es wird derzeit hergerichtet und ist noch nicht vermietbar — weder tageweise noch dauerhaft.',
+        en: 'The second of our apartments on Opernstraße. It is currently being prepared and is not yet lettable — neither by the day nor on a contract.',
+      },
+      {
+        de: 'Wir führen es hier bereits mit auf, damit Gäste sehen, was in der Opernstraße entsteht. Die gezeigten Aufnahmen sind Referenzbilder; Fotos der fertigen Räume folgen, sobald es sie gibt.',
+        en: 'We list it here already so guests can see what is taking shape on Opernstraße. The images shown are reference images; photographs of the finished rooms will follow once they exist.',
+      },
+      {
+        de: 'Wenn Sie möchten, melden wir uns, sobald ein Termin für die Eröffnung feststeht — und besprechen dann alles Konkrete persönlich mit Ihnen.',
+        en: 'If you would like, we will be in touch as soon as an opening date is set — and then go through everything specific with you personally.',
+      },
+    ],
+    longTermUse: [
+      {
+        de: 'Nach Abschluss der Renovierung grundsätzlich auch für eine dauerhafte Vermietung denkbar',
+        en: 'Once the renovation is finished, a permanent tenancy is conceivable in principle',
+      },
+    ],
+    // NEEDS CONFIRMATION: rooms, maxGuests, bathrooms, floor, bedrooms,
+    // amenityGroups, floorPlan, goodFit, notSuitable, priceFromEur, minNights,
+    // and the expected completion date.
+  },
+  {
+    slug: 'opernstrasse-iii',
+    name: {
+      de: 'Apartment Opernstraße III',
+      en: 'Apartment Opernstraße III',
+    },
+    status: 'in-preparation',
+    rentalModes: ['short-term', 'long-term-residential'],
+    street: 'Opernstraße',
+    positioning: {
+      de: 'In Vorbereitung — Renovierung läuft.',
+      en: 'In preparation — renovation under way.',
+    },
+    intro: {
+      de: 'Das dritte unserer Apartments in der Opernstraße. Auch diese Wohnung wird gerade hergerichtet und ist noch nicht buchbar. Sobald sie fertig ist, sagen wir Ihnen gern Bescheid.',
+      en: 'The third of our apartments on Opernstraße. This one is being prepared as well and is not yet bookable. Once it is finished we are happy to let you know.',
+    },
+    sizeSqm: 120,
+    detail: [
+      {
+        de: 'Das dritte unserer Apartments in der Opernstraße. Es wird derzeit hergerichtet und ist noch nicht vermietbar — weder tageweise noch dauerhaft.',
+        en: 'The third of our apartments on Opernstraße. It is currently being prepared and is not yet lettable — neither by the day nor on a contract.',
+      },
+      {
+        de: 'Wie bei den anderen Wohnungen in der Opernstraße gilt: Wir nennen erst dann Zuschnitt, Ausstattung und Preis, wenn wir sie sicher sagen können. Die gezeigten Aufnahmen sind Referenzbilder.',
+        en: 'As with the other apartments on Opernstraße: we name layout, furnishings and price only once we can say them with certainty. The images shown are reference images.',
+      },
+      {
+        de: 'Sagen Sie uns Bescheid, wenn wir uns melden sollen, sobald ein Eröffnungstermin feststeht.',
+        en: 'Let us know if you would like us to be in touch as soon as an opening date is set.',
+      },
+    ],
+    longTermUse: [
+      {
+        de: 'Nach Abschluss der Renovierung grundsätzlich auch für eine dauerhafte Vermietung denkbar',
+        en: 'Once the renovation is finished, a permanent tenancy is conceivable in principle',
+      },
+    ],
+    // NEEDS CONFIRMATION: same field list as Opernstraße II.
   },
 ];
 
@@ -486,6 +586,55 @@ export const LONG_TERM_MODE_LABEL: Record<LongTermMode, Localized> = {
   'long-term-residential': { de: 'Wohnraum', en: 'Residential' },
   'long-term-commercial': { de: 'Gewerbe', en: 'Commercial' },
 };
+
+/**
+ * Small numerals, spelled out. German and English both read better with a word
+ * than a digit at these counts; anything larger falls back to the digit.
+ *
+ * Copy that states how many apartments there are goes through here together
+ * with a count read from the data, so adding a unit updates the sentence
+ * instead of leaving a stale number behind.
+ */
+const COUNT_WORD: Record<number, Localized> = {
+  1: { de: 'Eine', en: 'One' },
+  2: { de: 'Zwei', en: 'Two' },
+  3: { de: 'Drei', en: 'Three' },
+  4: { de: 'Vier', en: 'Four' },
+  5: { de: 'Fünf', en: 'Five' },
+  6: { de: 'Sechs', en: 'Six' },
+  7: { de: 'Sieben', en: 'Seven' },
+  8: { de: 'Acht', en: 'Eight' },
+};
+
+export function countWord(count: number, locale: Locale): string {
+  return COUNT_WORD[count]?.[locale] ?? String(count);
+}
+
+/** Lower-case form, for the middle of a sentence. */
+export function countWordInline(count: number, locale: Locale): string {
+  return countWord(count, locale).toLowerCase();
+}
+
+/**
+ * How many units sit on each street, in inventory order.
+ *
+ * The one way copy is allowed to say "two here, three there". A new unit — or
+ * a whole new building — changes these sentences by changing the data.
+ */
+export function unitsByStreet(units: RentalUnit[]): { street: string; count: number }[] {
+  const order: string[] = [];
+  const counts = new Map<string, number>();
+  for (const unit of units) {
+    if (!counts.has(unit.street)) order.push(unit.street);
+    counts.set(unit.street, (counts.get(unit.street) ?? 0) + 1);
+  }
+  return order.map((street) => ({ street, count: counts.get(street) ?? 0 }));
+}
+
+/** How many distinct buildings/streets a set of units spans. */
+export function streetCount(units: RentalUnit[]): number {
+  return unitsByStreet(units).length;
+}
 
 export function getApartment(slug: string): Apartment | undefined {
   return apartments.find((a) => a.slug === slug);

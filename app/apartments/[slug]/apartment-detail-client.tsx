@@ -265,7 +265,7 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
                   </p>
                   <div className="mt-6 flex flex-wrap gap-3">
                     <CtaButton withArrow onClick={() => openBooking(apartment)}>
-                      {de ? 'Buchen' : 'Book'}
+                      {label('bookNow', locale)}
                     </CtaButton>
                     <a href={contact.whatsapp} target="_blank" rel="noopener noreferrer" className="cta-secondary">
                       <MessageCircle className="w-4 h-4" aria-hidden="true" />
@@ -354,7 +354,7 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
                           so this crawlable route is a real entry point and not
                           a lesser copy of it. */}
                       <CtaButton full withArrow onClick={() => openBooking(apartment)}>
-                        {de ? 'Buchen' : 'Book'}
+                        {label('bookNow', locale)}
                       </CtaButton>
                       <a
                         href={contact.whatsapp}

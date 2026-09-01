@@ -38,6 +38,7 @@ import {
 import { brand, ENQUIRY_ENDPOINT } from '@/lib/content/brand';
 import { todayIso } from '@/lib/booking/availability';
 import { CtaButton } from '@/components/ui-kit/cta';
+import { DateField } from '@/components/ui-kit/date-field';
 import {
   ContactFields,
   EMAIL_PATTERN,
@@ -281,19 +282,14 @@ export function LongTermEnquiryForm({
       )}
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <div>
-          <label htmlFor="rent-start" className={labelClass}>
-            {de ? 'Gewünschter Mietbeginn' : 'Preferred start'} <OptionalHint locale={locale} />
-          </label>
-          <input
-            id="rent-start"
-            type="date"
-            min={todayIso()}
-            value={form.start}
-            onChange={(e) => set('start')(e.target.value)}
-            className={inputClass}
-          />
-        </div>
+        <DateField
+          id="rent-start"
+          label={de ? 'Gewünschter Mietbeginn' : 'Preferred start'}
+          optional
+          value={form.start}
+          onChange={set('start')}
+          min={todayIso()}
+        />
         <div>
           <label htmlFor="rent-duration" className={labelClass}>
             {de ? 'Voraussichtliche Mietdauer' : 'Expected duration'}

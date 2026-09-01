@@ -48,7 +48,7 @@ export function StickyEnquiryBar({ apartmentSlug }: { apartmentSlug?: string }) 
           className="cta-primary flex-1"
           tabIndex={visible ? 0 : -1}
         >
-          {label('requestAvailability', locale)}
+          {label('bookNow', locale)}
         </button>
         <a
           href={contact.whatsapp}

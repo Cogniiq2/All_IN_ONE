@@ -30,6 +30,7 @@ import {
 import { brand } from '@/lib/content/brand';
 import { REFERENCE_IMAGE_NOTE } from '@/lib/content/media';
 import { nightsBetween } from '@/lib/booking/availability';
+import { formatDate } from '@/lib/booking/date-format';
 import { useStay } from '@/lib/booking/stay-context';
 import { LargeModal, LargeModalClose } from '@/components/ui-kit/modal';
 import { UnitVisual } from '@/components/units/unit-visual';
@@ -188,10 +189,8 @@ function StayPanel({
     );
   }
 
-  const fmt = (d?: string) =>
-    d ? new Date(`${d}T00:00:00Z`).toLocaleDateString(locale === 'de' ? 'de-DE' : 'en-GB', {
-      day: '2-digit', month: 'short', timeZone: 'UTC',
-    }) : null;
+  // One date shape across the whole site — see lib/booking/date-format.ts.
+  const fmt = (d?: string) => formatDate(d) ?? null;
 
   return (
     <div>
@@ -225,12 +224,12 @@ function StayPanel({
 
       <div className="mt-7">
         <CtaButton onClick={onBook} withArrow full>
-          {de ? 'Buchen' : 'Book'}
+          {label('bookNow', locale)}
         </CtaButton>
       </div>
 
       {/*
-        The honest frame around the word "Buchen". The dialog it opens collects a
+        The honest frame around the words "Jetzt buchen". The dialog it opens collects a
         complete booking, but no availability source and no live payment stand
         behind it yet, so it is confirmed by a person before it binds.
       */}

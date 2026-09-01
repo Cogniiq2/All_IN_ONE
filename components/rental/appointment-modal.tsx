@@ -17,6 +17,14 @@
  * tenancy, household size, nationality or date of birth. Adding any of those
  * needs explicit legal review — an initial enquiry may only collect what it
  * takes to answer it.
+ *
+ * ── And not a confirmed appointment either ───────────────────────────────
+ * Submitting this form does not fix a time; BoLaGio answers with one
+ * afterwards. So the confirmation offers no "Termin in Kalender eintragen" —
+ * that would put an appointment nobody has agreed to into someone's calendar.
+ * The calendar action is built and ready (components/booking/add-to-calendar
+ * .tsx) and appears by itself if a fixed time ever comes back with the
+ * response.
  */
 
 import { useEffect, useState } from 'react';
@@ -25,10 +33,19 @@ import { ArrowLeft, Briefcase, Check, Loader as Loader2, User } from 'lucide-rea
 import { useI18n } from '@/lib/i18n';
 import { brand, ENQUIRY_ENDPOINT } from '@/lib/content/brand';
 import { todayIso } from '@/lib/booking/availability';
+import { formatDateTime } from '@/lib/booking/date-format';
+import {
+  appointmentEvent,
+  readConfirmedAppointment,
+  readResponsePayload,
+  type ConfirmedAppointment,
+} from '@/lib/booking/calendar';
 import { isCommercial, longTermModesOf } from '@/lib/content/apartments';
 import { DialogModal, Step } from '@/components/ui-kit/modal';
 import { useUnitFlow } from '@/components/units/unit-flow-context';
 import { CtaButton } from '@/components/ui-kit/cta';
+import { DateField } from '@/components/ui-kit/date-field';
+import { AddToCalendar } from '@/components/booking/add-to-calendar';
 import { EMAIL_PATTERN, SubmitError, inputClass, labelClass } from '@/components/enquiry/enquiry-fields';
 
 type Status = 'idle' | 'sending' | 'success' | 'error';
@@ -85,6 +102,17 @@ export function AppointmentModal() {
   const [duration, setDuration] = useState<DurationId>('undecided');
   const [start, setStart] = useState('');
   const [form, setForm] = useState({ firstName: '', lastName: '', email: '', phone: '' });
+  /**
+   * An appointment BoLaGio has actually fixed a time for.
+   *
+   * This form asks FOR an appointment; it does not create one. BoLaGio still
+   * has to come back with a time, so today the endpoint has nothing to confirm
+   * and this stays null — the confirmation says we will be in touch, and offers
+   * no calendar entry, because there is no appointment to put in a calendar.
+   * If a fixed time ever comes back with the response, the entry appears on its
+   * own. See the rule at the top of lib/booking/calendar.ts.
+   */
+  const [confirmed, setConfirmed] = useState<ConfirmedAppointment | null>(null);
 
   // The unit answers the first question when it can only be one thing.
   useEffect(() => {
@@ -95,6 +123,7 @@ export function AppointmentModal() {
     setDirection(1);
     setStatus('idle');
     setTouched(false);
+    setConfirmed(null);
   }, [open, unit]);
 
   const firstValid = form.firstName.trim().length >= 2;
@@ -142,6 +171,8 @@ export function AppointmentModal() {
         }),
       });
       if (!response.ok) throw new Error(`Appointment request failed with ${response.status}`);
+      // Only a real, fixed time counts. A request that went through is not one.
+      setConfirmed(readConfirmedAppointment(await readResponsePayload(response)) ?? null);
       setStatus('success');
     } catch {
       setStatus('error');
@@ -170,7 +201,13 @@ export function AppointmentModal() {
       <div className="px-6 py-6">
         <AnimatePresence mode="wait" initial={false}>
           {status === 'success' ? (
-            <SuccessState key="done" firstName={form.firstName} onClose={close} />
+            <SuccessState
+              key="done"
+              firstName={form.firstName}
+              confirmed={confirmed}
+              unitName={unit.name[locale]}
+              onClose={close}
+            />
           ) : (
             <Step key={step} direction={direction}>
               {step === 1 && <StepParty party={party} setParty={setParty} commercial={commercial} />}
@@ -351,12 +388,14 @@ function StepTiming({
       </div>
 
       <div className="mt-6">
-        <label htmlFor="appt-start" className={labelClass}>
-          {de ? 'Konkretes Datum' : 'A specific date'}{' '}
-          <span className="font-normal text-muted-foreground">({de ? 'optional' : 'optional'})</span>
-        </label>
-        <input id="appt-start" type="date" min={today} value={start}
-               onChange={(e) => setStart(e.target.value)} className={inputClass} />
+        <DateField
+          id="appt-start"
+          label={de ? 'Konkretes Datum' : 'A specific date'}
+          optional
+          value={start}
+          onChange={setStart}
+          min={today}
+        />
       </div>
 
       <div className="mt-6">
@@ -445,7 +484,15 @@ function StepContact({
   );
 }
 
-function SuccessState({ firstName, onClose }: { firstName: string; onClose: () => void }) {
+function SuccessState({
+  firstName, confirmed, unitName, onClose,
+}: {
+  firstName: string;
+  /** A time BoLaGio has actually fixed, or null. Never inferred from a submit. */
+  confirmed: ConfirmedAppointment | null;
+  unitName: string;
+  onClose: () => void;
+}) {
   const { locale } = useI18n();
   const de = locale === 'de';
   const reduce = useReducedMotion();
@@ -478,12 +525,33 @@ function SuccessState({ firstName, onClose }: { firstName: string; onClose: () =
         </motion.div>
       </div>
 
-      <h3 className="display-3 mt-7">{de ? 'Vielen Dank für Ihre Anfrage' : 'Thank you for your enquiry'}</h3>
+      <h3 className="display-3 mt-7">
+        {confirmed
+          ? de ? 'Ihr Termin steht' : 'Your appointment is set'
+          : de ? 'Vielen Dank für Ihre Anfrage' : 'Thank you for your enquiry'}
+      </h3>
       <p className="body-copy mx-auto mt-3 text-[14.5px]">
-        {de
+        {confirmed
+          ? de
+            ? `${firstName ? `${firstName}, wir` : 'Wir'} sehen uns am ${formatDateTime(confirmed.start, locale)} Uhr zu ${unitName}.`
+            : `${firstName ? `${firstName}, we` : 'We'} will see you on ${formatDateTime(confirmed.start, locale)} about ${unitName}.`
+          : de
           ? `${firstName ? `${firstName}, wir` : 'Wir'} melden uns in Kürze persönlich mit einem Terminvorschlag.`
           : `${firstName ? `${firstName}, we` : 'We'} will be in touch shortly with a suggested time.`}
       </p>
+
+      {/*
+        A calendar entry is offered only for a time that genuinely exists. While
+        BoLaGio still has to propose one, putting "Termin in Kalender eintragen"
+        here would place an appointment nobody has agreed to into the visitor's
+        calendar — so there is no button, only the truthful sentence above.
+      */}
+      {confirmed && (
+        <div className="mt-7 flex justify-center">
+          <AddToCalendar event={appointmentEvent(confirmed, unitName, locale)} />
+        </div>
+      )}
+
       <p className="mx-auto mt-4 max-w-[42ch] text-[12px] leading-relaxed"
          style={{ color: 'hsl(var(--muted-foreground))' }}>
         {de

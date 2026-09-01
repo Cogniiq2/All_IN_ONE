@@ -5,13 +5,13 @@ import { useEnquiry, type EnquiryKind } from '@/components/enquiry/enquiry-conte
 import { CtaButton, label } from '@/components/ui-kit/cta';
 
 /**
- * The single way to open an enquiry. Every "Verfügbarkeit anfragen" and every
+ * The single way to open the enquiry dialog. Every "Jetzt buchen" and every
  * "Beratung anfragen" on the site is this component, so the wording and
  * behaviour of each journey cannot drift.
  *
  * `kind` decides which conversation opens, and with it the default label:
- * accommodation asks about availability, renting asks for a conversation. The
- * two are never the same button with different text.
+ * accommodation books, renting asks for a conversation. The two are never the
+ * same button with different text.
  */
 export function EnquiryButton({
   apartmentSlug,
@@ -46,7 +46,7 @@ export function EnquiryButton({
       className={className}
     >
       {children ??
-        label(kind === 'long-term' ? 'requestConsultation' : 'requestAvailability', locale)}
+        label(kind === 'long-term' ? 'requestConsultation' : 'bookNow', locale)}
     </CtaButton>
   );
 }

@@ -138,12 +138,12 @@ export const faqs: FAQ[] = [
     id: 'opernstrasse',
     category: CATEGORY.apartments,
     question: {
-      de: 'Wann ist das Apartment Opernstraße verfügbar?',
-      en: 'When will the Opernstraße apartment be available?',
+      de: 'Wann sind die Apartments in der Opernstraße verfügbar?',
+      en: 'When will the Opernstraße apartments be available?',
     },
     answer: {
-      de: 'Es wird derzeit renoviert und ist noch nicht buchbar. Ein Eröffnungstermin steht noch nicht fest — schreiben Sie uns, wenn wir Sie informieren sollen, sobald es so weit ist.',
-      en: 'It is currently being renovated and is not yet bookable. No opening date has been set — write to us if you would like to be told as soon as it is ready.',
+      de: 'Die Wohnungen in der Opernstraße werden derzeit renoviert und sind noch nicht buchbar. Ein Eröffnungstermin steht noch nicht fest — schreiben Sie uns, wenn wir Sie informieren sollen, sobald es so weit ist.',
+      en: 'The apartments on Opernstraße are currently being renovated and are not yet bookable. No opening date has been set — write to us if you would like to be told as soon as they are ready.',
     },
   },
   {

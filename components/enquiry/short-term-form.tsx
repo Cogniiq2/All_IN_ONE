@@ -1,8 +1,9 @@
 'use client';
 
 /**
- * The short-term availability enquiry — the primary conversion action of the
- * accommodation journey.
+ * The short-term booking request — the primary conversion action of the
+ * accommodation journey, reached from every "Jetzt buchen" that is not already
+ * standing in front of one specific apartment.
  *
  * ── Why this is an enquiry and not a booking ─────────────────────────────
  * The previous modal let a guest pay in full, by card or PayPal, for any date
@@ -17,8 +18,10 @@
  * and this form gains a result step. Its fields already carry exactly what the
  * booking service will need.
  *
- * Dates use native inputs so keyboard and screen-reader behaviour is the
- * platform's, and so no custom calendar implies availability we cannot confirm.
+ * Dates go through the shared DateField (components/ui-kit/date-field.tsx), so
+ * they look and read the same here as in the hero panel and the rental dialog.
+ * It stays a native input: keyboard and screen-reader behaviour is the
+ * platform's, and no custom calendar implies availability we cannot confirm.
  */
 
 import { useState } from 'react';
@@ -28,7 +31,8 @@ import { useI18n } from '@/lib/i18n';
 import { apartments, bookableApartments } from '@/lib/content/apartments';
 import { brand, ENQUIRY_ENDPOINT } from '@/lib/content/brand';
 import { nextDayIso, todayIso, type StayQuery } from '@/lib/booking/availability';
-import { CtaButton, label } from '@/components/ui-kit/cta';
+import { CtaButton } from '@/components/ui-kit/cta';
+import { DateField } from '@/components/ui-kit/date-field';
 import {
   ContactFields,
   EMAIL_PATTERN,
@@ -120,7 +124,7 @@ export function ShortTermEnquiryForm({
       <EnquirySuccess
         locale={locale}
         firstName={form.name.split(' ')[0]}
-        title={de ? 'Anfrage ist bei uns' : 'Your enquiry has arrived'}
+        title={de ? 'Ihre Buchungsanfrage ist bei uns' : 'Your booking request has arrived'}
         onClose={onClose}
       />
     );
@@ -154,32 +158,20 @@ export function ShortTermEnquiryForm({
       )}
 
       <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label htmlFor="enq-arrival" className={labelClass}>
-            {de ? 'Anreise' : 'Arrival'}
-          </label>
-          <input
-            id="enq-arrival"
-            type="date"
-            min={todayIso()}
-            value={form.arrival}
-            onChange={(e) => set('arrival')(e.target.value)}
-            className={inputClass}
-          />
-        </div>
-        <div>
-          <label htmlFor="enq-departure" className={labelClass}>
-            {de ? 'Abreise' : 'Departure'}
-          </label>
-          <input
-            id="enq-departure"
-            type="date"
-            min={nextDayIso(form.arrival) ?? todayIso()}
-            value={form.departure}
-            onChange={(e) => set('departure')(e.target.value)}
-            className={inputClass}
-          />
-        </div>
+        <DateField
+          id="enq-arrival"
+          label={de ? 'Anreise' : 'Arrival'}
+          value={form.arrival}
+          onChange={set('arrival')}
+          min={todayIso()}
+        />
+        <DateField
+          id="enq-departure"
+          label={de ? 'Abreise' : 'Departure'}
+          value={form.departure}
+          onChange={set('departure')}
+          min={nextDayIso(form.arrival) ?? todayIso()}
+        />
       </div>
 
       <div>
@@ -236,13 +228,15 @@ export function ShortTermEnquiryForm({
               {de ? 'Wird gesendet …' : 'Sending …'}
             </span>
           ) : (
-            label('send', locale)
+            // Matches the booking dialog's final action, so the same journey
+            // does not end in two differently named buttons.
+            de ? 'Buchung anfragen' : 'Request booking'
           )}
         </CtaButton>
         <p className="mt-3 text-[12px] leading-relaxed text-muted-foreground text-center">
           {de
-            ? 'Eine Anfrage ist noch keine Buchung. Wir bestätigen Verfügbarkeit und Preis persönlich, bevor etwas verbindlich wird.'
-            : 'An enquiry is not yet a booking. We confirm availability and price personally before anything becomes binding.'}
+            ? 'Mit dem Absenden ist noch nichts verbindlich und es wird nichts abgebucht. Verfügbarkeit und Preis bestätigen wir persönlich.'
+            : 'Submitting binds nothing and charges nothing. We confirm availability and price personally.'}
         </p>
       </div>
     </motion.form>

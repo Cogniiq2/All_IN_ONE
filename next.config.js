@@ -32,10 +32,20 @@ const nextConfig = {
       { source: '/residences', destination: '/apartments', permanent: true },
       {
         source: '/residences/atelier-opernstrasse',
-        destination: '/apartments/opernstrasse',
+        // Points straight at the numbered slug, not at the redirect below —
+        // this map stays chain-free.
+        destination: '/apartments/opernstrasse-i',
         permanent: true,
       },
       { source: '/residences/:slug', destination: '/apartments', permanent: true },
+
+      // The Opernstraße flat was carried without a numeral while it was the
+      // only one on that street. It is now Opernstraße I, alongside II and III.
+      {
+        source: '/apartments/opernstrasse',
+        destination: '/apartments/opernstrasse-i',
+        permanent: true,
+      },
       { source: '/collections/:path*', destination: '/apartments', permanent: true },
 
       // ── Audience landing pages ───────────────────────────────────────

@@ -20,10 +20,13 @@
  *
  * ── What it may not claim ────────────────────────────────────────────────
  * `lib/booking/availability.ts` reports that no availability source is
- * connected, so the panel does not claim to check anything and the button says
- * "anfragen", not "prüfen". When `hasLiveAvailability()` becomes true the
- * submit can filter the selection by a real answer, and the note below stops
- * being needed.
+ * connected, so the panel does not claim to check anything. The heading plans a
+ * stay and the button names exactly what pressing it does — it shows the
+ * apartments, carrying the visitor's choices with them. It deliberately says
+ * neither "Verfügbarkeit prüfen" (there is no live answer behind it) nor "Jetzt
+ * buchen" (it selects an apartment, it does not book one). When
+ * `hasLiveAvailability()` becomes true the submit can filter the selection by a
+ * real answer, and the note below stops being needed.
  *
  * It must never be used for long-term rental. A tenancy has no nightly
  * availability, and offering dates for one would misrepresent the product —
@@ -35,6 +38,7 @@ import { useRouter } from 'next/navigation';
 import { CalendarDays } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
 import { CtaButton } from '@/components/ui-kit/cta';
+import { CONTROL_HEIGHT, DateField } from '@/components/ui-kit/date-field';
 import { useStay } from '@/lib/booking/stay-context';
 import {
   hasLiveAvailability,
@@ -84,8 +88,25 @@ export function AvailabilitySearch({
     router.push(`/apartments${toQueryString(next)}`);
   };
 
+  /**
+   * ── Field geometry ─────────────────────────────────────────────────────
+   * Three controls with three different intrinsic heights used to sit in one
+   * `items-end` row: a native date input, a number input and the CTA. Bottom-
+   * aligning them left each label at a different height and the boxes visibly
+   * out of line with one another. Every control is now pinned to the one
+   * CONTROL_HEIGHT, and each label is a single line, so the row aligns exactly
+   * — top, bottom and baseline.
+   *
+   * The 1fr columns are `minmax(0,1fr)` and each cell carries `min-w-0`: a
+   * native date input has a wide intrinsic minimum, and without that floor
+   * removed the tracks refuse to shrink and push the CTA out of the panel at
+   * narrower desktop widths.
+   *
+   * Nothing about the panel's surface — padding, radius, shadow, colour, type
+   * scale, placement — is touched.
+   */
   const fieldClass =
-    'w-full min-h-[46px] px-3.5 py-2.5 bg-secondary/40 border border-border rounded-md text-[15px] ' +
+    `w-full ${CONTROL_HEIGHT} px-3.5 py-2.5 bg-secondary/40 border border-border rounded-md text-[15px] ` +
     'text-foreground transition-colors focus:outline-none focus:border-champagne focus:bg-secondary/70';
 
   const fieldLabel =
@@ -110,40 +131,33 @@ export function AvailabilitySearch({
           aria-hidden="true"
         />
         <h2 id={`${id}-heading`} className="text-[13px] font-semibold tracking-[0.01em]">
-          {de ? 'Aufenthalt anfragen' : 'Enquire about a stay'}
+          {de ? 'Aufenthalt planen' : 'Plan your stay'}
         </h2>
       </div>
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto_auto] lg:items-end lg:gap-4">
-        <div>
-          <label htmlFor={`${id}-arrival`} className={fieldLabel}>
-            {de ? 'Anreise' : 'Check-in'}
-          </label>
-          <input
-            id={`${id}-arrival`}
-            type="date"
-            min={today}
-            value={arrival}
-            onChange={(e) => setArrival(e.target.value)}
-            className={fieldClass}
-          />
-        </div>
+      <div
+        className="mt-5 grid gap-3 sm:grid-cols-2
+                   lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7rem_auto] lg:items-end lg:gap-4"
+      >
+        <DateField
+          id={`${id}-arrival`}
+          label={de ? 'Anreise' : 'Check-in'}
+          value={arrival}
+          onChange={setArrival}
+          min={today}
+          labelClassName={fieldLabel}
+        />
 
-        <div>
-          <label htmlFor={`${id}-departure`} className={fieldLabel}>
-            {de ? 'Abreise' : 'Check-out'}
-          </label>
-          <input
-            id={`${id}-departure`}
-            type="date"
-            min={nextDayIso(arrival) ?? today}
-            value={departure}
-            onChange={(e) => setDeparture(e.target.value)}
-            className={fieldClass}
-          />
-        </div>
+        <DateField
+          id={`${id}-departure`}
+          label={de ? 'Abreise' : 'Check-out'}
+          value={departure}
+          onChange={setDeparture}
+          min={nextDayIso(arrival) ?? today}
+          labelClassName={fieldLabel}
+        />
 
-        <div className="lg:w-[104px]">
+        <div className="min-w-0">
           <label htmlFor={`${id}-guests`} className={fieldLabel}>
             {de ? 'Personen' : 'Guests'}
           </label>
@@ -159,7 +173,13 @@ export function AvailabilitySearch({
           />
         </div>
 
-        <CtaButton type="submit" full withArrow className="lg:!w-auto">
+        {/*
+          `self-end` matters in the two-column tablet layout, where the CTA
+          shares a row with the Personen field: without it the button floats up
+          beside that field's label instead of sitting on the same line as the
+          control.
+        */}
+        <CtaButton type="submit" full withArrow className={`self-end lg:!w-auto ${CONTROL_HEIGHT}`}>
           {de ? 'Apartments ansehen' : 'View apartments'}
         </CtaButton>
       </div>

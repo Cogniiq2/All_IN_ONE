@@ -34,13 +34,13 @@ export default function ContactClient() {
   const channels = [
     {
       icon: Send,
-      title: de ? 'Anfrageformular' : 'Enquiry form',
+      title: de ? 'Direkt buchen' : 'Book directly',
       body: de
-        ? 'Der direkteste Weg: Zeitraum, Personenzahl, fertig. Wir antworten mit Verfügbarkeit und Preis.'
-        : 'The most direct route: dates, number of guests, done. We reply with availability and price.',
+        ? 'Der direkteste Weg: Zeitraum, Personenzahl, fertig. Verfügbarkeit und Preis bestätigen wir persönlich.'
+        : 'The most direct route: dates, number of guests, done. We confirm availability and price personally.',
       action: (
         <button onClick={() => openEnquiry({ kind: 'short-term' })} className="link-quiet">
-          {label('requestAvailability', locale)}
+          {label('bookNow', locale)}
         </button>
       ),
     },

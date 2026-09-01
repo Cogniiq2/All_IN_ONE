@@ -4,15 +4,15 @@
  * The apartment selection view.
  *
  * The first screen of the booking journey and the destination of the hero bar.
- * Three cards, nothing expanded: choosing comes before reading. A card opens
- * the large detail modal, and booking starts from there.
+ * One card per apartment, nothing expanded: choosing comes before reading. A
+ * card opens the large detail modal, and booking starts from there.
  *
  * ── What the carried-over stay does here ─────────────────────────────────
  * When a visitor arrives from the hero bar, their dates and party size are in
  * the URL and in StayContext. This page ACKNOWLEDGES them — it echoes the
  * selection back and offers to clear it — but it does not filter or reorder the
  * cards by them, and it marks nothing as free. There is no availability source
- * (lib/booking/availability.ts), so any "3 of 3 available for your dates" here
+ * (lib/booking/availability.ts), so any "3 of 5 available for your dates" here
  * would be invented. The values travel on into the booking dialog, where they
  * arrive pre-filled.
  *
@@ -23,9 +23,9 @@
 import Link from 'next/link';
 import { ArrowRight, CalendarDays, X } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
-import { apartments } from '@/lib/content/apartments';
-import { contact } from '@/lib/content/brand';
+import { apartments, countWordInline, unitsByStreet } from '@/lib/content/apartments';
 import { nightsBetween } from '@/lib/booking/availability';
+import { formatDate } from '@/lib/booking/date-format';
 import { useStay } from '@/lib/booking/stay-context';
 import { Reveal } from '@/components/ui-kit/reveal';
 import { UnitCard, UNIT_GRID } from '@/components/units/unit-card';
@@ -38,13 +38,32 @@ export function ApartmentsClient() {
   const { openDetail } = useUnitFlow();
   const { stay, hasStay, setStay } = useStay();
 
+  // "Zwei Wohnungen in der Schulstraße, drei in der Opernstraße" — counted from
+  // the inventory, so a new unit or a new building rewrites the sentence.
+  const perStreet = unitsByStreet(apartments)
+    .map(({ street, count }, i) => {
+      // The noun is carried by the first group only; the rest read as a list.
+      const noun = de
+        ? i === 0
+          ? count === 1
+            ? ' Wohnung'
+            : ' Wohnungen'
+          : ''
+        : i === 0
+        ? count === 1
+          ? ' apartment'
+          : ' apartments'
+        : '';
+      return de
+        ? `${countWordInline(count, 'de')}${noun} in der ${street}`
+        : `${countWordInline(count, 'en')}${noun} on ${street}`;
+    })
+    .join(', ');
+  const perStreetSentence = perStreet.charAt(0).toUpperCase() + perStreet.slice(1);
+
   const nights = nightsBetween(stay.arrival, stay.departure);
-  const fmt = (d?: string) =>
-    d
-      ? new Date(`${d}T00:00:00Z`).toLocaleDateString(de ? 'de-DE' : 'en-GB', {
-          day: '2-digit', month: 'short', timeZone: 'UTC',
-        })
-      : null;
+  // One date shape across the whole site — see lib/booking/date-format.ts.
+  const fmt = (d?: string) => formatDate(d) ?? null;
 
   return (
     <>
@@ -58,8 +77,8 @@ export function ApartmentsClient() {
             </h1>
             <p className="lede mt-6">
               {de
-                ? `Zwei Wohnungen in der ${contact.street} und eine in der Opernstraße — alle in Familienbesitz und von uns selbst betreut. Wählen Sie eine aus, um sie im Detail zu sehen.`
-                : `Two apartments on ${contact.street} and one on Opernstraße — all family-owned and looked after by us. Choose one to see it in detail.`}
+                ? `${perStreetSentence} — alle in Familienbesitz und von uns selbst betreut. Wählen Sie eine aus, um sie im Detail zu sehen.`
+                : `${perStreetSentence} — all family-owned and looked after by us. Choose one to see it in detail.`}
             </p>
           </Reveal>
 

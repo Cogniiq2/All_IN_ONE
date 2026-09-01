@@ -22,17 +22,27 @@ import type { Locale } from '@/lib/content/apartments';
  * Single source of truth for CTA wording, German-first.
  *
  * The accommodation and rental journeys have deliberately different verbs.
- * Accommodation asks about availability; renting asks for a conversation.
- * Nothing on the rental side may say "buchen", "reservieren" or "Nächte".
+ * Accommodation books; renting asks for a conversation. Nothing on the rental
+ * side may say "buchen", "reservieren" or "Nächte", and nothing on the
+ * accommodation side asks for availability any more.
  *
- * Note on `requestAvailability`: it says *anfragen*, not *prüfen*. There is no
- * synchronised availability source yet (lib/booking/availability.ts), so
- * "Verfügbarkeit prüfen" would promise the visitor a live answer the site
- * cannot give. The verb changes when the PMS is connected, not before.
+ * Note on `bookNow`: it replaced "Verfügbarkeit anfragen", which framed the
+ * whole accommodation journey as an enquiry and asked the visitor for a
+ * favour before the site had offered them anything. The journey is booking-
+ * first now, and the CTA says so.
+ *
+ * What that word may and may not carry is settled elsewhere, not by softening
+ * it here: there is still no synchronised availability source
+ * (lib/booking/availability.ts) and no live payment (PAYMENT_ENABLED), so the
+ * dialog it opens states plainly, at the point of submission and again on the
+ * confirmation, that a person confirms the dates and the price and that
+ * nothing is charged online. "Verfügbarkeit prüfen" is the phrase that stays
+ * forbidden — it would promise a live answer the site cannot give.
  */
 export const ctaLabel = {
   exploreApartments: { de: 'Apartments entdecken', en: 'Explore apartments' },
-  requestAvailability: { de: 'Verfügbarkeit anfragen', en: 'Request availability' },
+  /** The primary short-term CTA. Opens the booking journey, never an enquiry. */
+  bookNow: { de: 'Jetzt buchen', en: 'Book now' },
   viewApartment: { de: 'Apartment ansehen', en: 'View apartment' },
   // ── Long-term rental ──────────────────────────────────────────────────
   requestConsultation: { de: 'Beratung anfragen', en: 'Request a consultation' },

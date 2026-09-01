@@ -31,10 +31,18 @@ import { label } from '@/components/ui-kit/cta';
 const COPY: Record<EnquiryKind, { eyebrow: { de: string; en: string }; title: { de: string; en: string }; description: { de: string; en: string } }> = {
   'short-term': {
     eyebrow: { de: 'Aufenthalt', en: 'Stay' },
-    title: { de: 'Verfügbarkeit anfragen', en: 'Request availability' },
+    title: { de: 'Jetzt buchen', en: 'Book now' },
+    /*
+      The honest frame around that title, in the dialog's own subheading rather
+      than hidden in small print at the bottom: the visitor books here, and a
+      person confirms the dates and the price before anything binds. Nothing is
+      charged on this screen (PAYMENT_ENABLED) and no calendar is consulted
+      (lib/booking/availability.ts) — both facts are stated again by the form
+      itself at the point of submission.
+    */
     description: {
-      de: 'Sagen Sie uns Ihren Zeitraum — wir prüfen persönlich und melden uns mit Verfügbarkeit und Preis zurück.',
-      en: 'Tell us your dates — we check personally and reply with availability and price.',
+      de: 'Sagen Sie uns Ihren Zeitraum — wir bestätigen Ihnen Verfügbarkeit und Preis persönlich, bevor etwas verbindlich wird.',
+      en: 'Tell us your dates — we confirm availability and price personally before anything becomes binding.',
     },
   },
   'long-term': {
