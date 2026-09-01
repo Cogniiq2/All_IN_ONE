@@ -22,6 +22,17 @@
  * gesture handling, and a floor plan that occasionally refuses to zoom is worse
  * than one with a visible + button. The buttons are keyboard-reachable and
  * named, which pinch never is.
+ *
+ * ── What it costs ────────────────────────────────────────────────────────
+ * Exactly one photograph is in the DOM: the open one, at the 2560px derivative
+ * (a few hundred KB), never the 2-7 MB source. Its neighbours are warmed into
+ * the HTTP cache with a detached Image() once the current one has decoded, so
+ * pressing right is instant without putting 35 full-size elements on the page.
+ *
+ * Panning writes the transform straight to the element inside a rAF instead of
+ * going through React state: a pointermove at 120Hz on an iPad was re-rendering
+ * the viewer on every event, which is precisely when the frame budget matters.
+ * React state holds only what the UI reads — the zoom step and the index.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -59,7 +70,10 @@ export function PropertyLightbox({
   const open = index !== null;
 
   const [zoomStep, setZoomStep] = useState(0);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const imageRef = useRef<HTMLImageElement | null>(null);
+  /** The live pan, outside React: it changes every pointermove. */
+  const offset = useRef({ x: 0, y: 0 });
+  const frame = useRef<number | null>(null);
   const drag = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
   const swipe = useRef<{ x: number; y: number } | null>(null);
 
@@ -67,17 +81,61 @@ export function PropertyLightbox({
   const zoom = ZOOM_STEPS[zoomStep];
   const zoomed = zoomStep > 0;
 
+  /** Writes the current pan and zoom to the element, at most once a frame. */
+  const paint = useCallback(
+    (scale: number, animate: boolean) => {
+      if (frame.current !== null) cancelAnimationFrame(frame.current);
+      frame.current = requestAnimationFrame(() => {
+        frame.current = null;
+        const node = imageRef.current;
+        if (!node) return;
+        node.style.transition = animate ? 'transform 0.24s cubic-bezier(0.22,1,0.36,1)' : 'none';
+        node.style.transform = `translate3d(${offset.current.x}px, ${offset.current.y}px, 0) scale(${scale})`;
+      });
+    },
+    []
+  );
+
   const resetView = useCallback(() => {
+    offset.current = { x: 0, y: 0 };
     setZoomStep(0);
-    setOffset({ x: 0, y: 0 });
-  }, []);
+    paint(1, true);
+  }, [paint]);
 
   // A new photograph always starts fitted. Carrying a magnified, panned view
   // from one image to the next lands the visitor in the corner of a picture
   // they have not seen yet.
   useEffect(() => {
-    resetView();
-  }, [index, resetView]);
+    offset.current = { x: 0, y: 0 };
+    setZoomStep(0);
+  }, [index]);
+
+  // Zoom is React state (the buttons and the percentage read it); the element
+  // is painted from it here, once per change rather than once per event.
+  useEffect(() => {
+    paint(ZOOM_STEPS[zoomStep], true);
+  }, [zoomStep, index, paint]);
+
+  useEffect(() => () => {
+    if (frame.current !== null) cancelAnimationFrame(frame.current);
+  }, []);
+
+  /**
+   * Warm the neighbours — and only the neighbours — after the open photograph
+   * has decoded, so pressing right is instant without 35 full-size elements
+   * existing. A detached Image() populates the HTTP cache and is collected
+   * again; nothing is added to the document.
+   */
+  const onLoaded = useCallback(() => {
+    if (index === null || count < 2) return;
+    for (const delta of [1, -1]) {
+      const neighbour = source.images[(index + delta + count) % count];
+      if (!neighbour) continue;
+      const warm = new window.Image();
+      warm.decoding = 'async';
+      warm.src = neighbour.full;
+    }
+  }, [index, count, source.images]);
 
   const go = useCallback(
     (delta: 1 | -1) => {
@@ -109,7 +167,12 @@ export function PropertyLightbox({
 
   const onPointerDown = (event: React.PointerEvent) => {
     if (zoomed) {
-      drag.current = { x: event.clientX, y: event.clientY, ox: offset.x, oy: offset.y };
+      drag.current = {
+        x: event.clientX,
+        y: event.clientY,
+        ox: offset.current.x,
+        oy: offset.current.y,
+      };
       (event.target as HTMLElement).setPointerCapture?.(event.pointerId);
     } else {
       swipe.current = { x: event.clientX, y: event.clientY };
@@ -118,10 +181,12 @@ export function PropertyLightbox({
 
   const onPointerMove = (event: React.PointerEvent) => {
     if (!drag.current) return;
-    setOffset({
+    offset.current = {
       x: drag.current.ox + (event.clientX - drag.current.x),
       y: drag.current.oy + (event.clientY - drag.current.y),
-    });
+    };
+    // Straight to the element, no render.
+    paint(ZOOM_STEPS[zoomStep], false);
   };
 
   const onPointerUp = (event: React.PointerEvent) => {
@@ -140,7 +205,7 @@ export function PropertyLightbox({
   const zoomOut = () =>
     setZoomStep((s) => {
       const next = Math.max(0, s - 1);
-      if (next === 0) setOffset({ x: 0, y: 0 });
+      if (next === 0) offset.current = { x: 0, y: 0 };
       return next;
     });
 
@@ -205,10 +270,15 @@ export function PropertyLightbox({
               */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                key={image.src}
-                src={image.src}
+                ref={imageRef}
+                key={image.full}
+                src={image.full}
                 alt={source.altFor(index)}
+                width={image.fullWidth}
+                height={image.fullHeight}
                 draggable={false}
+                decoding="async"
+                onLoad={onLoaded}
                 /*
                   The element fills the space that is left, and `object-contain`
                   fits the photograph inside it. Sizing the element to the image
@@ -217,11 +287,7 @@ export function PropertyLightbox({
                   exactly the case a viewer must never get wrong.
                 */
                 className="h-full w-full select-none object-contain"
-                style={{
-                  transform: `translate3d(${offset.x}px, ${offset.y}px, 0) scale(${zoom})`,
-                  transition: drag.current ? 'none' : 'transform 0.24s cubic-bezier(0.22,1,0.36,1)',
-                  willChange: 'transform',
-                }}
+                style={{ willChange: 'transform' }}
               />
             </div>
 

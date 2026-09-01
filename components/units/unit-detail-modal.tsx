@@ -65,7 +65,7 @@ export function UnitDetailModal() {
     <LargeModal open={open} onOpenChange={(next) => !next && close()}>
       <LargeModalClose />
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="modal-scroll">
         <div className="grid lg:grid-cols-[1.15fr_1fr]">
           {/* ── Imagery ───────────────────────────────────────────── */}
           <div className="relative lg:sticky lg:top-0 lg:h-full">

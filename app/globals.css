@@ -444,6 +444,34 @@
     cursor: not-allowed;
   }
 
+  /*
+     The single vertical scroll pane inside a modal.
+
+     Every trap this avoids was a real one on iOS Safari:
+
+       overflow-x: hidden      Tailwind's `overflow-y-auto` leaves overflow-x
+                               computing to `auto`, which gives the pane a
+                               horizontal scroll axis it never needs. Safari
+                               then treats a slightly-off-vertical drag as a
+                               possible horizontal pan and swallows it, which
+                               is what made the property modal feel stuck.
+       overscroll-behavior     `contain` stops the scroll chaining out to a
+                               body that is locked, where the gesture dies.
+       -webkit-overflow-scrolling  momentum scrolling on older iOS.
+       touch-action: pan-y     states the only gesture this pane handles, so
+                               nothing has to be inferred from the first few
+                               pixels of a drag.
+  */
+  .modal-scroll {
+    flex: 1 1 0%;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+  }
+
   .glass-surface {
     background: hsl(var(--background) / 0.95);
     backdrop-filter: blur(20px) saturate(180%);

@@ -239,7 +239,7 @@ export function DialogModal({
                   <CloseButton />
                 </div>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+              <div className="modal-scroll">{children}</div>
             </motion.div>
           </div>
         </Dialog.Content>

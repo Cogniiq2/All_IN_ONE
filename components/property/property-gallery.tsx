@@ -16,14 +16,27 @@
  * width. The grid is aligned to the top, so a mixed row leaves a little air
  * rather than stretching anything to match.
  *
- * ── What is actually fetched ─────────────────────────────────────────────
- * A section's photographs are requested only once that section is close to the
- * viewport. `loading="lazy"` alone was not enough: the browser treats a tall
- * scroll container generously and pulled most of a property's gallery the
- * moment the detail view opened — tens of megabytes of originals for pictures
- * nobody had scrolled to. Each section now watches for its own approach, and
- * every tile reserves its exact space beforehand, so nothing shifts when the
- * photographs arrive.
+ * ── What is actually fetched, and painted ────────────────────────────────
+ * Tiles use the 1600px WebP derivative — around 120 KB — not the 2-7 MB source
+ * photograph. That matters twice over: the source was not only a long download
+ * but a 4284x5712 decode, roughly 98 MB of bitmap per picture, and eleven of
+ * those in one room is over a gigabyte of memory. Decoding at that rate is
+ * what made scrolling stall on an iPad, and no amount of lazy loading fixes it
+ * — only asking for a smaller picture does.
+ *
+ * On top of that, a section's photographs are requested only once that section
+ * is close to the viewport: `loading="lazy"` alone was not enough, because the
+ * browser treats a tall scroll container generously and pulled most of a
+ * property's gallery the moment the detail view opened. Each section watches
+ * for its own approach, and every tile reserves its exact space beforehand so
+ * nothing shifts as photographs arrive.
+ *
+ * `content-visibility: auto` was tried here and removed: skipping paint for
+ * off-screen rooms needs an intrinsic size estimate, and a wrong estimate makes
+ * the scroll height breathe by around a tenth as sections render and
+ * de-render — the scrollbar jumping under the thumb mid-drag. With the tiles
+ * asking for 1600px files rather than 24-megapixel ones there is no paint cost
+ * left worth buying that with.
  *
  * ── Why the headings are small ───────────────────────────────────────────
  * A room heading is a signpost, not a title: an eyebrow and a hairline, costing
@@ -172,7 +185,11 @@ function SectionBlock({
   const { ref, near } = useNearViewport<HTMLElement>();
 
   return (
-    <section ref={ref} aria-labelledby={headingId} className={first ? 'mt-10' : 'mt-14'}>
+    <section
+      ref={ref}
+      aria-labelledby={headingId}
+      className={first ? 'mt-10' : 'mt-14'}
+    >
       {/* Signpost, not a title: one line, then the pictures it belongs to. */}
       <div className="flex items-center gap-4">
         <h4
@@ -254,6 +271,9 @@ function GalleryTile({
         // below has nothing to trim and nothing is ever stretched.
         aspectRatio: `${image.width} / ${image.height}`,
         borderRadius: 'var(--radius-md)',
+        // A button inside a scroll pane must not swallow a vertical drag.
+        // `manipulation` keeps the tap and hands panning back to the browser.
+        touchAction: 'manipulation',
       }}
       aria-label={`${alt} — ${locale === 'de' ? 'groß ansehen' : 'view larger'}`}
     >
@@ -263,6 +283,7 @@ function GalleryTile({
           alt={alt}
           fill
           loading={eager ? 'eager' : 'lazy'}
+          decoding="async"
           sizes="(max-width: 640px) 92vw, (max-width: 1024px) 46vw, 30vw"
           className="object-cover transition-transform duration-[900ms] ease-[cubic-bezier(0.22,1,0.36,1)]
                      group-hover:scale-[1.03]"

@@ -45,11 +45,26 @@ import type { Locale, Localized, RentalUnit } from '@/lib/content/apartments';
 import { galleryFor } from '@/lib/content/apartments';
 import { rawPropertyMedia } from '@/lib/content/property-media.generated';
 
-/** What the generator emits. Dimensions are as displayed, EXIF applied. */
+/**
+ * What the generator emits: two derivatives of one photograph.
+ *
+ *   src / width / height              the 1600px display file — cards, the
+ *                                     detail cover, gallery tiles
+ *   full / fullWidth / fullHeight     the 2560px file, fetched only when the
+ *                                     lightbox actually opens that photograph
+ *
+ * Both are WebP written by scripts/build-property-media.mjs, with EXIF
+ * orientation baked into the pixels, so the dimensions are what a browser
+ * paints. The source photographs under public/images/properties/ are never
+ * referenced from the site — see the note at the top of the generator.
+ */
 export interface RawPropertyImage {
   src: string;
   width: number;
   height: number;
+  full: string;
+  fullWidth: number;
+  fullHeight: number;
 }
 
 export interface RawPropertySection {
@@ -210,24 +225,29 @@ const COVER_OF_PROPERTY: Record<string, string> = {
   // period windows in frame, afternoon light across the floor. The one frame
   // that says "period building, done properly" before a word is read, and it
   // survives the card's crop because its subject is dead centre.
-  'schulstrasse-i': '/images/properties/schulstrasse-i/01-wohnzimmer/IMG_4678.jpeg',
+  'schulstrasse-i': '01-wohnzimmer/IMG_4678',
   // The living area under the roof, looking through to the dining end. It
   // shows what actually distinguishes this flat — the exposed timber and the
   // open split level — where a tighter frame would just show a sofa.
-  'schulstrasse-ii': '/images/properties/schulstrasse-ii/01-wohnzimmer/IMG_4698.jpeg',
+  'schulstrasse-ii': '01-wohnzimmer/IMG_4698',
   // The full shopfront at dusk, lit from inside, with the street running past.
   // The other two exteriors are a single window and a steeper angle; this is
   // the only one that shows the whole frontage, and the only landscape frame,
   // which is what a card's crop wants.
-  'schulstrasse-gewerbeflaeche':
-    '/images/properties/gewerbe-schulstrasse/01-aussenansicht-schaufenster/IMG_9590.jpeg',
+  'schulstrasse-gewerbeflaeche': '01-aussenansicht-schaufenster/IMG_9590',
 };
 
 export function verifiedCoverFor(slug: string): RawPropertyImage | undefined {
   const media = propertyMediaFor(slug);
   if (!media) return undefined;
   const chosen = COVER_OF_PROPERTY[slug];
-  const picked = chosen ? media.all.find((image) => image.src === chosen) : undefined;
+  // Matched on section and file stem rather than on a full path: the rendered
+  // file is a derivative whose name carries its size, and a cover must not
+  // quietly fall back to the first photograph of the first room because the
+  // pipeline renamed something.
+  const picked = chosen
+    ? media.all.find((image) => image.src.includes(`/${chosen}-`))
+    : undefined;
   return picked ?? media.all[0];
 }
 
@@ -252,8 +272,19 @@ export function imageAlt(section: GallerySection, unit: RentalUnit, locale: Loca
  * "Referenzbild" marker: the marker is a statement about provenance, and it
  * must disappear exactly when, and only when, the provenance changes.
  */
+/**
+ * A cover needs one file at display size and nothing else, so it is typed that
+ * way — the reference imagery an Opernstraße unit borrows has no derivatives
+ * and must not have to pretend otherwise.
+ */
+export interface CoverImage {
+  src: string;
+  width: number;
+  height: number;
+}
+
 export interface ResolvedCover {
-  image: RawPropertyImage;
+  image: CoverImage;
   alt: string;
   /** True only for photography of this exact unit. */
   verified: boolean;
@@ -266,7 +297,7 @@ export function coverFor(unit: RentalUnit, locale: Locale): ResolvedCover | unde
     const index = media ? media.all.findIndex((image) => image.src === verified.src) : -1;
     const section = media && index >= 0 ? media.sectionOf[index] : undefined;
     return {
-      image: verified,
+      image: { src: verified.src, width: verified.width, height: verified.height },
       alt: section ? imageAlt(section, unit, locale) : unit.name[locale],
       verified: true,
     };
