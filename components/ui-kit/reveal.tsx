@@ -1,6 +1,6 @@
 'use client';
 
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { type ReactNode } from 'react';
 
 /**
@@ -8,6 +8,10 @@ import { type ReactNode } from 'react';
  *
  * Replaces the previous set of five variants plus a dozen bespoke inline
  * animations. One motion, one easing, one duration — applied sparingly.
+ *
+ * Reduced motion is handled by `MotionConfig` in ClientLayout, not by a branch
+ * here: rendering a different element for those users made the server markup
+ * disagree with the client and discarded the server-rendered page on hydration.
  */
 export function Reveal({
   children,
@@ -20,13 +24,7 @@ export function Reveal({
   delay?: number;
   as?: 'div' | 'section' | 'li' | 'article';
 }) {
-  const reduce = useReducedMotion();
   const Component = motion[as];
-
-  if (reduce) {
-    const Plain = as;
-    return <Plain className={className}>{children}</Plain>;
-  }
 
   return (
     <Component

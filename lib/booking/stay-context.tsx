@@ -17,6 +17,18 @@
  * The URL is the source of truth on first paint; the context takes over after.
  * Nothing here knows anything about availability — that stays behind
  * lib/booking/availability.ts.
+ *
+ * ── Why this reads location directly instead of useSearchParams ──────────
+ * `useSearchParams()` opts its whole Suspense subtree out of static
+ * rendering. Because this provider wraps the entire layout, that made every
+ * page prerender as an empty body — no heading, no navigation, nothing for a
+ * crawler or a first paint until JavaScript had hydrated.
+ *
+ * The query string is only ever needed *after* mount (it seeds client state
+ * and is never rendered during SSR), so reading `window.location.search` in an
+ * effect gives identical behaviour and lets all 28 pages prerender their real
+ * markup again. `popstate` keeps back/forward working; the pathname dependency
+ * catches in-app navigations.
  */
 
 import {
@@ -28,7 +40,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { toIsoDate, type StayQuery } from '@/lib/booking/availability';
 
 export const STAY_PARAMS = {
@@ -55,25 +67,31 @@ function parseGuests(raw: string | null): number | undefined {
 }
 
 export function StayProvider({ children }: { children: ReactNode }) {
-  const params = useSearchParams();
+  const pathname = usePathname();
   const [stay, setStayState] = useState<StayQuery>({});
 
   /**
-   * Adopt values from the URL. Runs on mount and whenever the query changes, so
-   * arriving at /apartments?arrival=… from the hero bar fills the context, and
-   * so does pasting that link cold.
+   * Adopt values from the URL: on mount, on every in-app navigation, and on
+   * back/forward. Arriving at /apartments?arrival=… from the hero bar fills
+   * the context, and so does pasting that link cold.
    */
   useEffect(() => {
-    if (!params) return;
-    const fromUrl: StayQuery = {
-      arrival: toIsoDate(params.get(STAY_PARAMS.arrival)),
-      departure: toIsoDate(params.get(STAY_PARAMS.departure)),
-      guests: parseGuests(params.get(STAY_PARAMS.guests)),
+    const adopt = () => {
+      const params = new URLSearchParams(window.location.search);
+      const fromUrl: StayQuery = {
+        arrival: toIsoDate(params.get(STAY_PARAMS.arrival)),
+        departure: toIsoDate(params.get(STAY_PARAMS.departure)),
+        guests: parseGuests(params.get(STAY_PARAMS.guests)),
+      };
+      if (fromUrl.arrival || fromUrl.departure || fromUrl.guests) {
+        setStayState((current) => ({ ...current, ...fromUrl }));
+      }
     };
-    if (fromUrl.arrival || fromUrl.departure || fromUrl.guests) {
-      setStayState((current) => ({ ...current, ...fromUrl }));
-    }
-  }, [params]);
+
+    adopt();
+    window.addEventListener('popstate', adopt);
+    return () => window.removeEventListener('popstate', adopt);
+  }, [pathname]);
 
   const setStay = useCallback((next: StayQuery) => {
     setStayState((current) => ({ ...current, ...next }));
