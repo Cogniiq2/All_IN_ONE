@@ -1,7 +1,7 @@
 /**
  * GENERATED FILE — do not edit by hand.
  * Run `node scripts/build-property-media.mjs` after changing the photography
- * under public/images/properties/.
+ * under assets/property-originals/.
  *
  * Every path here points at a WEB DERIVATIVE under public/media/properties/,
  * never at a source photograph. Sizes are the derivative's own dimensions with

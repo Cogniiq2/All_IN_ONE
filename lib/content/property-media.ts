@@ -16,10 +16,14 @@
  *
  * ── The shape of it ──────────────────────────────────────────────────────
  *
- *     public/images/properties/<property>/<NN-section>/<file>
+ *     assets/property-originals/<property>/<NN-section>/<file>
  *                 │                │
  *                 │                └── a gallery section, in folder order
  *                 └── keyed to a unit slug by PROPERTY_OF_SLUG below
+ *
+ * The sources sit outside public/ on purpose — they are the archive, not the
+ * website. What the site serves is the derivative set the generator writes
+ * into public/media/properties/.
  *
  * The file list itself is generated (property-media.generated.ts) by
  * scripts/build-property-media.mjs, which reads the real dimensions and EXIF
@@ -34,7 +38,7 @@
  * surface owns a copy of the list, and no component branches on a slug.
  *
  * ── Adding a building ────────────────────────────────────────────────────
- * Drop the folders under public/images/properties/, add a line to
+ * Drop the folders under assets/property-originals/, add a line to
  * PROPERTY_OF_SLUG, add any new section id to SECTION_LABELS (or don't — an
  * unknown folder falls back to a readable label), and run the generator. No
  * component changes.
@@ -55,8 +59,9 @@ import { rawPropertyMedia } from '@/lib/content/property-media.generated';
  *
  * Both are WebP written by scripts/build-property-media.mjs, with EXIF
  * orientation baked into the pixels, so the dimensions are what a browser
- * paints. The source photographs under public/images/properties/ are never
- * referenced from the site — see the note at the top of the generator.
+ * paints. The source photographs under assets/property-originals/ are never
+ * referenced from the site, and being outside public/ they cannot be — see the
+ * note at the top of the generator.
  */
 export interface RawPropertyImage {
   src: string;

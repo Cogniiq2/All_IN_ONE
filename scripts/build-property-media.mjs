@@ -8,12 +8,20 @@
  *     node scripts/build-property-media.mjs          # incremental
  *     node scripts/build-property-media.mjs --force  # re-encode everything
  *
- *     public/images/properties/…   sources, never modified, never referenced
- *                  │                by the site
+ *     assets/property-originals/…  sources. Outside public/, so they are never
+ *                  │                served, never shipped to Cloudflare, and
+ *                  │                never modified by this script.
  *                  ▼
  *     public/media/properties/…    what visitors actually download
  *                  ▼
  *     lib/content/property-media.generated.ts
+ *
+ * ── Why the sources live outside public/ ─────────────────────────────────
+ * Anything under public/ is served by the site and copied into the Cloudflare
+ * asset bundle. The 328 MB of sources are neither wanted: nothing links to
+ * them, and shipping them meant uploading 314 MB of unused files on every
+ * deploy and leaving them publicly downloadable. They are kept in the
+ * repository — every frame, untouched and uncompressed — simply not published.
  *
  * ── Why derivatives exist ────────────────────────────────────────────────
  * The sources are 24-megapixel phone photographs of 2-7 MB each, 328 MB in
@@ -62,7 +70,7 @@ import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'n
 import { basename, dirname, extname, join } from 'node:path';
 import sharp from 'sharp';
 
-const SOURCE_ROOT = 'public/images/properties';
+const SOURCE_ROOT = 'assets/property-originals';
 const DERIVATIVE_ROOT = 'public/media/properties';
 const OUT = 'lib/content/property-media.generated.ts';
 const EXTS = new Set(['.jpg', '.jpeg', '.png']);
@@ -188,7 +196,7 @@ for (const property of dirs(SOURCE_ROOT)) {
 const header = `/**
  * GENERATED FILE — do not edit by hand.
  * Run \`node scripts/build-property-media.mjs\` after changing the photography
- * under public/images/properties/.
+ * under assets/property-originals/.
  *
  * Every path here points at a WEB DERIVATIVE under public/media/properties/,
  * never at a source photograph. Sizes are the derivative's own dimensions with
