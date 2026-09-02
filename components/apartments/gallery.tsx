@@ -81,7 +81,7 @@ export function Gallery({
   const active = images[index];
 
   return (
-    <figure className="m-0">
+    <figure className="m-0 min-w-0">
       <div
         className="relative aspect-[16/10] overflow-hidden bg-secondary"
         style={{ borderRadius: 'var(--radius-lg)' }}
@@ -130,7 +130,8 @@ export function Gallery({
       </div>
 
       {count > 1 && (
-        <div className="mt-3 flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label={de ? 'Bildauswahl' : 'Image selection'}>
+        // The rail scrolls; it must never be what decides how wide the page is.
+        <div className="mt-3 flex min-w-0 gap-2 overflow-x-auto pb-1" role="tablist" aria-label={de ? 'Bildauswahl' : 'Image selection'}>
           {images.map((image, i) => (
             <button
               key={image.src + i}

@@ -79,23 +79,20 @@ export const heroImage = living;
 /**
  * Provisional gallery sets, keyed by unit slug.
  *
- * The three Opernstraße flats draw on the same reference set so their cards and
- * detail views hold their own beside the Schulstraße flats. Every frame still
- * carries the "Referenzbild" marker, so nothing claims to show that specific
- * apartment — and their `status` keeps them out of every bookable path
- * regardless. The order is varied per unit only so the grid does not read as
- * one photograph repeated five times; it asserts nothing about the rooms.
+ * Empty, and that is the point.
  *
- * The two commercial units are deliberately ABSENT. The only photographs in
- * this repository are residential interiors; putting one on a shop unit would
- * be a false depiction, not a placeholder. Those cards render the composed
- * architectural panel in `components/units/unit-visual.tsx` instead, until real
- * photography of the units exists.
+ * The Schulstraße units have their own verified photography and resolve
+ * through lib/content/property-media.ts instead; they never looked here. The
+ * Opernstraße units used to borrow the stock interiors below, and no longer
+ * do: a stock living room standing in for a specific unnamed apartment invited
+ * exactly the reading the "Referenzbild" marker existed to prevent, and a
+ * marker is a weaker instrument than simply not showing the picture. Every
+ * Opernstraße unit now gets the composed architectural panel in
+ * `components/units/unit-visual.tsx` — the same treatment the commercial units
+ * have always had — until it has photography of its own.
+ *
+ * The map is kept rather than deleted: it is the seam a unit passes through
+ * when it has something provisional to show, and the reference-image
+ * vocabulary above is still the right one on the day that happens.
  */
-export const tempGalleries: Record<string, TempImage[]> = {
-  'schulstrasse-i': [living, bedroom, loft],
-  'schulstrasse-ii': [loft, living, bedroom],
-  'opernstrasse-i': [bedroom, loft, living],
-  'opernstrasse-ii': [living, loft, bedroom],
-  'opernstrasse-iii': [loft, bedroom, living],
-};
+export const tempGalleries: Record<string, TempImage[]> = {};

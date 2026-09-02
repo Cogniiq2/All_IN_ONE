@@ -30,7 +30,7 @@ import { Loader as Loader2 } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
 import { apartments, bookableApartments } from '@/lib/content/apartments';
 import { brand, ENQUIRY_ENDPOINT } from '@/lib/content/brand';
-import { nextDayIso, todayIso, type StayQuery } from '@/lib/booking/availability';
+import { MAX_GUESTS, MIN_GUESTS, nextDayIso, todayIso, type StayQuery } from '@/lib/booking/availability';
 import { CtaButton } from '@/components/ui-kit/cta';
 import { DateField } from '@/components/ui-kit/date-field';
 import {
@@ -181,8 +181,8 @@ export function ShortTermEnquiryForm({
         <input
           id="enq-guests"
           type="number"
-          min={1}
-          max={12}
+          min={MIN_GUESTS}
+          max={MAX_GUESTS}
           inputMode="numeric"
           value={form.guests}
           onChange={(e) => set('guests')(e.target.value)}

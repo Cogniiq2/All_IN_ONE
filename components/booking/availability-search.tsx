@@ -41,7 +41,10 @@ import { CtaButton } from '@/components/ui-kit/cta';
 import { CONTROL_HEIGHT, DateField } from '@/components/ui-kit/date-field';
 import { useStay } from '@/lib/booking/stay-context';
 import {
+  clampGuests,
   hasLiveAvailability,
+  MAX_GUESTS,
+  MIN_GUESTS,
   nextDayIso,
   todayIso,
   toIsoDate,
@@ -80,7 +83,7 @@ export function AvailabilitySearch({
     const next = {
       arrival: toIsoDate(arrival),
       departure: toIsoDate(departure),
-      guests: Number(guests) || undefined,
+      guests: clampGuests(Number(guests)),
     };
     // Context first so the destination renders with the values already present,
     // then the URL so a reload or a shared link carries them too.
@@ -178,8 +181,8 @@ export function AvailabilitySearch({
           <input
             id={`${id}-guests`}
             type="number"
-            min={1}
-            max={12}
+            min={MIN_GUESTS}
+            max={MAX_GUESTS}
             inputMode="numeric"
             value={guests}
             onChange={(e) => setGuests(e.target.value)}

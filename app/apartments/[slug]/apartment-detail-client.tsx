@@ -154,9 +154,19 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
             <h1 className="display-1">{apartment.name[locale]}</h1>
           </Reveal>
 
-          <div className="mt-10 grid gap-10 lg:grid-cols-[1fr_360px] lg:gap-14">
+          {/*
+            `minmax(0, …)` on the flexible column, and `min-w-0` on the column
+            itself. A grid track will not shrink below its content's minimum,
+            and the gallery's thumbnail rail is one long flex line of
+            non-shrinking 96px tiles — 35 of them for Schulstraße I, a
+            min-content width of 3632px. Without the floor removed the column
+            grew to that, and the lead photograph grew with it: a 3632x2270
+            frame on a 1084px page. Opernstraße never showed it because three
+            thumbnails fit inside the column anyway.
+          */}
+          <div className="mt-10 grid gap-10 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-14">
             {/* ── Main column ─────────────────────────────────────── */}
-            <div>
+            <div className="min-w-0">
               <Reveal>
                 <Gallery images={images} verified={verified} />
               </Reveal>

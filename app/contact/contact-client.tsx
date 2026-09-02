@@ -7,6 +7,7 @@ import { brand, contact } from '@/lib/content/brand';
 import { Reveal } from '@/components/ui-kit/reveal';
 import { EnquiryButton } from '@/components/enquiry/enquiry-button';
 import { label } from '@/components/ui-kit/cta';
+import { LocationCards } from '@/components/contact/location-cards';
 
 /**
  * Contact.
@@ -189,16 +190,22 @@ export default function ContactClient() {
                   <p className="text-[15px] font-semibold">
                     {brand.name} · {brand.city}
                   </p>
+                  {/* The buildings and the way to them are published below, in
+                      LocationCards. What still follows a confirmed booking is
+                      the unit itself and how to get into it — this line says
+                      that, and no longer withholds the address. */}
                   <p className="body-copy mt-1 text-[14px]">
                     {de
-                      ? `${contact.street}, ${contact.postalCode} ${brand.city}. Die genaue Adresse und den Weg erhalten Sie, sobald Ihr Aufenthalt feststeht.`
-                      : `${contact.street}, ${contact.postalCode} ${brand.city}. You receive the exact address and directions once your stay is confirmed.`}
+                      ? `Unsere Häuser stehen in ${brand.city} — die Adressen und die Anfahrt finden Sie weiter unten. Welche Wohnung es wird und wie Sie hineinkommen, klären wir, sobald Ihr Aufenthalt feststeht.`
+                      : `Our buildings are in ${brand.city} — the addresses and how to reach them are below. Which apartment it will be, and how you get in, we settle once your stay is confirmed.`}
                   </p>
                 </div>
               </div>
               <EnquiryButton />
             </div>
           </Reveal>
+
+          <LocationCards />
         </div>
       </section>
     </>

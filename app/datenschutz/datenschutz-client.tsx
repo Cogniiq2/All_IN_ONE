@@ -70,6 +70,21 @@ export default function DatenschutzClient() {
         </p>
       </LegalSection>
 
+      {/* Required by the click-to-load map on /contact. See
+          components/contact/location-cards.tsx for the mechanism. */}
+      <LegalSection heading={de ? 'Karten' : 'Maps'}>
+        <p>
+          {de
+            ? 'Auf der Kontaktseite zeigen wir unsere Standorte zunächst als lokal erzeugte Vorschau ohne jede Verbindung zu einem Kartenanbieter. Erst wenn Sie ausdrücklich auf „Karte laden“ klicken, wird eine Karte von Google Maps (Google Ireland Limited) nachgeladen. Dabei werden Ihre IP-Adresse und Angaben zu Ihrem Endgerät an Google übertragen; eine Übermittlung in Drittländer ist nicht ausgeschlossen.'
+            : 'On the contact page we show our locations as a locally generated preview with no connection to any map provider. Only when you explicitly select “Load map” is a Google Maps map (Google Ireland Limited) loaded. Your IP address and details about your device are then transmitted to Google; transfer to third countries cannot be excluded.'}
+        </p>
+        <p>
+          {de
+            ? 'Rechtsgrundlage für dieses Nachladen ist Ihre Einwilligung nach Art. 6 Abs. 1 lit. a DSGVO und § 25 Abs. 1 TDDDG, die Sie durch den Klick erteilen. Ohne diesen Klick findet keine Übertragung statt. Die Einwilligung gilt nur für den jeweiligen Seitenaufruf; sie wird nicht gespeichert und kann durch Neuladen der Seite widerrufen werden. Die Links zu Google Maps und Apple Maps sind gewöhnliche Verweise — eine Übertragung erfolgt erst, wenn Sie ihnen folgen.'
+            : 'The legal basis for loading it is your consent under Art. 6(1)(a) GDPR and § 25(1) TDDDG, which you give by that click. Without it, no transfer takes place. The consent applies to that page view only; it is not stored and is withdrawn by reloading the page. The links to Google Maps and Apple Maps are ordinary links — nothing is transmitted until you follow them.'}
+        </p>
+      </LegalSection>
+
       <LegalSection heading={de ? 'Analyse und Tracking' : 'Analytics and tracking'}>
         <p>
           {de

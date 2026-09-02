@@ -24,6 +24,27 @@
 
 import { PAYMENT_ENABLED } from '@/lib/content/brand';
 
+/**
+ * How many people one of these apartments sleeps.
+ *
+ * Four is the real occupancy the owners let these flats at, so it is the
+ * ceiling everywhere: the stepper, the quick choices, the party-size field in
+ * the hero panel, and the value read back out of a shared URL. It lives here,
+ * with the rest of the booking service seam, so there is one number to change
+ * and no surface can quietly offer a fifth guest.
+ *
+ * NEEDS CONFIRMATION — whether any unit sleeps more than four. Until it is
+ * confirmed per unit, one figure governs the whole booking UI.
+ */
+export const MIN_GUESTS = 1;
+export const MAX_GUESTS = 4;
+
+/** Forces any number into the bookable range. The only way guests are set. */
+export function clampGuests(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  return Math.min(MAX_GUESTS, Math.max(MIN_GUESTS, Math.floor(value)));
+}
+
 /** What a visitor selected in the availability panel. ISO `YYYY-MM-DD`. */
 export interface StayQuery {
   arrival?: string;

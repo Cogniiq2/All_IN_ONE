@@ -38,6 +38,15 @@
  * asking for 1600px files rather than 24-megapixel ones there is no paint cost
  * left worth buying that with.
  *
+ * ── Motion ───────────────────────────────────────────────────────────────
+ * A room heading's letters settle, its gold rule draws itself, and its
+ * photographs fade up in sequence as the room is reached. All of it comes from
+ * components/property/reveal-on-scroll.tsx, which observes the modal's own
+ * scroll pane rather than the window — inside the modal the window never
+ * scrolls — and fires once per element. No scroll listener, no per-frame
+ * state, opacity and transform only, and image loading is still decided by the
+ * section observer below rather than by any of it.
+ *
  * ── Why the headings are small ───────────────────────────────────────────
  * A room heading is a signpost, not a title: an eyebrow and a hairline, costing
  * one line. What separates one room from the next is space — a wide margin
@@ -57,6 +66,7 @@ import {
 } from '@/lib/content/property-media';
 import type { RentalUnit } from '@/lib/content/apartments';
 import { PropertyLightbox } from '@/components/property/property-lightbox';
+import { RevealBlock, RevealLetters, RevealRule } from '@/components/property/reveal-on-scroll';
 
 /** Wider than about 6:5 earns two columns rather than a portrait's width. */
 function isWide(image: RawPropertyImage): boolean {
@@ -130,9 +140,11 @@ export function PropertyGallery({
     <section className="border-t border-border/70 px-6 py-10 sm:px-8 lg:px-10 lg:py-12">
       <header>
         <p className="eyebrow">{de ? 'Galerie' : 'Gallery'}</p>
-        <h3 className="display-3 mt-3">
-          {de ? 'Räume im Überblick' : 'Room by room'}
-        </h3>
+        <RevealLetters
+          as="h3"
+          className="display-3 mt-3"
+          text={de ? 'Räume im Überblick' : 'Room by room'}
+        />
         <p className="body-copy mt-3 max-w-[58ch] text-[14px]">
           {de
             ? 'Aufnahmen dieser Wohnung, Raum für Raum. Tippen Sie auf ein Bild, um es groß zu sehen — im Betrachter blättern Sie durch die gesamte Galerie.'
@@ -192,14 +204,14 @@ function SectionBlock({
     >
       {/* Signpost, not a title: one line, then the pictures it belongs to. */}
       <div className="flex items-center gap-4">
-        <h4
+        <RevealLetters
+          as="h4"
           id={headingId}
-          className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.16em]"
-          style={{ color: 'hsl(var(--champagne-dark))' }}
-        >
-          {section.label[locale]}
-        </h4>
-        <span className="rule-hair" aria-hidden="true" />
+          className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.16em]
+                     text-[hsl(var(--champagne-dark))]"
+          text={section.label[locale]}
+        />
+        <RevealRule className="min-w-0 flex-1" delay={140} />
         <span
           className="shrink-0 text-[11px] tabular-nums"
           style={{ color: 'hsl(var(--muted-foreground))' }}
@@ -225,17 +237,17 @@ function SectionBlock({
             ? 'sm:col-span-2 lg:col-span-2'
             : '';
           return (
-            <GalleryTile
-              key={image.src}
-              image={image}
-              alt={imageAlt(section, unit, locale)}
-              /* Only the very first frame of the first room is worth fetching
-                 eagerly; everything else waits until it is scrolled to. */
-              eager={first && i === 0}
-              load={near}
-              className={span}
-              onOpen={() => onOpen(index)}
-            />
+            <RevealBlock key={image.src} index={i} className={span}>
+              <GalleryTile
+                image={image}
+                alt={imageAlt(section, unit, locale)}
+                /* Only the very first frame of the first room is worth fetching
+                   eagerly; everything else waits until it is scrolled to. */
+                eager={first && i === 0}
+                load={near}
+                onOpen={() => onOpen(index)}
+              />
+            </RevealBlock>
           );
         })}
       </div>
@@ -248,7 +260,6 @@ function GalleryTile({
   alt,
   eager,
   load,
-  className,
   onOpen,
 }: {
   image: RawPropertyImage;
@@ -256,7 +267,6 @@ function GalleryTile({
   eager: boolean;
   /** False until the section is approached; the frame is reserved regardless. */
   load: boolean;
-  className: string;
   onOpen: () => void;
 }) {
   const { locale } = useI18n();
@@ -265,7 +275,7 @@ function GalleryTile({
     <button
       type="button"
       onClick={onOpen}
-      className={`group relative block w-full overflow-hidden bg-secondary ${className}`}
+      className="group relative block w-full overflow-hidden bg-secondary"
       style={{
         // The tile takes the photograph's own proportions, so the object-cover
         // below has nothing to trim and nothing is ever stretched.

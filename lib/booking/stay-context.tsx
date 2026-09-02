@@ -29,7 +29,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { toIsoDate, type StayQuery } from '@/lib/booking/availability';
+import { clampGuests, MAX_GUESTS, MIN_GUESTS, toIsoDate, type StayQuery } from '@/lib/booking/availability';
 
 export const STAY_PARAMS = {
   arrival: 'arrival',
@@ -48,10 +48,17 @@ interface StayState {
 
 const StayContext = createContext<StayState | null>(null);
 
+/**
+ * A party size out of the URL. Anything outside the bookable range is dropped
+ * rather than clamped: `?guests=9` in a shared link is not a request for four,
+ * it is a link to something this site does not offer, and silently answering it
+ * with a different number would be worse than ignoring it.
+ */
 function parseGuests(raw: string | null): number | undefined {
   if (!raw) return undefined;
   const n = Number(raw);
-  return Number.isFinite(n) && n >= 1 && n <= 12 ? Math.floor(n) : undefined;
+  if (!Number.isFinite(n) || n < MIN_GUESTS || n > MAX_GUESTS) return undefined;
+  return Math.floor(n);
 }
 
 export function StayProvider({ children }: { children: ReactNode }) {
@@ -76,7 +83,8 @@ export function StayProvider({ children }: { children: ReactNode }) {
   }, [params]);
 
   const setStay = useCallback((next: StayQuery) => {
-    setStayState((current) => ({ ...current, ...next }));
+    // The last gate before the value reaches every surface downstream.
+    setStayState((current) => ({ ...current, ...next, ...('guests' in next ? { guests: clampGuests(next.guests) } : {}) }));
   }, []);
 
   const toQueryString = useCallback(

@@ -34,7 +34,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowLeft, Banknote, Check, CreditCard, Loader as Loader2, Minus, Plus, Wallet } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
 import { brand, ENQUIRY_ENDPOINT } from '@/lib/content/brand';
-import { canBookOnline, nightsBetween } from '@/lib/booking/availability';
+import { canBookOnline, clampGuests, MAX_GUESTS, MIN_GUESTS, nightsBetween } from '@/lib/booking/availability';
 import { formatDateOrDash } from '@/lib/booking/date-format';
 import {
   readConfirmedStay,
@@ -77,7 +77,7 @@ export function BookingModal() {
   const [status, setStatus] = useState<Status>('idle');
   const [touched, setTouched] = useState(false);
 
-  const [guests, setGuests] = useState(stay.guests ?? 2);
+  const [guests, setGuests] = useState(clampGuests(stay.guests) ?? 2);
   const [dates, setDates] = useState({ arrival: stay.arrival, departure: stay.departure });
   const [method, setMethod] = useState<MethodId>('card');
   const [contact, setContact] = useState({ name: '', email: '', phone: '' });
@@ -93,7 +93,7 @@ export function BookingModal() {
   // Adopt whatever the hero bar and detail view already know, on each open.
   useEffect(() => {
     if (!open) return;
-    setGuests(stay.guests ?? 2);
+    setGuests(clampGuests(stay.guests) ?? 2);
     setDates({ arrival: stay.arrival, departure: stay.departure });
     setStep(1);
     setDirection(1);
@@ -108,7 +108,7 @@ export function BookingModal() {
   const contactValid = nameValid && emailValid && contact.phone.trim().length >= 5;
 
   const canAdvance = useMemo(() => {
-    if (step === 1) return guests >= 1;
+    if (step === 1) return guests >= MIN_GUESTS && guests <= MAX_GUESTS;
     if (step === 2) return Boolean(dates.arrival && dates.departure);
     if (step === 3) return contactValid;
     return true;
@@ -137,7 +137,9 @@ export function BookingModal() {
             arrival: dates.arrival ?? null,
             departure: dates.departure ?? null,
             nights: nights ?? null,
-            guests,
+            // Clamped again on the way out. The stepper and the quick choices
+            // cannot produce a fifth guest, and neither can anything else.
+            guests: clampGuests(guests) ?? MIN_GUESTS,
           },
           payment: {
             // A stated preference, not a transaction. No provider is contacted
@@ -318,39 +320,102 @@ function Sending() {
   );
 }
 
-/** A hairline rail, not a badge row — the step count should not shout. */
+/**
+ * The step rail: one unbroken line, with a gold fill that travels along it.
+ *
+ * It was four separate segments with gaps between them, which read as four
+ * unrelated marks rather than one journey. Now a single hairline spans the
+ * whole width and the gold advances across it as the visitor moves — a
+ * continuous movement from where it was to where it now is, not a jump.
+ *
+ * ── How it moves ─────────────────────────────────────────────────────────
+ * One CSS transform on one element: `scaleX` from a left origin, so the
+ * browser animates it on the compositor and nothing lays out again. The
+ * easing is the site's own curve and the duration is long enough to read as
+ * deliberate rather than as a loading bar.
+ *
+ * ── Not colour alone ─────────────────────────────────────────────────────
+ * The rail is decoration (`aria-hidden`); the state a screen reader gets is
+ * the list beneath it, where the current step carries `aria-current="step"`
+ * and every label spells out whether it is done, current or still to come.
+ * Sighted users get the same distinction in weight and in a small mark on the
+ * completed labels, so the gold is never the only signal.
+ */
 function Progress({ step }: { step: number }) {
   const { locale } = useI18n();
   const de = locale === 'de';
+  const reduce = useReducedMotion();
+
   const labels = de
     ? ['Personen', 'Zeitraum', 'Kontakt', 'Zahlung']
     : ['Guests', 'Dates', 'Contact', 'Payment'];
 
+  const state = de
+    ? { done: 'abgeschlossen', current: 'aktueller Schritt', todo: 'offen' }
+    : { done: 'completed', current: 'current step', todo: 'not started' };
+
+  // The fill reaches the centre of the step it is on, so the gold ends under
+  // the active label rather than short of it or past it.
+  const progress = (step - 0.5) / labels.length;
+
   return (
     <div className="border-b border-border/70 px-6 py-4">
-      <div className="flex items-center gap-2">
-        {labels.map((l, i) => {
+      <div className="relative" aria-hidden="true">
+        {/* One continuous base line, corner to corner. */}
+        <span
+          className="absolute left-0 right-0 top-0 block h-[2px]"
+          style={{ background: 'hsl(var(--border))' }}
+        />
+        {/* The gold, travelling along it. */}
+        <span
+          className="absolute left-0 top-0 block h-[2px] origin-left"
+          style={{
+            width: '100%',
+            transform: `scaleX(${progress})`,
+            background:
+              'linear-gradient(90deg, hsl(var(--champagne-dark)) 0%, hsl(var(--gold)) 60%, hsl(var(--gold-bright)) 100%)',
+            transition: reduce
+              ? 'none'
+              : 'transform 900ms cubic-bezier(0.22, 1, 0.36, 1)',
+          }}
+        />
+        {/* The labels sit under the line, one per logical position. */}
+        <div className="flex items-start pt-2.5">
+          {labels.map((label, i) => {
+            const n = i + 1;
+            const active = n === step;
+            const done = n < step;
+            return (
+              <span
+                key={label}
+                className="flex-1 text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors duration-500"
+                style={{
+                  color: active
+                    ? 'hsl(var(--champagne-dark))'
+                    : done
+                    ? 'hsl(var(--foreground))'
+                    : 'hsl(var(--muted-foreground) / 0.75)',
+                }}
+              >
+                {label}
+              </span>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* What assistive technology reads: the same four steps, in words. */}
+      <ol className="sr-only">
+        {labels.map((label, i) => {
           const n = i + 1;
-          const done = n < step;
           const active = n === step;
           return (
-            <div key={l} className="flex flex-1 flex-col gap-1.5">
-              <span
-                className="h-[2px] w-full transition-colors duration-500"
-                style={{
-                  background: done || active ? 'hsl(var(--champagne-dark))' : 'hsl(var(--border))',
-                }}
-              />
-              <span
-                className="text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors duration-500"
-                style={{ color: active ? 'hsl(var(--champagne-dark))' : 'hsl(var(--muted-foreground) / 0.75)' }}
-              >
-                {l}
-              </span>
-            </div>
+            <li key={label} aria-current={active ? 'step' : undefined}>
+              {`${n}. ${label} — ${active ? state.current : n < step ? state.done : state.todo}`}
+            </li>
           );
         })}
-      </div>
+      </ol>
     </div>
   );
 }
@@ -371,7 +436,7 @@ function StepGuests({ guests, setGuests }: { guests: number; setGuests: (n: numb
       </p>
 
       <div className="mt-8 flex items-center justify-center gap-7">
-        <StepperButton onClick={() => setGuests(Math.max(1, guests - 1))} disabled={guests <= 1}
+        <StepperButton onClick={() => setGuests(Math.max(MIN_GUESTS, guests - 1))} disabled={guests <= MIN_GUESTS}
                        label={de ? 'Weniger' : 'Fewer'}><Minus className="h-4 w-4" /></StepperButton>
         <div className="text-center" style={{ minWidth: 92 }}>
           <p className="font-serif text-[52px] leading-none" style={{ color: 'hsl(var(--foreground))' }}>
@@ -381,12 +446,13 @@ function StepGuests({ guests, setGuests }: { guests: number; setGuests: (n: numb
             {de ? (guests === 1 ? 'Person' : 'Personen') : guests === 1 ? 'Guest' : 'Guests'}
           </p>
         </div>
-        <StepperButton onClick={() => setGuests(Math.min(12, guests + 1))} disabled={guests >= 12}
+        <StepperButton onClick={() => setGuests(Math.min(MAX_GUESTS, guests + 1))} disabled={guests >= MAX_GUESTS}
                        label={de ? 'Mehr' : 'More'}><Plus className="h-4 w-4" /></StepperButton>
       </div>
 
       <div className="mt-8 flex flex-wrap justify-center gap-2">
-        {[2, 3, 4, 6].map((n) => (
+        {/* Every size these apartments sleep, from one to four. */}
+        {Array.from({ length: MAX_GUESTS - MIN_GUESTS + 1 }, (_, i) => MIN_GUESTS + i).map((n) => (
           <button
             key={n}
             type="button"

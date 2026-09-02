@@ -19,7 +19,9 @@
 import { ArrowRight, Building2, CalendarDays, Hammer, Home, MapPin, Ruler } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
 import { coverFor, propertyMediaFor } from '@/lib/content/property-media';
+import { factsFor } from '@/lib/content/property-facts';
 import { PropertyGallery } from '@/components/property/property-gallery';
+import { PropertyFactsSection } from '@/components/property/property-facts';
 import {
   formatArea,
   isCommercial,
@@ -49,6 +51,7 @@ export function UnitDetailModal() {
   // photography of its own or it does not; nothing here branches on which unit.
   const cover = coverFor(unit, locale);
   const gallery = propertyMediaFor(unit.slug);
+  const amenities = factsFor(unit.slug);
   const commercial = isCommercial(unit);
   const upcoming = unit.status === 'in-preparation';
   const area = formatArea(unit.sizeSqm, locale);
@@ -169,6 +172,15 @@ export function UnitDetailModal() {
           renders nothing here at all: an empty room heading would be worse than
           no gallery, and no unit borrows another's photographs.
         */}
+        {/*
+          What the flat offers, then the rooms it offers them in. Both are
+          data: a unit without a fact sheet or without photography renders
+          neither, and neither section knows which unit it is showing.
+
+          `isStay` decides scope, not content — a tenancy conversation drops
+          the short-stay services and keeps everything that is the flat itself.
+        */}
+        {amenities && <PropertyFactsSection facts={amenities} shortTerm={isStay} />}
         {gallery && <PropertyGallery media={gallery} unit={unit} />}
       </div>
     </LargeModal>
