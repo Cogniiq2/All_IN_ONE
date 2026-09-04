@@ -96,11 +96,6 @@ export function PortfolioProcession() {
                 {de ? 'Unser Portfolio in Bayreuth' : 'Our Portfolio in Bayreuth'}
               </span>
             }
-            lede={
-              de
-                ? 'Sechs Immobilien in Bayreuth — einzeln entwickelt, betreut und mit einem gemeinsamen Anspruch an Qualität.'
-                : 'Six properties in Bayreuth — individually developed and looked after, with one shared standard of quality.'
-            }
           />
         </div>
       </div>
