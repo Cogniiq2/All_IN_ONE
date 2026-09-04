@@ -514,6 +514,146 @@
     animation: fade-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 
+  /* ── The building procession (About) ─────────────────────────────
+     A continuous architectural conveyor, moving LEFT → RIGHT.
+
+     The track holds the six buildings twice. Its transform runs from
+     -50% (the second copy filling the frame) to 0 (the first copy
+     filling it). Because the two copies are identical, the end state is
+     pixel-identical to the start, so the loop repeats with no reset, no
+     snap and no gap — and travelling toward 0 carries everything
+     rightwards, which is the direction asked for. A conventional marquee
+     runs 0 → -50% and would move the other way.
+
+     Only `transform` animates, on the compositor. Nothing here reads
+     layout, listens to scroll, or runs a frame loop.
+
+     One iteration = one full six-building sequence. */
+  @keyframes portfolio-drift {
+    from { transform: translate3d(-50%, 0, 0); }
+    to   { transform: translate3d(0, 0, 0); }
+  }
+
+  .portfolio-frame {
+    /* The track is wider than the page; it may only overflow in here. */
+    overflow: hidden;
+    /* Buildings enter and leave through a soft edge rather than a cut.
+       A mask rather than a gradient overlay, so it holds over any
+       background without being told what colour the page is. */
+    /* A fixed length rather than a percentage: on a phone 6% is 23px and
+       reads as a hard cut, on a wide desktop it is 90px and eats a whole
+       building. `min()` keeps the fade a consistent physical size and
+       still yields on a frame too narrow to spare it. */
+    --fade: min(90px, 14%);
+    -webkit-mask-image: linear-gradient(
+      to right, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent
+    );
+    mask-image: linear-gradient(
+      to right, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent
+    );
+  }
+
+  .portfolio-track {
+    display: flex;
+    align-items: flex-end;   /* one shared ground line */
+    width: max-content;
+    animation: portfolio-drift 48s linear infinite;
+    will-change: transform;
+  }
+
+  /* Hovering anywhere over the procession holds it still. Pausing the
+     animation freezes the transform exactly where it is, so there is no
+     jump on the way in or on the way out. */
+  @media (hover: hover) and (pointer: fine) {
+    .portfolio-frame:hover .portfolio-track { animation-play-state: paused; }
+  }
+
+  .portfolio-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    flex: 0 0 auto;
+    padding-inline: 1.25rem;
+  }
+
+  /* The size of a drawing is decided here and NOT by the bitmap.
+
+     `--ar` is the derivative's own aspect ratio, set per building from the
+     data. The height is whichever comes first: the row's height, or the
+     height a building of that ratio may have before it exceeds the row's
+     width. That is `object-fit: contain` arithmetic done in the box itself
+     — proportions are preserved exactly, nothing is cropped or stretched,
+     and a wide, low building is neither stretched tall nor allowed to
+     dominate the row.
+
+     Doing it this way rather than with max-width/max-height on `auto`
+     dimensions is what makes the procession's geometry independent of
+     loading: the box is its full size before a single byte of image has
+     arrived, so the track's width never changes, and the loop can never
+     be knocked out of step by an image turning up late. */
+  .portfolio-item img {
+    display: block;
+    --row-height: 140px;
+    --row-width: 210px;
+    aspect-ratio: var(--ar);
+    height: min(var(--row-height), calc(var(--row-width) / var(--ar)));
+    width: auto;
+    object-fit: contain;
+    transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .portfolio-name {
+    margin-top: 1.1rem;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: hsl(var(--muted-foreground));
+    transition: color 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .portfolio-item:hover img { transform: scale(1.03); }
+    .portfolio-item:hover .portfolio-name { color: hsl(var(--foreground)); }
+  }
+
+  @media (min-width: 768px) {
+    .portfolio-item { padding-inline: 2.5rem; }
+    .portfolio-item img { --row-height: 200px; --row-width: 320px; }
+  }
+
+  @media (min-width: 1024px) {
+    .portfolio-item { padding-inline: 3.25rem; }
+    .portfolio-item img { --row-height: 240px; --row-width: 400px; }
+  }
+
+  /* Reduced motion: no procession at all. The second copy is removed and
+     the six buildings wrap onto as many rows as they need — a static
+     portfolio that scrolls with the page and loses no name and no
+     drawing. Deliberately not a horizontally scrollable rail: those were
+     the source of the iPad scroll traps fixed earlier. */
+  @media (prefers-reduced-motion: reduce) {
+    .portfolio-frame {
+      -webkit-mask-image: none;
+      mask-image: none;
+    }
+    .portfolio-track,
+    .portfolio-track [data-portfolio-copy='lead'] {
+      animation: none;
+      width: 100%;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      justify-content: center;
+      row-gap: 2.75rem;
+    }
+    /* The echo exists only to make the loop seamless; with no loop it is
+       six duplicate names for a screen reader to no purpose. */
+    .portfolio-track [data-portfolio-copy='echo'] { display: none; }
+    .portfolio-item { padding-inline: 1.5rem; }
+  }
+
   /* Skip-to-content, visible on focus only. */
   .skip-link {
     position: absolute;

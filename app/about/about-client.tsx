@@ -5,6 +5,7 @@ import { ArrowRight, Home, KeyRound, MessageCircle, ShieldCheck } from 'lucide-r
 import { useI18n } from '@/lib/i18n';
 import { brand } from '@/lib/content/brand';
 import { Reveal } from '@/components/ui-kit/reveal';
+import { PortfolioProcession } from '@/components/about/portfolio-procession';
 import { Monogram } from '@/components/brand/logo';
 import { CtaLink, label } from '@/components/ui-kit/cta';
 import { EnquiryButton } from '@/components/enquiry/enquiry-button';
@@ -242,6 +243,9 @@ export default function AboutClient() {
           </div>
         </div>
       </section>
+
+      {/* The buildings themselves, after the promises and before the ask. */}
+      <PortfolioProcession />
 
       <section className="section-pad-sm" style={{ background: 'hsl(var(--secondary) / 0.5)' }}>
         <div className="container-luxury text-center">
