@@ -8,6 +8,7 @@ import { Reveal } from '@/components/ui-kit/reveal';
 import { Monogram } from '@/components/brand/logo';
 import { CtaLink, label } from '@/components/ui-kit/cta';
 import { EnquiryButton } from '@/components/enquiry/enquiry-button';
+import { PortfolioProcession } from '@/components/about/portfolio-procession';
 
 /**
  * About.
@@ -242,6 +243,13 @@ export default function AboutClient() {
           </div>
         </div>
       </section>
+
+      {/* ── The portfolio, as drawings ─────────────────────────────────
+          Sits after the commitments and before the closing call to action:
+          the reader has been told who the family is and what they can be
+          held to, and this shows the buildings behind that. It deliberately
+          claims nothing about availability — see the component. */}
+      <PortfolioProcession />
 
       <section className="section-pad-sm" style={{ background: 'hsl(var(--secondary) / 0.5)' }}>
         <div className="container-luxury text-center">

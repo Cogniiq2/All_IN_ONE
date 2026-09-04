@@ -407,6 +407,183 @@
     animation: fade-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 
+  /* ── About: the property portfolio procession ────────────────
+     A continuous LEFT → RIGHT drift of the six building drawings.
+     Geometry is declared here and the loop period is derived from it,
+     so the component never measures the DOM.
+
+       period = count × (slide width + gap)
+
+     The track holds the sequence twice, so translating from -period to
+     0 lands on a pixel-identical frame — no reset is visible. */
+
+  .portfolio-procession {
+    --bp-sketch-h: 150px;
+    --bp-slide-w: 232px;   /* ≈ 1.55 × sketch height — see __figure below */
+    --bp-gap: 26px;
+    --bp-duration: 45s;
+    --bp-period: calc(var(--bp-count) * (var(--bp-slide-w) + var(--bp-gap)));
+
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+
+    /* Buildings enter and leave through a soft edge rather than a hard
+       cut. A mask, not a gradient overlay, so it holds on any surface
+       colour the section is ever placed on. */
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      #000 9%,
+      #000 91%,
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      #000 9%,
+      #000 91%,
+      transparent 100%
+    );
+  }
+
+  @media (min-width: 640px) {
+    .portfolio-procession {
+      --bp-sketch-h: 196px;
+      --bp-slide-w: 304px;
+      --bp-gap: 34px;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .portfolio-procession {
+      --bp-sketch-h: 244px;
+      --bp-slide-w: 378px;
+      --bp-gap: 42px;
+    }
+  }
+
+  @media (min-width: 1280px) {
+    .portfolio-procession {
+      --bp-sketch-h: 272px;
+      --bp-slide-w: 422px;
+      --bp-gap: 48px;
+    }
+  }
+
+  .portfolio-procession__track {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--bp-gap);
+    width: max-content;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    will-change: transform;
+    animation: portfolio-drift var(--bp-duration) linear infinite;
+  }
+
+  /* LEFT → RIGHT. The transform increases across the cycle, so content
+     moves rightward; do not invert these two stops. */
+  @keyframes portfolio-drift {
+    from {
+      transform: translate3d(calc(var(--bp-period) * -1), 0, 0);
+    }
+    to {
+      transform: translate3d(0, 0, 0);
+    }
+  }
+
+  .portfolio-procession__item {
+    flex: 0 0 var(--bp-slide-w);
+    width: var(--bp-slide-w);
+    transform-origin: bottom center;
+  }
+
+  /* A fixed box every drawing is contained within, bottom-aligned, so the
+     six buildings share one ground line and one visual weight without any
+     of them being stretched or cropped. The box is wider than it is tall,
+     which keeps the single-storey building from collapsing while the tall
+     façade still reaches full height. */
+  .portfolio-procession__figure {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    height: var(--bp-sketch-h);
+  }
+
+  .portfolio-procession__figure img {
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    object-position: bottom center;
+    user-select: none;
+  }
+
+  .portfolio-procession__name {
+    margin-top: 1.35rem;
+    text-align: center;
+    font-size: 12.5px;
+    font-weight: 500;
+    letter-spacing: 0.045em;
+    color: hsl(var(--muted-foreground));
+    transition: color 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  @media (min-width: 1024px) {
+    .portfolio-procession__name {
+      font-size: 13.5px;
+    }
+  }
+
+  /* Pointer devices only — nothing here may be required to read the
+     section, and touch must not inherit a sticky :hover state. */
+  @media (hover: hover) and (pointer: fine) {
+    .portfolio-procession:hover .portfolio-procession__track,
+    .portfolio-procession:focus-within .portfolio-procession__track {
+      animation-play-state: paused;
+    }
+
+    .portfolio-procession__item {
+      transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .portfolio-procession__item:hover {
+      transform: scale(1.028);
+    }
+
+    .portfolio-procession__item:hover .portfolio-procession__name {
+      color: hsl(var(--foreground));
+    }
+  }
+
+  /* Reduced motion: the drift is dropped entirely and the same six
+     buildings become a plain scrollable row. The clone is removed so
+     nothing repeats, and the edge mask goes with it so no building is
+     ever faded out of a static layout. No content is lost. */
+  @media (prefers-reduced-motion: reduce) {
+    .portfolio-procession {
+      overflow-x: auto;
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
+      -webkit-mask-image: none;
+      mask-image: none;
+      padding-inline: 1.5rem;
+    }
+
+    .portfolio-procession__track {
+      animation: none;
+      transform: none;
+      will-change: auto;
+    }
+
+    .portfolio-procession__item[data-clone] {
+      display: none;
+    }
+  }
+
   /* Skip-to-content, visible on focus only. */
   .skip-link {
     position: absolute;
