@@ -384,6 +384,15 @@
     transform: translateY(-3px);
   }
 
+  /* A card that is only read. Identical at rest to `.card-surface`; it
+     simply does not answer the pointer, because nothing happens when it is
+     clicked. Used by the rented reference cards on /apartments. */
+  .card-surface-static:hover {
+    border-color: hsl(var(--border) / 0.85);
+    box-shadow: none;
+    transform: none;
+  }
+
   .rule-hair {
     height: 1px;
     width: 100%;

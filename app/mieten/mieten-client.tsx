@@ -34,7 +34,6 @@ import { brand, contact } from '@/lib/content/brand';
 import { Reveal } from '@/components/ui-kit/reveal';
 import { UnitCard, UNIT_GRID } from '@/components/units/unit-card';
 import { useUnitFlow } from '@/components/units/unit-flow-context';
-import { EnquiryButton } from '@/components/enquiry/enquiry-button';
 import { label } from '@/components/ui-kit/cta';
 
 /** How a tenancy actually comes about. Four steps, the last one off-site. */
@@ -94,8 +93,14 @@ export function MietenClient() {
                 ? `${countWord(total, 'de')} Objekte in ${countWordInline(buildings, 'de')} ${buildings === 1 ? 'Haus' : 'Häusern'} in der Bayreuther Innenstadt: ${countWordInline(residential.length, 'de')} ${residential.length === 1 ? 'Wohnung' : 'Wohnungen'} und ${countWordInline(commercial.length, 'de')} ${commercial.length === 1 ? 'Gewerbefläche' : 'Gewerbeflächen'} im Erdgeschoss. Vermietet wird hier über einen regulären Mietvertrag, an Privatpersonen wie an Unternehmen. Das ist ein anderer Weg als eine Buchung: Sie fragen an, wir sprechen miteinander, Sie sehen sich die Räume an.`
                 : `${countWord(total, 'en')} properties in ${countWordInline(buildings, 'en')} ${buildings === 1 ? 'building' : 'buildings'} in central Bayreuth: ${countWordInline(residential.length, 'en')} ${residential.length === 1 ? 'apartment' : 'apartments'} and ${countWordInline(commercial.length, 'en')} ground-floor commercial ${commercial.length === 1 ? 'unit' : 'units'}. What is let here is let under a conventional rental agreement, to private tenants and to businesses. This is a different path from a booking: you enquire, we talk, you view the rooms.`}
             </p>
+            {/*
+              "Beratung anfragen" used to stand here. It opened the legacy
+              long-term enquiry form, which is outdated and is no longer
+              offered from this page; the per-unit "Details & Termin" flow on
+              each card is the current way to ask about a specific property.
+              The accommodation link beside it is unchanged.
+            */}
             <div className="mt-8 flex flex-col sm:flex-row gap-3">
-              <EnquiryButton kind="long-term" withArrow />
               <Link href="/apartments" className="cta-secondary group">
                 {de ? 'Sie suchen eine Unterkunft?' : 'Looking for accommodation?'}
                 <ArrowRight
@@ -243,8 +248,10 @@ export function MietenClient() {
                   : `Tell us briefly what you are looking for and what for. ${brand.name} is a family business — you speak to the owners, not to a management company.`}
               </p>
 
+              {/* Same legacy trigger, removed for the same reason. Contact,
+                  phone and WhatsApp below remain the ways to open a
+                  conversation from here. */}
               <div className="mt-9 flex flex-col sm:flex-row justify-center gap-3">
-                <EnquiryButton kind="long-term" withArrow />
                 <Link href="/contact" className="cta-secondary">
                   {label('contactUs', locale)}
                 </Link>

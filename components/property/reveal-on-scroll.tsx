@@ -108,7 +108,7 @@ export function RevealLetters({
 }: {
   text: string;
   className?: string;
-  as?: 'span' | 'h3' | 'h4' | 'p';
+  as?: 'span' | 'h2' | 'h3' | 'h4' | 'p';
   id?: string;
   delay?: number;
 }) {

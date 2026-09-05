@@ -29,6 +29,9 @@ import { formatDate } from '@/lib/booking/date-format';
 import { useStay } from '@/lib/booking/stay-context';
 import { Reveal } from '@/components/ui-kit/reveal';
 import { UnitCard, UNIT_GRID } from '@/components/units/unit-card';
+import { BuildingGroupHeading } from '@/components/units/building-group-heading';
+import { RentedUnitCard } from '@/components/units/rented-unit-card';
+import { apartmentGroups } from '@/lib/content/apartment-groups';
 import { useUnitFlow } from '@/components/units/unit-flow-context';
 import { label } from '@/components/ui-kit/cta';
 
@@ -140,19 +143,50 @@ export function ApartmentsClient() {
 
       <section className="section-pad">
         <div className="container-luxury">
-          <div className={UNIT_GRID}>
-            {apartments.map((apartment, i) => (
-              <Reveal key={apartment.slug} delay={i * 0.08} className="h-full">
-                <UnitCard
-                  unit={apartment}
-                  mode="stay"
-                  priority={i === 0}
-                  headingLevel="h2"
-                  onOpen={(unit) => openDetail(unit, 'stay')}
-                />
-              </Reveal>
-            ))}
-          </div>
+          {/*
+            One group per building, in the order lib/content/apartment-groups
+            declares: the lettable apartments first, then the buildings whose
+            units are let. Every group uses the same grid and the same card
+            sizing, so a card is the same object whichever building it belongs
+            to — only the group it sits under changes.
+
+            The lettable cards are the same <UnitCard> in the same 'stay' mode
+            they were rendered in before; nothing about them is re-specified
+            here beyond where they sit on the page.
+          */}
+          {apartmentGroups.map((group, groupIndex) => (
+            <section
+              key={group.id}
+              aria-labelledby={`group-${group.id}`}
+              className={groupIndex === 0 ? '' : 'mt-16 lg:mt-20'}
+            >
+              <BuildingGroupHeading
+                id={`group-${group.id}`}
+                address={group.address}
+                count={group.units.length}
+              />
+
+              <div className={`${UNIT_GRID} mt-7 lg:mt-8`}>
+                {group.kind === 'lettable'
+                  ? group.units.map((apartment, i) => (
+                      <Reveal key={apartment.slug} delay={i * 0.08} className="h-full">
+                        <UnitCard
+                          unit={apartment}
+                          mode="stay"
+                          priority={groupIndex === 0 && i === 0}
+                          headingLevel="h3"
+                          onOpen={(unit) => openDetail(unit, 'stay')}
+                        />
+                      </Reveal>
+                    ))
+                  : group.units.map((unit, i) => (
+                      <Reveal key={unit.id} delay={i * 0.08} className="h-full">
+                        <RentedUnitCard unit={unit} />
+                      </Reveal>
+                    ))}
+              </div>
+            </section>
+          ))}
 
           {/*
             The other journey, offered once, after the apartments — never beside
@@ -160,7 +194,7 @@ export function ApartmentsClient() {
           */}
           <Reveal delay={0.1}>
             <div
-              className="mt-14 flex flex-col gap-5 p-7 lg:flex-row lg:items-center lg:justify-between lg:p-9"
+              className="mt-16 flex flex-col gap-5 p-7 lg:mt-20 lg:flex-row lg:items-center lg:justify-between lg:p-9"
               style={{
                 background: 'hsl(var(--secondary) / 0.5)',
                 border: '1px solid hsl(var(--border))',
