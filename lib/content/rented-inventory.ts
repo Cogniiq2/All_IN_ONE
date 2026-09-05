@@ -33,6 +33,7 @@
  */
 
 import type { Localized } from '@/lib/content/apartments';
+import { buildingById } from '@/lib/content/buildings';
 
 /** Where a record is allowed to be rendered. */
 export type DisplayScope = 'homepage' | 'apartments' | 'rentals';
@@ -49,7 +50,11 @@ export interface RentedUnit {
   propertyId: string;
   /** "Apartment 1" — the address comes from the group heading above it. */
   unitLabel: Localized;
-  /** Published street address of the building. */
+  /**
+   * The building's public label — a street, and a house number only for the
+   * two addresses a visitor is actually sent to. Read from
+   * lib/content/buildings.ts, never written here.
+   */
   address: string;
   occupancyStatus: OccupancyStatus;
   displayScope: DisplayScope[];
@@ -87,7 +92,11 @@ export const RENTED_DESCRIPTION: Localized = {
  * chances to mistype an address or drift a wording. Everything that is the
  * same for every unit is stated once, here.
  */
-function property(id: string, address: string, unitCount: number): PortfolioProperty {
+function property(id: string, unitCount: number): PortfolioProperty {
+  const building = buildingById(id);
+  if (!building) throw new Error(`rented inventory: no building "${id}"`);
+  const address = building.publicName;
+
   return {
     id,
     address,
@@ -111,11 +120,11 @@ function property(id: string, address: string, unitCount: number): PortfolioProp
 
 /** Buildings in the order they appear on /apartments, after the lettable ones. */
 export const rentedProperties: PortfolioProperty[] = [
-  property('harburgerstrasse-5', 'Harburgerstraße 5', 4),
-  property('mainstrasse-14', 'Mainstraße 14', 4),
-  property('am-main-3', 'Am Main 3', 3),
-  property('riedingerstrasse-13', 'Riedingerstraße 13', 1),
-  property('tunnelstrasse-14', 'Tunnelstraße 14', 2),
+  property('harburgerstrasse', 4),
+  property('mainstrasse', 4),
+  property('am-main', 3),
+  property('riedingerstrasse', 1),
+  property('tunnelstrasse', 2),
 ];
 
 /** Every rented unit, flattened. Used for counts and for tests. */

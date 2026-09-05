@@ -33,6 +33,9 @@ import {
 import { brand, contact } from '@/lib/content/brand';
 import { Reveal } from '@/components/ui-kit/reveal';
 import { UnitCard, UNIT_GRID } from '@/components/units/unit-card';
+import { BuildingGroupHeading } from '@/components/units/building-group-heading';
+import { RentedUnitCard } from '@/components/units/rented-unit-card';
+import { rentalGroups } from '@/lib/content/apartment-groups';
 import { useUnitFlow } from '@/components/units/unit-flow-context';
 import { label } from '@/components/ui-kit/cta';
 
@@ -113,65 +116,100 @@ export function MietenClient() {
         </div>
       </header>
 
-      {/* ── Residential ──────────────────────────────────────────────── */}
-      {residential.length > 0 && (
-        <section className="section-pad" aria-labelledby="wohnraum">
-          <div className="container-luxury">
-            <Reveal>
-              <p className="eyebrow inline-flex items-center gap-2">
-                <Home className="w-3.5 h-3.5" aria-hidden="true" />
-                {de ? 'Wohnraum' : 'Residential'}
-              </p>
-              <h2 id="wohnraum" className="display-2 mt-4">
-                {de ? 'Langzeitmiete auf Anfrage' : 'Long-term rental on request'}
-              </h2>
-              <p className="lede mt-5">
-                {de
-                  ? `Unsere ${countWordInline(residential.length, 'de')} Wohnungen sind Unterkünfte für Aufenthalte auf Zeit — sie stehen nicht als freie Mietwohnungen zur Verfügung. Eine dauerhafte Vermietung über einen Wohnraummietvertrag prüfen wir im Einzelfall auf Anfrage. Ob sie für Ihren Zeitraum möglich ist, sagen wir Ihnen persönlich.`
-                  : `Our ${countWordInline(residential.length, 'en')} apartments are accommodation for stays — they are not standing vacant as flats on the rental market. A tenancy under a residential rental agreement is something we consider individually on request. Whether it is possible for your period is something we tell you personally.`}
-              </p>
-            </Reveal>
+      {/*
+        ── Everything BoLaGio has, by building ──────────────────────────
+        The page used to be two lists, residential then commercial. It is now
+        one list of buildings, because that is how a visitor thinks about a
+        street: a building has flats AND a shop below them, and splitting them
+        apart made a reader hold two lists in their head to see one house.
 
-            <div className={`mt-12 ${UNIT_GRID}`}>
-              {residential.map((unit, i) => (
-                <Reveal key={unit.slug} delay={i * 0.08} className="h-full">
-                  <UnitCard unit={unit} mode="rent" priority={i === 0} onOpen={openRent} />
-                </Reveal>
-              ))}
+        The cards themselves are the same <UnitCard mode="rent"> they always
+        were, opening the same appointment flow. What changed is only which
+        heading they sit under. The two explanations that headed the old
+        sections are kept in full below — they say what may and may not be let
+        here, which is the most important copy on the page.
+      */}
+      <section className="section-pad" aria-labelledby="objekte">
+        <div className="container-luxury">
+          <Reveal>
+            <p className="eyebrow inline-flex items-center gap-2">
+              <Home className="w-3.5 h-3.5" aria-hidden="true" />
+              {de ? 'Objekte' : 'Properties'}
+            </p>
+            <h2 id="objekte" className="display-2 mt-4">
+              {de ? 'Unsere Häuser in Bayreuth' : 'Our buildings in Bayreuth'}
+            </h2>
+          </Reveal>
+
+          <Reveal delay={0.06}>
+            <div className="mt-8 grid gap-x-10 gap-y-7 md:grid-cols-2">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em]"
+                   style={{ color: 'hsl(var(--champagne-dark))' }}>
+                  {de ? 'Wohnraum' : 'Residential'}
+                </p>
+                <p className="body-copy mt-3 text-[14.5px]">
+                  {de
+                    ? `Unsere ${countWordInline(residential.length, 'de')} Wohnungen sind Unterkünfte für Aufenthalte auf Zeit — sie stehen nicht als freie Mietwohnungen zur Verfügung. Eine dauerhafte Vermietung über einen Wohnraummietvertrag prüfen wir im Einzelfall auf Anfrage. Ob sie für Ihren Zeitraum möglich ist, sagen wir Ihnen persönlich.`
+                    : `Our ${countWordInline(residential.length, 'en')} apartments are accommodation for stays — they are not standing vacant as flats on the rental market. A tenancy under a residential rental agreement is something we consider individually on request. Whether it is possible for your period is something we tell you personally.`}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em]"
+                   style={{ color: 'hsl(var(--champagne-dark))' }}>
+                  <Building2 className="mr-1.5 inline h-3.5 w-3.5 align-[-2px]" aria-hidden="true" />
+                  {de ? 'Gewerbe' : 'Commercial'}
+                </p>
+                <p className="body-copy mt-3 text-[14.5px]">
+                  {de
+                    ? 'In beiden Häusern liegt im Erdgeschoss eine Fläche mit Schaufenstern zur Straße. Sie werden ausschließlich über einen Gewerbemietvertrag vermietet und stehen nicht als Unterkunft zur Verfügung. Welche Nutzung jeweils zulässig ist, klären wir vor einem Vertrag gemeinsam.'
+                    : 'Both buildings have a ground-floor unit with display windows onto the street. They are let exclusively under a commercial rental agreement and are not available as accommodation. Which use is permissible in each case is established together before any contract.'}
+                </p>
+              </div>
             </div>
-          </div>
-        </section>
-      )}
+          </Reveal>
 
-      {/* ── Commercial ───────────────────────────────────────────────── */}
-      {commercial.length > 0 && (
-        <section className="section-pad bg-secondary/45" aria-labelledby="gewerbe">
-          <div className="container-luxury">
-            <Reveal>
-              <p className="eyebrow inline-flex items-center gap-2">
-                <Building2 className="w-3.5 h-3.5" aria-hidden="true" />
-                {de ? 'Gewerbe' : 'Commercial'}
-              </p>
-              <h2 id="gewerbe" className="display-2 mt-4">
-                {de ? 'Gewerbeflächen zur Miete' : 'Commercial space to rent'}
-              </h2>
-              <p className="lede mt-5">
-                {de
-                  ? 'In beiden Häusern liegt im Erdgeschoss eine Fläche mit Schaufenstern zur Straße. Sie werden ausschließlich über einen Gewerbemietvertrag vermietet und stehen nicht als Unterkunft zur Verfügung. Welche Nutzung jeweils zulässig ist, klären wir vor einem Vertrag gemeinsam.'
-                  : 'Both buildings have a ground-floor unit with display windows onto the street. They are let exclusively under a commercial rental agreement and are not available as accommodation. Which use is permissible in each case is established together before any contract.'}
-              </p>
-            </Reveal>
+          {/*
+            The reference buildings that follow the lettable ones carry units
+            that are occupied. They are shown so the portfolio is complete, and
+            they say so on their face: "Aktuell vermietet", no CTA, nothing to
+            click. Nothing here may be read as an offer.
+          */}
+          {rentalGroups.map((group, groupIndex) => (
+            <section
+              key={group.id}
+              aria-labelledby={`rent-group-${group.id}`}
+              className={groupIndex === 0 ? 'mt-14' : 'mt-16 lg:mt-20'}
+            >
+              <BuildingGroupHeading
+                id={`rent-group-${group.id}`}
+                address={group.address}
+                count={group.units.length}
+              />
 
-            <div className={`mt-12 ${UNIT_GRID}`}>
-              {commercial.map((unit, i) => (
-                <Reveal key={unit.slug} delay={i * 0.08} className="h-full">
-                  <UnitCard unit={unit} mode="rent" onOpen={openRent} />
-                </Reveal>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
+              <div className={`${UNIT_GRID} mt-7 lg:mt-8`}>
+                {group.kind === 'lettable'
+                  ? group.units.map((unit, i) => (
+                      <Reveal key={unit.slug} delay={i * 0.08} className="h-full">
+                        <UnitCard
+                          unit={unit}
+                          mode="rent"
+                          priority={groupIndex === 0 && i === 0}
+                          headingLevel="h3"
+                          onOpen={openRent}
+                        />
+                      </Reveal>
+                    ))
+                  : group.units.map((unit, i) => (
+                      <Reveal key={unit.id} delay={i * 0.08} className="h-full">
+                        <RentedUnitCard unit={unit} />
+                      </Reveal>
+                    ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      </section>
 
       {/* ── How it works ─────────────────────────────────────────────── */}
       <section className="section-pad" style={{ background: 'hsl(var(--ink))' }} aria-labelledby="ablauf">

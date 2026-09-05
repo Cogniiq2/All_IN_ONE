@@ -52,6 +52,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '@/lib/i18n';
 import { Reveal } from '@/components/ui-kit/reveal';
 import { portfolioBuildings } from '@/lib/content/portfolio';
+import { publicAltFor, publicLabelFor } from '@/lib/content/portfolio-labels';
 
 export function PortfolioProcession() {
   const { locale } = useI18n();
@@ -133,13 +134,16 @@ function Sequence({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={load ? building.image : undefined}
-            alt={echo ? '' : building.alt[locale]}
+            alt={echo ? '' : publicAltFor(building, locale)}
             // The box is laid out from this, not from the bitmap.
             style={{ ['--ar' as string]: building.width / building.height }}
             decoding="async"
             draggable={false}
           />
-          <figcaption className="portfolio-name">{building.name}</figcaption>
+          {/* The public label, not the record's own name: house numbers are
+              published for the two addresses a visitor is sent to and for no
+              others. See lib/content/buildings.ts. */}
+          <figcaption className="portfolio-name">{publicLabelFor(building)}</figcaption>
         </figure>
       ))}
     </div>

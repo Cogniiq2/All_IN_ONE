@@ -21,6 +21,8 @@
 import { ArrowRight } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
 import { UnitVisual } from '@/components/units/unit-visual';
+import { BuildingCover } from '@/components/units/building-cover';
+import { buildingForStreet } from '@/lib/content/buildings';
 import { coverFor } from '@/lib/content/property-media';
 import {
   formatArea,
@@ -55,6 +57,22 @@ export function UnitCard({
   // not. One resolver, so a card never has to know which.
   const cover = coverFor(unit, locale);
   const area = formatArea(unit.sizeSqm, locale);
+
+  /*
+    ── What a card without photography shows ──────────────────────────────
+    Photography always wins: a unit that has its own pictures is untouched by
+    any of this, which is why the Schulstraße cards look exactly as they did.
+
+    Where there is none, an apartment now shows its BUILDING's elevation
+    rather than the drawn shopfront. The shopfront panel was drawn for a
+    ground-floor unit with display windows, and it stays the fallback for
+    commercial space — that drawing is right for a shop and wrong for a flat
+    on the fourth floor. The decision is made from `isCommercial` and the
+    unit's street, both data; no slug is consulted, and a building with no
+    elevation of its own falls through to the same neutral ground.
+  */
+  const building = commercial ? undefined : buildingForStreet(unit.street);
+  const showBuildingCover = !cover && building !== undefined;
 
 
   // The badge speaks the language of the journey the card sits in.
@@ -93,15 +111,24 @@ export function UnitCard({
             No provenance chip on the card. It returns on the large image inside
             the detail view, together with the full note — see UnitVisual.
           */}
-          <UnitVisual
-            image={cover?.image}
-            alt={cover?.alt}
-            street={unit.street}
-            commercial={commercial}
-            priority={priority}
-            showBadge={false}
-            className="aspect-[4/3] w-full"
-          />
+          {showBuildingCover ? (
+            <BuildingCover
+              cover={building?.cover}
+              buildingName={building?.publicName ?? unit.street}
+              priority={priority}
+              className="aspect-[4/3] w-full"
+            />
+          ) : (
+            <UnitVisual
+              image={cover?.image}
+              alt={cover?.alt}
+              street={unit.street}
+              commercial={commercial}
+              priority={priority}
+              showBadge={false}
+              className="aspect-[4/3] w-full"
+            />
+          )}
           <span
             className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-xs px-2.5 py-1.5
                        text-[11px] font-semibold"

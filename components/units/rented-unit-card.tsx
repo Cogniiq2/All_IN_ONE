@@ -25,6 +25,8 @@
  */
 
 import { useI18n } from '@/lib/i18n';
+import { BuildingCover } from '@/components/units/building-cover';
+import { buildingById } from '@/lib/content/buildings';
 import {
   RENTED_BADGE,
   RENTED_DESCRIPTION,
@@ -47,29 +49,20 @@ export function RentedUnitCard({ unit }: { unit: RentedUnit }) {
         of this apartment to look at.
       */}
       <div className="relative">
-        <div
+        {/*
+          The building's own elevation, shared by every unit in the group —
+          they are, after all, the same building. Tunnelstraße has no drawing
+          yet and resolves to the same neutral ground with no picture, which
+          is the restrained fallback rather than a borrowed façade.
+
+          `zoomOnHover` is off: nothing on this card responds to a pointer.
+        */}
+        <BuildingCover
+          cover={buildingById(unit.propertyId)?.cover}
+          buildingName={unit.address}
+          zoomOnHover={false}
           className="aspect-[4/3] w-full"
-          aria-hidden="true"
-          style={{
-            background:
-              'linear-gradient(158deg, hsl(var(--secondary)) 0%, hsl(var(--accent)) 58%, hsl(var(--stone) / 0.55) 100%)',
-          }}
-        >
-          <div className="absolute inset-x-0 bottom-0 p-5">
-            <p
-              className="font-serif text-[19px] leading-tight"
-              style={{ color: 'hsl(var(--champagne-dark))' }}
-            >
-              {unit.address}
-            </p>
-            <p
-              className="mt-1 text-[11px] font-medium uppercase tracking-[0.14em]"
-              style={{ color: 'hsl(var(--muted-foreground))' }}
-            >
-              {de ? 'Foto folgt' : 'Photograph to follow'}
-            </p>
-          </div>
-        </div>
+        />
 
         {/* Same corner, same chip as the lettable cards carry. */}
         <span
