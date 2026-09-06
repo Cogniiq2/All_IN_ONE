@@ -663,6 +663,142 @@
     .portfolio-item { padding-inline: 1.5rem; }
   }
 
+  /* ── Signature story: from the façade to the stay ─────────────────
+     A sticky stage inside a tall wrapper. JavaScript writes exactly one
+     custom property, `--p` (0 → 1, the wrapper's scroll progress); every
+     phase below is derived from it in CSS, so a frame costs one style
+     write and no layout reads beyond the single rect the hook takes.
+
+     Each `--*` value is a 0 → 1 ramp over its own slice of the story.
+     Reading them top to bottom is reading the choreography:
+
+       0.00–0.08  Schulstraße façade arrives
+       0.08–0.20  the architectural trace draws
+       0.20–0.30  the residential band is picked out
+       0.30–0.36  façade recedes
+       0.32–0.38  floor plan takes its place (a short crossover)
+       0.38–0.40  the plan is held
+       0.40–0.45  the plan opens into the room; the CTA arrives
+       0.45–0.50  the room is held at full strength — this is the payoff,
+                  and it is the one beat that must not be a flicker
+       0.50–0.55  the room recedes; the line carries across
+       0.55–0.63  Opernstraße façade arrives, from the other side
+       0.63–0.78  its trace draws, vertically
+       0.78–0.92  the façade is held
+       0.92–1.00  release
+
+     Only `opacity`, `transform` and `stroke-dashoffset` are driven — all
+     compositor-friendly. Nothing animates width, height, margin or
+     filter on a scroll frame. */
+  .sig-stage {
+    --p: 0;
+
+    --sk-in: clamp(0, calc(var(--p) / 0.08), 1);
+    --sk-trace: clamp(0, calc((var(--p) - 0.08) / 0.12), 1);
+    --sk-focus: clamp(0, calc((var(--p) - 0.20) / 0.10), 1);
+    /* The façade leads out, the plan follows in. A short crossover rather
+       than a full-length dissolve: these are two very different kinds of
+       image, and eight per cent of co-visibility read as a smudge over the
+       building rather than as a handover. */
+    --sk-fade: clamp(0, calc((var(--p) - 0.30) / 0.06), 1);
+    --sk-plan: clamp(0, calc((var(--p) - 0.32) / 0.06), 1);
+    --sk-room: clamp(0, calc((var(--p) - 0.40) / 0.05), 1);
+    --sk-out: clamp(0, calc((var(--p) - 0.50) / 0.05), 1);
+
+    --op-in: clamp(0, calc((var(--p) - 0.55) / 0.08), 1);
+    --op-trace: clamp(0, calc((var(--p) - 0.63) / 0.15), 1);
+    --op-out: clamp(0, calc((var(--p) - 0.92) / 0.08), 1);
+  }
+
+  /* Chapter envelopes. The first recedes as the second arrives; the page
+     ground never changes, so the two read as one continuous scene. */
+  .sig-chapter-1 {
+    opacity: calc(var(--sk-in) * (1 - var(--sk-out)));
+    transform: translate3d(0, calc(var(--sk-out) * -3vh), 0);
+  }
+  .sig-chapter-2 {
+    opacity: calc(var(--op-in) * (1 - var(--op-out) * 0.85));
+  }
+
+  /* ── Layers ─────────────────────────────────────────────────────── */
+
+  /* Schulstraße: the façade rises very slightly and settles. No fly-in. */
+  .sig-sk-facade {
+    opacity: calc(var(--sk-in) * (1 - var(--sk-fade)));
+    transform: translate3d(0, calc((1 - var(--sk-in)) * 2.2vh), 0)
+      scale(calc(0.985 + var(--sk-in) * 0.015 + var(--sk-focus) * 0.03));
+  }
+
+  /* Opernstraße: a horizontal arrival and a shade more depth, so the second
+     chapter is recognisably the same language without being the same shot. */
+  .sig-op-facade {
+    opacity: calc(var(--op-in) * (1 - var(--op-out)));
+    transform: translate3d(calc((1 - var(--op-in)) * 4vw), 0, 0)
+      scale(calc(0.97 + var(--op-in) * 0.03 + var(--op-trace) * 0.022));
+  }
+
+  /* The drawn line. `stroke-dashoffset` is the reveal; the dash length is
+     set per path in the markup so one variable drives every stroke. */
+  .sig-trace {
+    opacity: calc(var(--sk-trace) * (1 - var(--sk-fade)));
+  }
+  .sig-trace path,
+  .sig-trace line {
+    stroke-dashoffset: calc(var(--sig-dash) * (1 - var(--sk-trace)));
+  }
+  .sig-trace-op {
+    opacity: calc(var(--op-trace) * (1 - var(--op-out)));
+  }
+  .sig-trace-op path,
+  .sig-trace-op line {
+    stroke-dashoffset: calc(var(--sig-dash) * (1 - var(--op-trace)));
+  }
+
+  /* The residential band, picked out with a hairline rather than an overlay.
+     It marks an area, and deliberately claims no particular floor. */
+  .sig-focus {
+    opacity: calc(var(--sk-focus) * (1 - var(--sk-fade)) * 0.9);
+    transform: scaleY(calc(0.82 + var(--sk-focus) * 0.18));
+  }
+
+  /* Plan and room hand over to one another. The plan is still on screen as
+     the room resolves, so the cut is a dissolve through a shared centre
+     rather than two slides. */
+  .sig-plan {
+    opacity: calc(var(--sk-plan) * (1 - var(--sk-room)));
+    transform: scale(calc(1.04 - var(--sk-plan) * 0.04 + var(--sk-room) * 0.05));
+  }
+  .sig-room {
+    opacity: calc(var(--sk-room) * (1 - var(--sk-out)));
+    transform: scale(calc(1.06 - var(--sk-room) * 0.06));
+  }
+  /* The room arrives through a widening aperture rather than a plain fade —
+     the plan's centre opens into the photograph. */
+  .sig-room-mask {
+    -webkit-mask-image: radial-gradient(
+      circle at 50% 52%,
+      #000 calc(var(--sk-room) * 78%),
+      transparent calc(var(--sk-room) * 78% + 16%)
+    );
+    mask-image: radial-gradient(
+      circle at 50% 52%,
+      #000 calc(var(--sk-room) * 78%),
+      transparent calc(var(--sk-room) * 78% + 16%)
+    );
+  }
+
+  /* Copy and CTA, per beat. */
+  .sig-label-1 { opacity: var(--sk-in); }
+  .sig-cta-1 {
+    opacity: calc(var(--sk-room) * (1 - var(--sk-out)));
+    transform: translate3d(0, calc((1 - var(--sk-room)) * 10px), 0);
+  }
+  .sig-label-2 { opacity: var(--op-in); }
+  .sig-note-2 {
+    opacity: calc(clamp(0, calc((var(--p) - 0.78) / 0.08), 1) * (1 - var(--op-out)));
+    transform: translate3d(0, calc((1 - clamp(0, calc((var(--p) - 0.78) / 0.08), 1)) * 10px), 0);
+  }
+
   /* Skip-to-content, visible on focus only. */
   .skip-link {
     position: absolute;
@@ -679,5 +815,102 @@
   }
   .skip-link:focus {
     top: 1rem;
+  }
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   SIGNATURE STORY — REDUCED MOTION
+
+   Deliberately OUTSIDE every `@layer`. Tailwind's utilities live in
+   `@layer utilities`, and any layered rule loses to them no matter how
+   specific it is — which is exactly what happened the first time these
+   overrides were written inside `@layer components`: `position: static`
+   lost to `absolute`, every layer stayed stacked on every other, and the
+   fallback rendered as four images and two paragraphs in a heap.
+   Unlayered declarations outrank all layers, so these win cleanly and
+   without a single `!important` on a positioning rule.
+
+   What it produces: no sticky, no scroll wiring (the effect returns before
+   adding a listener), and no stacking. The wrapper collapses to its
+   content and every layer returns to normal flow, so the same DOM becomes
+   a static editorial spread — façade, plan, room, CTA for Schulstraße;
+   façade and the "in preparation" note for Opernstraße. Nothing is
+   hidden, nothing is duplicated, and no information exists only in motion.
+   ══════════════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  /* `!important` only here. The wrapper's height is set by a Tailwind
+     arbitrary utility (`h-[300svh] lg:h-[420svh]`) of equal specificity
+     that is emitted after this file's own rules, so source order alone
+     does not settle it. Everything else below wins on order and needs no
+     escalation. */
+  .sig-wrapper {
+    height: auto !important;
+  }
+  .sig-stage {
+    position: static;
+    height: auto;
+    padding-block: 1rem 3rem;
+    align-items: stretch;
+  }
+  .sig-chapter-1,
+  .sig-chapter-2 {
+    position: static;
+    display: block;
+    opacity: 1;
+    transform: none;
+  }
+  .sig-chapter-2 {
+    margin-top: 4rem;
+    padding-top: 3rem;
+    border-top: 1px solid hsl(var(--border) / 0.7);
+  }
+  /* The three pictures side by side, in story order, at their own
+     proportions — the sequence the animation walks through, laid out. */
+  .sig-layers {
+    position: static;
+    display: grid;
+    /* Beats the `lg:aspect-[5/4]` utility, which sits in a later
+       min-width media query of the same specificity. */
+    aspect-ratio: auto !important;
+    gap: 1.25rem;
+    margin-top: 1.75rem;
+    /* A fixed upper bound rather than `1fr`: the Opernstraße chapter has
+       exactly one picture, and an auto-fit `1fr` column would hand it the
+       whole width and, at 4:3, most of a screen's height. */
+    grid-template-columns: repeat(auto-fit, minmax(200px, 300px));
+    justify-content: start;
+  }
+  /* `relative`, NOT `static`. Every picture here is a next/image `fill`,
+     which carries `position: absolute` as an INLINE style — no stylesheet
+     can override that. A static layer box therefore does not contain its
+     own image: the image resolves against the nearest positioned ancestor
+     instead and all four land on top of one another, full-bleed. Giving
+     each box a position of its own is what puts one picture in one grid
+     cell. */
+  .sig-layer {
+    position: relative;
+    aspect-ratio: 4 / 3;
+    opacity: 1;
+    transform: none;
+    overflow: hidden;
+    border-radius: var(--radius-md);
+  }
+  .sig-room-mask {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  /* Annotations are motion; with no motion they say nothing. */
+  .sig-trace,
+  .sig-trace-op,
+  .sig-focus {
+    display: none;
+  }
+  .sig-label-1,
+  .sig-label-2,
+  .sig-cta-1,
+  .sig-note-2 {
+    opacity: 1;
+    transform: none;
   }
 }
