@@ -34,6 +34,8 @@ import { RentedUnitCard } from '@/components/units/rented-unit-card';
 import { apartmentGroups } from '@/lib/content/apartment-groups';
 import { useUnitFlow } from '@/components/units/unit-flow-context';
 import { label } from '@/components/ui-kit/cta';
+import { BookingTrustBadge } from '@/components/ui-kit/booking-trust';
+import { hasBookingTrust } from '@/lib/content/booking-trust';
 
 export function ApartmentsClient() {
   const { locale } = useI18n();
@@ -187,6 +189,20 @@ export function ApartmentsClient() {
               </div>
             </section>
           ))}
+
+          {/*
+            One trust signal, once, after the complete inventory — never
+            after each building group. Gated on hasBookingTrust() so nothing
+            (not even empty spacing) is added until a verified rating, review
+            count and listing URL all exist. See lib/content/booking-trust.ts.
+          */}
+          {hasBookingTrust() && (
+            <Reveal delay={0.08}>
+              <div className="mt-16 flex justify-center lg:mt-20">
+                <BookingTrustBadge />
+              </div>
+            </Reveal>
+          )}
 
           {/*
             The other journey, offered once, after the apartments — never beside

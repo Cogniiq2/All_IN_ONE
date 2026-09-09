@@ -11,6 +11,8 @@ import { brand } from '@/lib/content/brand';
 import { heroImage, REFERENCE_IMAGE_LABEL } from '@/lib/content/media';
 import { Wordmark } from '@/components/brand/logo';
 import { CtaLink, label } from '@/components/ui-kit/cta';
+import { BookingTrustBadge } from '@/components/ui-kit/booking-trust';
+import { hasBookingTrust } from '@/lib/content/booking-trust';
 
 /**
  * The signature entrance.
@@ -241,6 +243,26 @@ export function Hero() {
               {label('exploreApartments', locale)}
             </CtaLink>
           </motion.div>
+
+          {/*
+            Directly below the primary action, never inside it: a trust
+            signal that competed with the CTA group for attention would
+            undercut it. The wrapper itself is gated on hasBookingTrust() —
+            not just the badge inside it — so nothing is added to the hero
+            (not even an empty spacer) until a verified Booking.com rating,
+            review count and listing URL all exist. See
+            lib/content/booking-trust.ts.
+          */}
+          {hasBookingTrust() && (
+            <motion.div
+              className="mt-7"
+              initial={reduce ? false : { opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.7, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <BookingTrustBadge invert />
+            </motion.div>
+          )}
 
           {/*
             The second audience, kept deliberately quiet. A prospective tenant
