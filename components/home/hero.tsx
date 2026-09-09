@@ -6,7 +6,7 @@ import { motion, useReducedMotion, useScroll, useTransform } from 'framer-motion
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
-import { bookableApartments } from '@/lib/content/apartments';
+import { apartments } from '@/lib/content/apartments';
 import { brand } from '@/lib/content/brand';
 import { heroImage, REFERENCE_IMAGE_LABEL } from '@/lib/content/media';
 import { Wordmark } from '@/components/brand/logo';
@@ -102,7 +102,12 @@ export function Hero() {
   const reduce = useReducedMotion();
   const ref = useRef<HTMLElement>(null);
 
-  const countNumber = bookableApartments().length;
+  // The whole current portfolio (Schulstraße and Opernstraße alike, the
+  // latter still "in preparation") — the same total ApartmentsSection counts
+  // further down the page. This headline states what BoLaGio presents, not
+  // what is instantly bookable today; bookableApartments() remains the
+  // narrower, truthful source everywhere availability is actually offered.
+  const countNumber = apartments.length;
   const count = NUMERAL[countNumber]?.[locale] ?? String(countNumber);
 
   /**

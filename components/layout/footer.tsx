@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowUpRight, MessageCircle, Phone } from 'lucide-react';
+import { Bot, MessageCircle, Phone } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
 import { LogoLockup, Monogram } from '@/components/brand/logo';
 import { brand, contact } from '@/lib/content/brand';
@@ -149,25 +149,26 @@ export function Footer() {
 /**
  * "Powered by Cogniiq" — a discreet signature, not a badge.
  *
+ * "Powered by" is fixed in both locales — not translated to "Umgesetzt von"
+ * or similar — because that is the exact wording requested for this credit,
+ * independent of the site's own DE/EN copy elsewhere.
+ *
  * A plain external link: no script runs and no request fires until it is
  * clicked. It sits beside the monogram on desktop and stacks naturally under
  * the rest of the footer on mobile, per the brief — never `position: fixed`.
  */
 function AgencyCredit() {
-  const { locale } = useI18n();
-  const de = locale === 'de';
-
   return (
     <p className="flex items-center gap-2 text-[12px]" style={{ color: 'hsl(var(--on-dark-muted) / 0.6)' }}>
-      <span>{de ? 'Umgesetzt von' : 'Powered by'}</span>
+      <span>Powered by</span>
       <a
         href="https://cogniiq.de"
         target="_blank"
         rel="noopener noreferrer"
-        className="agency-credit-link inline-flex items-center gap-1 px-3 py-1.5 text-[12px] font-medium tracking-[0.01em]"
+        className="agency-credit-link inline-flex items-center gap-1.5 px-3.5 py-1.5 text-[12px] font-medium tracking-[0.01em]"
       >
         Cogniiq
-        <ArrowUpRight className="h-3 w-3 shrink-0 opacity-70" aria-hidden="true" />
+        <Bot className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden="true" />
       </a>
     </p>
   );

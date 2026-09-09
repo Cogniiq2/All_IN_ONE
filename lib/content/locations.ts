@@ -21,10 +21,10 @@
  *     NEEDS CONFIRMATION — Opernstraße postal code.
  *
  * ── Arrival guidance ─────────────────────────────────────────────────────
- * `arrival` is optional and only Schulstraße has one, because only Schulstraße
- * has a route the owners have described. Nothing is invented for a building
- * that has not been described, and no step here tells a visitor to disregard a
- * traffic sign — see the note on SCHULSTRASSE_ARRIVAL.
+ * `arrival` is optional, and present only where the owners have described a
+ * route. Nothing is invented for a building beyond what was described, and no
+ * step here tells a visitor to disregard a traffic sign — see the note on
+ * SCHULSTRASSE_ARRIVAL.
  * ══════════════════════════════════════════════════════════════════════════
  */
 
@@ -38,8 +38,13 @@ export interface Localized {
 export interface ArrivalGuidance {
   title: Localized;
   steps: Localized[];
-  /** Shown beneath the steps, always visible. */
-  note: Localized;
+  /**
+   * Shown beneath the steps, always visible, when present. Optional: it
+   * exists for Schulstraße because the ZOH access signage is genuinely
+   * ambiguous (see SCHULSTRASSE_ARRIVAL below) — it is not a required part
+   * of the shape, and a route with nothing uncertain about it carries none.
+   */
+  note?: Localized;
 }
 
 export interface BuildingLocation {
@@ -79,8 +84,8 @@ const SCHULSTRASSE_ARRIVAL: ArrivalGuidance = {
       en: 'Navigate to the ZOH (central bus station) in Bayreuth.',
     },
     {
-      de: 'An der VR Bank vorbei in Richtung ZOH.',
-      en: 'Continue past the VR Bank towards the ZOH.',
+      de: 'Am ZOH vorbei in Richtung VR Bank.',
+      en: 'Continue past the ZOH towards the VR Bank.',
     },
     {
       de: 'Rechts abbiegen und an der Sparkasse vorbeifahren.',
@@ -105,6 +110,31 @@ const SCHULSTRASSE_ARRIVAL: ArrivalGuidance = {
   },
 };
 
+/**
+ * The route to Opernstraße 1, as the owners describe it.
+ *
+ * Two facts only — pass the Opera Eisdiele, then turn right — with no
+ * distance, turn count, further landmark or parking note invented beyond
+ * them. No `note` here: unlike the Schulstraße garage, nothing about this
+ * route is uncertain enough to need one.
+ */
+const OPERNSTRASSE_ARRIVAL: ArrivalGuidance = {
+  title: {
+    de: 'Anfahrt',
+    en: 'Getting there',
+  },
+  steps: [
+    {
+      de: 'An der Opera Eisdiele vorbei, dann rechts abbiegen.',
+      en: 'Pass the Opera Eisdiele, then turn right.',
+    },
+    {
+      de: 'Unsere Apartments liegen auf der rechten Straßenseite.',
+      en: 'Our apartments are on the right-hand side of the street.',
+    },
+  ],
+};
+
 export const LOCATIONS: BuildingLocation[] = [
   {
     id: 'schulstrasse',
@@ -127,6 +157,7 @@ export const LOCATIONS: BuildingLocation[] = [
       de: 'Wohn- und Gewerbeeinheiten in der Bayreuther Innenstadt.',
       en: 'Residential and commercial units in Bayreuth city centre.',
     },
+    arrival: OPERNSTRASSE_ARRIVAL,
   },
 ];
 

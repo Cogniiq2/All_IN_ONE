@@ -16,10 +16,18 @@
  *
  * ── Two pages, one arrangement ───────────────────────────────────────────
  * /apartments and /mieten both group by building, and both use this module.
- * What differs is only which lettable units each page is entitled to show —
+ * What differs is which lettable units each page is entitled to show —
  * /apartments shows the apartments, /mieten shows what may be let long term,
  * apartments and commercial units alike — so the caller passes those in and
  * the grouping itself is written once.
+ *
+ * They also differ on the rented reference buildings (Harburgerstraße,
+ * Mainstraße, Am Main, Riedingerstraße, Tunnelstraße): /mieten shows them as
+ * portfolio proof, /apartments does not, because /apartments is now scoped to
+ * the current short-term offering and preparation pipeline only. The record
+ * in lib/content/rented-inventory.ts is not touched or duplicated for this —
+ * `groupsFor`'s second argument decides whether a caller's groups include it,
+ * so the exact same canonical data still backs /mieten.
  *
  * ── Two kinds of group ───────────────────────────────────────────────────
  * A group is discriminated by `kind` so the page renders the right card for
@@ -82,24 +90,35 @@ function orphanGroups(units: RentalUnit[]): ApartmentGroup[] {
   }));
 }
 
-/** Lettable units first, grouped by building, then the rented references. */
-function groupsFor(lettable: RentalUnit[]): ApartmentGroup[] {
-  return [...lettableGroups(lettable), ...orphanGroups(lettable), ...rentedGroups];
+/**
+ * Lettable units first, grouped by building, then — only when asked for —
+ * the rented reference buildings.
+ */
+function groupsFor(lettable: RentalUnit[], includeRented: boolean): ApartmentGroup[] {
+  return [
+    ...lettableGroups(lettable),
+    ...orphanGroups(lettable),
+    ...(includeRented ? rentedGroups : []),
+  ];
 }
 
-/** /apartments: the bookable inventory, then the reference buildings. */
-export const apartmentGroups: ApartmentGroup[] = groupsFor(apartments);
+/**
+ * /apartments: the current short-term offering and preparation pipeline
+ * only — Schulstraße 1 and Opernstraße 1. The rented reference buildings are
+ * deliberately excluded here; they remain /mieten's portfolio proof.
+ */
+export const apartmentGroups: ApartmentGroup[] = groupsFor(apartments, false);
 
 /**
  * /mieten: everything that may be let on a tenancy — apartments and the
  * ground-floor commercial units alike — grouped under the same headings, so a
  * building's residential and commercial space sit together rather than in two
- * separate lists. The reference buildings follow, exactly as on /apartments.
+ * separate lists. The rented reference buildings follow, as portfolio proof.
  */
-export const rentalGroups: ApartmentGroup[] = groupsFor([
-  ...apartments.filter(supportsLongTerm),
-  ...commercialUnits.filter(supportsLongTerm),
-]);
+export const rentalGroups: ApartmentGroup[] = groupsFor(
+  [...apartments.filter(supportsLongTerm), ...commercialUnits.filter(supportsLongTerm)],
+  true
+);
 
 /** Total cards in a set of groups. */
 export function groupUnitCount(groups: ApartmentGroup[]): number {

@@ -684,12 +684,15 @@
   /* ── Agency credit (footer) ─────────────────────────────────────
      A discreet signature, not a badge: glass surface, thin translucent
      border, restrained champagne on hover. Deliberately quieter than the
-     site's own CTAs — no shadow, no gradient, no neon. */
+     site's own CTAs — no shadow, no gradient, no neon. Full pill radius
+     (not the card/button radius scale) is the one place this control is
+     allowed to read as visibly different from the rest of the site — a
+     shape signature rather than a colour one. */
   .agency-credit-link {
     color: hsl(var(--on-dark) / 0.82);
     background: hsl(var(--on-dark) / 0.06);
     border: 1px solid hsl(var(--on-dark) / 0.16);
-    border-radius: var(--radius-sm);
+    border-radius: 9999px;
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
     transition: border-color 0.22s ease, background-color 0.22s ease,

@@ -157,19 +157,22 @@ function LocationCard({ location }: { location: BuildingLocation }) {
               ))}
             </ol>
             {/*
-              Always visible, never collapsed: the signage on site is the
-              authority, not this list.
+              Always visible, never collapsed, when present: the signage on
+              site is the authority, not this list. Not every route has one —
+              Opernstraße's has nothing uncertain enough to caveat.
             */}
-            <p
-              className="mt-5 px-3.5 py-2.5 text-[13px] font-medium leading-relaxed"
-              style={{
-                borderRadius: 'var(--radius-xs)',
-                border: '1px solid hsl(var(--champagne) / 0.5)',
-                background: 'hsl(var(--champagne) / 0.1)',
-              }}
-            >
-              {location.arrival.note[locale]}
-            </p>
+            {location.arrival.note && (
+              <p
+                className="mt-5 px-3.5 py-2.5 text-[13px] font-medium leading-relaxed"
+                style={{
+                  borderRadius: 'var(--radius-xs)',
+                  border: '1px solid hsl(var(--champagne) / 0.5)',
+                  background: 'hsl(var(--champagne) / 0.1)',
+                }}
+              >
+                {location.arrival.note[locale]}
+              </p>
+            )}
           </div>
         )}
       </div>

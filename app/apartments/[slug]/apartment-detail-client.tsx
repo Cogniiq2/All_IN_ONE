@@ -30,7 +30,6 @@ import { useUnitFlow } from '@/components/units/unit-flow-context';
 import { StickyEnquiryBar } from '@/components/enquiry/sticky-cta';
 import { factsFor } from '@/lib/content/property-facts';
 import { PropertyFactsSection } from '@/components/property/property-facts';
-import { ArrivalJourney } from '@/components/property/arrival-journey';
 
 /**
  * Apartment detail template.
