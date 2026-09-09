@@ -680,4 +680,26 @@
   .skip-link:focus {
     top: 1rem;
   }
+
+  /* ── Agency credit (footer) ─────────────────────────────────────
+     A discreet signature, not a badge: glass surface, thin translucent
+     border, restrained champagne on hover. Deliberately quieter than the
+     site's own CTAs — no shadow, no gradient, no neon. */
+  .agency-credit-link {
+    color: hsl(var(--on-dark) / 0.82);
+    background: hsl(var(--on-dark) / 0.06);
+    border: 1px solid hsl(var(--on-dark) / 0.16);
+    border-radius: var(--radius-sm);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    transition: border-color 0.22s ease, background-color 0.22s ease,
+      color 0.22s ease, transform 0.22s ease;
+  }
+  .agency-credit-link:hover,
+  .agency-credit-link:focus-visible {
+    color: hsl(var(--on-dark));
+    background: hsl(var(--champagne) / 0.1);
+    border-color: hsl(var(--champagne) / 0.45);
+    transform: translateY(-1px);
+  }
 }

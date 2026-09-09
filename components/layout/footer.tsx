@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { MessageCircle, Phone } from 'lucide-react';
+import { ArrowUpRight, MessageCircle, Phone } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
 import { LogoLockup, Monogram } from '@/components/brand/logo';
 import { brand, contact } from '@/lib/content/brand';
@@ -129,12 +129,46 @@ export function Footer() {
           className="mt-14 pt-7 flex flex-col sm:flex-row items-center justify-between gap-5"
           style={{ borderTop: '1px solid hsl(var(--on-dark) / 0.12)' }}
         >
-          <p className="text-[12px]" style={{ color: 'hsl(var(--on-dark-muted) / 0.65)' }}>
-            © {year} {brand.name} · {brand.city}
-          </p>
-          <Monogram size="sm" invert />
+          <div className="flex items-center gap-5">
+            <p className="text-[12px]" style={{ color: 'hsl(var(--on-dark-muted) / 0.65)' }}>
+              © {year} {brand.name} · {brand.city}
+            </p>
+            <Monogram size="sm" invert className="sm:hidden" />
+          </div>
+
+          <div className="flex items-center gap-5">
+            <Monogram size="sm" invert className="hidden sm:block" />
+            <AgencyCredit />
+          </div>
         </div>
       </div>
     </footer>
+  );
+}
+
+/**
+ * "Powered by Cogniiq" — a discreet signature, not a badge.
+ *
+ * A plain external link: no script runs and no request fires until it is
+ * clicked. It sits beside the monogram on desktop and stacks naturally under
+ * the rest of the footer on mobile, per the brief — never `position: fixed`.
+ */
+function AgencyCredit() {
+  const { locale } = useI18n();
+  const de = locale === 'de';
+
+  return (
+    <p className="flex items-center gap-2 text-[12px]" style={{ color: 'hsl(var(--on-dark-muted) / 0.6)' }}>
+      <span>{de ? 'Umgesetzt von' : 'Powered by'}</span>
+      <a
+        href="https://cogniiq.de"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="agency-credit-link inline-flex items-center gap-1 px-3 py-1.5 text-[12px] font-medium tracking-[0.01em]"
+      >
+        Cogniiq
+        <ArrowUpRight className="h-3 w-3 shrink-0 opacity-70" aria-hidden="true" />
+      </a>
+    </p>
   );
 }

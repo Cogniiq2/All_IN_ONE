@@ -28,6 +28,9 @@ import { Reveal } from '@/components/ui-kit/reveal';
 import { CtaButton, CtaLink, label } from '@/components/ui-kit/cta';
 import { useUnitFlow } from '@/components/units/unit-flow-context';
 import { StickyEnquiryBar } from '@/components/enquiry/sticky-cta';
+import { factsFor } from '@/lib/content/property-facts';
+import { PropertyFactsSection } from '@/components/property/property-facts';
+import { ArrivalJourney } from '@/components/property/arrival-journey';
 
 /**
  * Apartment detail template.
@@ -85,6 +88,12 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
     : galleryFor(slug).map((image) => ({ ...image, alt: image.alt[locale] }));
   const upcoming = apartment.status === 'in-preparation';
   const detailed = hasVerifiedDetails(apartment);
+  // The newer, populated fact sheet (see lib/content/property-facts.ts). Both
+  // Schulstraße flats have one even though the older `apartment.*` fields
+  // above (bedrooms, amenityGroups, floorPlan) were never filled in — reading
+  // both is what stops this page contradicting the unit's own detail modal,
+  // which already renders this same data.
+  const facts = factsFor(apartment.slug);
   /**
    * Whether this flat may *also* be discussed as a conventional tenancy. Read
    * from `rentalModes`, never from the slug. It is offered as a quiet
@@ -194,6 +203,11 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
                 </div>
               </Reveal>
 
+              {/* "Auf einen Blick" — the same verified fact sheet the card's
+                  detail modal already shows for this unit, so the two never
+                  disagree. Renders nothing when there is no sheet. */}
+              {facts && <PropertyFactsSection facts={facts} shortTerm={true} />}
+
               {/* Rooms & sleeping — only with confirmed data */}
               {apartment.bedrooms && apartment.bedrooms.length > 0 && (
                 <Block title={de ? 'Räume & Schlafplätze' : 'Rooms & sleeping'}>
@@ -284,8 +298,11 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
               )}
 
               {/* Shown while specifications are still being confirmed. This is
-                  not a placeholder for a visitor — it is a real offer. */}
-              {!detailed && !upcoming && (
+                  not a placeholder for a visitor — it is a real offer. Gated
+                  on `facts` too now: a unit with a populated fact sheet has
+                  already had "the details" answered above, so this offer to
+                  discuss them personally would otherwise contradict it. */}
+              {!detailed && !facts && !upcoming && (
                 <Block title={de ? 'Details besprechen wir persönlich' : 'We go through the details personally'}>
                   <p className="body-copy">
                     {de

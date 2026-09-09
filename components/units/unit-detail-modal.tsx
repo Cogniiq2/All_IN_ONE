@@ -22,6 +22,7 @@ import { coverFor, propertyMediaFor } from '@/lib/content/property-media';
 import { factsFor } from '@/lib/content/property-facts';
 import { PropertyGallery } from '@/components/property/property-gallery';
 import { PropertyFactsSection } from '@/components/property/property-facts';
+import { ArrivalJourney } from '@/components/property/arrival-journey';
 import {
   formatArea,
   isCommercial,
@@ -181,6 +182,12 @@ export function UnitDetailModal() {
           the short-stay services and keeps everything that is the flat itself.
         */}
         {amenities && <PropertyFactsSection facts={amenities} shortTerm={isStay} />}
+        {/*
+          Only for a bookable stay: a tenancy is a different process (see
+          appointment-modal.tsx), and a unit still "in preparation" has no
+          confirmed access process to describe yet.
+        */}
+        {isStay && !upcoming && <ArrivalJourney />}
         {gallery && <PropertyGallery media={gallery} unit={unit} />}
       </div>
     </LargeModal>

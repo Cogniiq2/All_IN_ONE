@@ -3,6 +3,7 @@
 import { Hero } from '@/components/home/hero';
 import { AvailabilityBand } from '@/components/home/availability-band';
 import { ApartmentsSection } from '@/components/home/apartments-section';
+import { TrustStrip } from '@/components/home/trust-strip';
 import { DirectSection } from '@/components/home/direct-section';
 import { BayreuthSection } from '@/components/home/bayreuth-section';
 import { FamilySection } from '@/components/home/family-section';
@@ -29,6 +30,12 @@ import { ClosingSection } from '@/components/home/closing-section';
  * to choose between two products; placing it after the closing CTA would bury
  * it. Prospective tenants reach it from the navigation and the hero link
  * instead — they do not have to scroll for it.
+ *
+ * TrustStrip sits right after the apartments, before the direct-booking
+ * argument: a visitor who has just looked at the units gets four scannable
+ * facts (see components/home/trust-strip.tsx) before DirectSection makes its
+ * case. It is one border-to-border strip, not a new section with its own
+ * heading — the facts it states are already made elsewhere on the page.
  */
 export function HomePageClient() {
   return (
@@ -36,6 +43,7 @@ export function HomePageClient() {
       <Hero />
       <AvailabilityBand />
       <ApartmentsSection />
+      <TrustStrip />
       <DirectSection />
       <BayreuthSection />
       <FamilySection />
