@@ -249,9 +249,8 @@ export function Hero() {
             signal that competed with the CTA group for attention would
             undercut it. The wrapper itself is gated on hasBookingTrust() —
             not just the badge inside it — so nothing is added to the hero
-            (not even an empty spacer) until a verified Booking.com rating,
-            review count and listing URL all exist. See
-            lib/content/booking-trust.ts.
+            (not even an empty spacer) until a verified Booking.com rating
+            and review count exist. See lib/content/booking-trust.ts.
           */}
           {hasBookingTrust() && (
             <motion.div

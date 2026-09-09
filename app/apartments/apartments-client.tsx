@@ -193,8 +193,8 @@ export function ApartmentsClient() {
           {/*
             One trust signal, once, after the complete inventory — never
             after each building group. Gated on hasBookingTrust() so nothing
-            (not even empty spacing) is added until a verified rating, review
-            count and listing URL all exist. See lib/content/booking-trust.ts.
+            (not even empty spacing) is added until a verified rating and
+            review count exist. See lib/content/booking-trust.ts.
           */}
           {hasBookingTrust() && (
             <Reveal delay={0.08}>

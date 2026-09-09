@@ -2,42 +2,44 @@
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
- * BOOKING.COM TRUST BADGE
+ * BOOKING.COM TRUST BADGE — Schulstraße
  *
- * A small, scannable trust signal: the real Booking.com score, the real
- * review count, and a link to the real listing. One reusable component for
- * both places it appears (the homepage hero and /apartments), both reading
+ * A quiet, horizontal social-proof strip, not a card: three overlapping
+ * abstract circles, a hairline divider, then a decorative star row over the
+ * real Booking.com score and review count. One reusable component for both
+ * places it appears (the homepage hero and /apartments), both reading
  * lib/content/booking-trust.ts — never two independently maintained copies
  * of the same number.
  *
- * ── Why it may render nothing ─────────────────────────────────────────────
- * No rating, review count or listing URL is currently verified (see the
- * long comment in lib/content/booking-trust.ts for why). Following the
- * convention already established in lib/content/brand.ts — an unverified
- * value is `null`, and every component treats `null` as "render nothing at
- * all" — this badge returns null unless a rating, a review count AND a URL
- * are all present. A badge with a number but no link, or a link with no
- * number, would be half a claim; this shows the whole one or none of it.
+ * ── Scope ─────────────────────────────────────────────────────────────────
+ * The verified rating and review count cover the two Schulstraße apartments
+ * only (see the header comment in lib/content/booking-trust.ts), so the
+ * label always reads "Booking.com · Schulstraße" — never an unqualified
+ * "Booking.com" that would read as covering every BoLaGio property.
  *
  * ── Never a fake star rating ────────────────────────────────────────────
- * Booking.com's own scale is out of 10, and that is the number shown. It is
- * never converted into "X of 5 stars" — an 8.9 rendered as four and a half
- * gold stars would overstate what the score actually says. The one star
- * glyph here is decorative (a review/trust glyph, not a five-star row) and
- * sits beside the real number, never in place of it.
+ * Booking.com's own scale is out of 10, and that real number — "8,9" — is
+ * always the value shown, never converted into a star count. The star row
+ * here is a fixed, fully-filled decorative trust indicator (the layout
+ * rhythm of a star rating), not a rendering of the score itself.
  *
  * ── No guest photographs ─────────────────────────────────────────────────
- * The 21st.dev reference this was adapted from uses a stack of overlapping
- * stock user photos. BoLaGio has no guest photographs to show and Booking.com
- * reviews carry no licence to reuse anyone's face, so the overlapping-circle
- * motif is rebuilt here as plain abstract tone-on-tone circles in the site's
- * own champagne palette — the layout of the reference, none of its content.
+ * The overlapping-circle motif is rebuilt as plain abstract tone-on-tone
+ * circles in the site's own champagne palette — no stock or guest photos,
+ * no external image requests.
+ *
+ * ── Link vs. no link ──────────────────────────────────────────────────────
+ * A real Booking.com listing URL has not been supplied yet (`url` is
+ * `null` — see lib/content/booking-trust.ts). Until it is, this renders as
+ * a plain, non-interactive strip rather than inventing or guessing a URL.
+ * The moment a real URL is set, it becomes a clickable link automatically —
+ * no other file needs to change.
  *
  * ── Motion ────────────────────────────────────────────────────────────────
- * A single CSS transform on hover/focus (see `.booking-trust-link` in
- * app/globals.css) — no JS animation, no new dependency. The site's global
- * `prefers-reduced-motion` rule already zeroes every transition duration, so
- * this needs no separate reduced-motion branch.
+ * A single CSS transform on hover/focus when it is a link (see
+ * `.booking-trust-strip` in app/globals.css) — no JS animation, no new
+ * dependency. The site's global `prefers-reduced-motion` rule already
+ * zeroes every transition duration.
  * ══════════════════════════════════════════════════════════════════════════
  */
 
@@ -57,8 +59,8 @@ export function BookingTrustBadge({
   const de = locale === 'de';
   const { rating, reviewCount, url } = bookingTrust;
 
-  // See the file header: a partial claim is not shown. All three or none.
-  if (rating === null || reviewCount === null || url === null) return null;
+  // See the file header: a partial claim is not shown.
+  if (rating === null || reviewCount === null) return null;
 
   const ratingLabel = rating.toLocaleString(de ? 'de-DE' : 'en-US', {
     minimumFractionDigits: 1,
@@ -66,95 +68,105 @@ export function BookingTrustBadge({
   });
   const reviewCountLabel = reviewCount.toLocaleString(de ? 'de-DE' : 'en-US');
 
-  const linkClass = invert ? 'booking-trust-link-invert' : 'booking-trust-link';
+  const stripClass = invert ? 'booking-trust-strip-invert' : 'booking-trust-strip';
   const mutedColor = invert ? 'hsl(var(--on-dark-muted))' : 'hsl(var(--muted-foreground))';
   const strongColor = invert ? 'hsl(var(--on-dark))' : 'hsl(var(--foreground))';
   const goldColor = invert ? 'hsl(var(--on-dark-gold))' : 'hsl(var(--champagne-dark))';
 
-  return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className={`${linkClass} group inline-flex items-center gap-4 px-4 py-3.5 sm:gap-5 sm:px-5 ${className}`}
-      aria-label={
-        de
-          ? `Booking.com Bewertung ${ratingLabel} von 10, ${reviewCountLabel} verifizierte Bewertungen — Bewertungen auf Booking.com ansehen`
-          : `Booking.com rating ${ratingLabel} out of 10, ${reviewCountLabel} verified reviews — view reviews on Booking.com`
-      }
-    >
-      {/* Decorative overlapping circles — the reference's visual rhythm,
+  const ariaLabel = de
+    ? `Booking.com Bewertung Schulstraße: ${ratingLabel} von 10, ${reviewCountLabel} verifizierte Bewertungen${
+        url ? ' — Bewertungen auf Booking.com ansehen' : ''
+      }`
+    : `Booking.com rating for Schulstraße: ${ratingLabel} out of 10, ${reviewCountLabel} verified reviews${
+        url ? ' — view reviews on Booking.com' : ''
+      }`;
+
+  const content = (
+    <>
+      {/* Overlapping abstract circles — the reference's visual rhythm,
           none of its stock guest photography. */}
-      <span className="relative hidden h-9 w-[54px] shrink-0 items-center sm:flex" aria-hidden="true">
+      <span className="relative flex h-7 w-[44px] shrink-0 items-center" aria-hidden="true">
         <span
-          className="absolute left-0 h-8 w-8 rounded-full"
-          style={{
-            background: invert ? 'hsl(var(--on-dark) / 0.1)' : 'hsl(var(--champagne) / 0.22)',
-            border: `1px solid ${invert ? 'hsl(var(--on-dark) / 0.2)' : 'hsl(var(--champagne) / 0.5)'}`,
-          }}
-        />
-        <span
-          className="absolute left-[13px] h-8 w-8 rounded-full"
+          className="absolute left-0 h-6 w-6 rounded-full"
           style={{
             background: invert ? 'hsl(var(--on-dark) / 0.14)' : 'hsl(var(--champagne) / 0.32)',
-            border: `1px solid ${invert ? 'hsl(var(--on-dark) / 0.24)' : 'hsl(var(--champagne) / 0.55)'}`,
           }}
         />
         <span
-          className="absolute left-[26px] flex h-8 w-8 items-center justify-center rounded-full"
+          className="absolute left-[10px] h-6 w-6 rounded-full"
           style={{
-            background: invert ? 'hsl(var(--on-dark) / 0.18)' : 'hsl(var(--champagne) / 0.42)',
-            border: `1px solid ${invert ? 'hsl(var(--on-dark-gold) / 0.55)' : 'hsl(var(--champagne-dark) / 0.55)'}`,
+            background: invert ? 'hsl(var(--on-dark) / 0.2)' : 'hsl(var(--champagne) / 0.46)',
           }}
-        >
-          <Star
-            className="h-3.5 w-3.5"
-            style={{ color: goldColor }}
-            fill={goldColor}
-            strokeWidth={0}
-            aria-hidden="true"
-          />
-        </span>
+        />
+        <span
+          className="absolute left-[20px] h-6 w-6 rounded-full"
+          style={{
+            background: invert ? 'hsl(var(--on-dark) / 0.26)' : 'hsl(var(--champagne) / 0.6)',
+          }}
+        />
       </span>
 
+      {/* Hairline divider — no box, no background, just a quiet separator. */}
+      <span
+        className="h-7 w-px shrink-0"
+        style={{ background: invert ? 'hsl(var(--on-dark) / 0.22)' : 'hsl(var(--border))' }}
+        aria-hidden="true"
+      />
+
       <span className="min-w-0">
-        <span className="flex items-baseline gap-2">
-          <span
-            className="text-[11px] font-semibold uppercase tracking-[0.14em]"
-            style={{ color: mutedColor }}
-          >
-            Booking.com
-          </span>
+        {/* Decorative star row — a trust-indicator rhythm only, not the score. */}
+        <span className="flex items-center gap-0.5" aria-hidden="true">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Star
+              key={i}
+              className="h-3 w-3"
+              style={{ color: goldColor }}
+              fill={goldColor}
+              strokeWidth={0}
+            />
+          ))}
         </span>
 
-        <span className="mt-1 flex items-baseline gap-1.5">
-          <span className="text-[20px] font-semibold leading-none" style={{ color: strongColor }}>
+        <span className="mt-1 flex items-baseline gap-1.5 whitespace-nowrap">
+          <span className="text-[16px] font-semibold leading-none" style={{ color: strongColor }}>
             {ratingLabel}
           </span>
-          <span className="text-[13px]" style={{ color: mutedColor }}>
-            / 10
+          <span className="text-[12px] leading-none" style={{ color: mutedColor }}>
+            {de
+              ? `${reviewCountLabel} verifizierte Bewertungen`
+              : `${reviewCountLabel} verified reviews`}
           </span>
-        </span>
-
-        <span className="mt-1 block text-[12.5px] leading-snug" style={{ color: mutedColor }}>
-          {de
-            ? `${reviewCountLabel} verifizierte Bewertungen`
-            : `${reviewCountLabel} verified reviews`}
         </span>
 
         <span
-          className="mt-1.5 inline-flex items-center gap-1 text-[12px] font-semibold"
-          style={{ color: goldColor }}
+          className="mt-0.5 block text-[10.5px] font-semibold uppercase tracking-[0.12em]"
+          style={{ color: mutedColor }}
         >
-          {de ? 'Bewertungen ansehen' : 'View reviews'}
-          <span
-            className="transition-transform duration-300 group-hover:translate-x-0.5"
-            aria-hidden="true"
-          >
-            →
-          </span>
+          {de ? 'Booking.com · Schulstraße' : 'Booking.com · Schulstraße'}
         </span>
       </span>
-    </a>
+    </>
+  );
+
+  const sharedClass = `${stripClass} inline-flex items-center gap-3.5 ${className}`;
+
+  if (url) {
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={`${sharedClass} group`}
+        aria-label={ariaLabel}
+      >
+        {content}
+      </a>
+    );
+  }
+
+  return (
+    <div className={sharedClass} role="img" aria-label={ariaLabel}>
+      {content}
+    </div>
   );
 }

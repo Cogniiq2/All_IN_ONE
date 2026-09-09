@@ -706,40 +706,28 @@
     transform: translateY(-1px);
   }
 
-  /* ── Booking.com trust badge (components/ui-kit/booking-trust.tsx) ─
-     A compact, quiet card — never the same visual weight as an apartment
-     card (no radius-lg, no card-surface shadow). One clickable surface,
-     restrained lift on hover, respected by the site-wide reduced-motion
-     override above. */
-  .booking-trust-link {
-    background: hsl(var(--champagne) / 0.05);
-    border: 1px solid hsl(var(--border));
-    border-radius: var(--radius-md);
-    transition: border-color 0.25s ease, background-color 0.25s ease,
-      transform 0.25s ease, box-shadow 0.25s ease;
+  /* ── Booking.com trust strip (components/ui-kit/booking-trust.tsx) ──
+     Deliberately NOT a card: no background fill, no border, no shadow —
+     never the same visual weight as an apartment card. Only rendered as a
+     link once a real listing URL exists (lib/content/booking-trust.ts);
+     until then the markup is a plain, unstyled div and none of this
+     applies. Respects the site-wide reduced-motion override above. */
+  .booking-trust-strip {
+    transition: opacity 0.25s ease, transform 0.25s ease;
   }
-  .booking-trust-link:hover,
-  .booking-trust-link:focus-visible {
-    border-color: hsl(var(--champagne) / 0.55);
-    background: hsl(var(--champagne) / 0.09);
-    box-shadow: 0 14px 32px -22px hsl(var(--ink) / 0.35);
-    transform: translateY(-2px);
+  .booking-trust-strip:hover,
+  .booking-trust-strip:focus-visible {
+    opacity: 0.82;
+    transform: translateY(-1px);
   }
 
-  /* Invert of the same badge, for the dark hero. */
-  .booking-trust-link-invert {
-    background: hsl(var(--on-dark) / 0.06);
-    border: 1px solid hsl(var(--on-dark) / 0.18);
-    border-radius: var(--radius-md);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-    transition: border-color 0.25s ease, background-color 0.25s ease,
-      transform 0.25s ease;
+  /* Invert of the same strip, for the dark hero. */
+  .booking-trust-strip-invert {
+    transition: opacity 0.25s ease, transform 0.25s ease;
   }
-  .booking-trust-link-invert:hover,
-  .booking-trust-link-invert:focus-visible {
-    border-color: hsl(var(--on-dark-gold) / 0.6);
-    background: hsl(var(--on-dark) / 0.1);
-    transform: translateY(-2px);
+  .booking-trust-strip-invert:hover,
+  .booking-trust-strip-invert:focus-visible {
+    opacity: 0.82;
+    transform: translateY(-1px);
   }
 }
