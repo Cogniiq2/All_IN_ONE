@@ -14,7 +14,7 @@
  * PayPal and n8n configuration itself was not modified — only the frontend
  * path into it was removed.
  *
- * When the PMS is connected, `checkAvailability` starts returning real answers
+ * With the channel manager connected, /api/booking/availability answers for real
  * and this form gains a result step. Its fields already carry exactly what the
  * booking service will need.
  *

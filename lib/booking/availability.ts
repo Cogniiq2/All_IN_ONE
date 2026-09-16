@@ -1,16 +1,21 @@
 /**
  * ══════════════════════════════════════════════════════════════════════════
- * SHORT-TERM AVAILABILITY — the service seam.
+ * SHORT-TERM AVAILABILITY — the client-side seam.
  *
- * This module is the only thing the UI is allowed to ask about availability.
- * Today it answers "there is no source", and every caller falls back to a
- * personal enquiry. When the PMS / channel manager is connected, the answer
- * changes here and the UI does not:
+ * This module used to answer "there is no source" for the whole site. It no
+ * longer answers that question at all, because the question is no longer
+ * portfolio-wide: availability is a property of a RESIDENCE, and two units in
+ * the same building can be in different states while one is onboarded to the
+ * channel manager and the other is not.
  *
- *     UI  →  lib/booking/availability  →  PMS / channel manager
- *                                      →  BoLaGio · Booking.com · Airbnb
+ *     UI  →  /api/booking/availability  →  Supabase cache  ←  Beds24
+ *     UI  →  /api/booking/quote         →  Beds24, live
  *
- * Rules this file exists to enforce:
+ * `lib/booking/client.ts` is how the UI asks. What remains here is the small,
+ * shared date and party-size arithmetic that several surfaces need, and which
+ * has no business making a network call.
+ *
+ * Rules this file still exists to enforce:
  *   • no availability is ever invented, in any code path;
  *   • the UI never talks to Booking.com or Airbnb directly — the channel
  *     manager owns those connections;
@@ -23,26 +28,23 @@
  */
 
 import { PAYMENT_ENABLED } from '@/lib/content/brand';
+import { clampGuestsFor, FALLBACK_MAX_GUESTS, MIN_GUESTS } from '@/lib/booking/occupancy';
+
+export { MIN_GUESTS };
 
 /**
- * How many people one of these apartments sleeps.
+ * The portfolio-wide ceiling, for surfaces asked about a stay before a
+ * residence has been chosen — the homepage panel and the shared-URL parser.
  *
- * Four is the real occupancy the owners let these flats at, so it is the
- * ceiling everywhere: the stepper, the quick choices, the party-size field in
- * the hero panel, and the value read back out of a shared URL. It lives here,
- * with the rest of the booking service seam, so there is one number to change
- * and no surface can quietly offer a fifth guest.
- *
- * NEEDS CONFIRMATION — whether any unit sleeps more than four. Until it is
- * confirmed per unit, one figure governs the whole booking UI.
+ * A per-residence limit replaces it the moment there is a residence; see
+ * `maxGuestsFor` in lib/booking/occupancy.ts, and the server's own
+ * `occupancyFor`, which is the one that actually decides.
  */
-export const MIN_GUESTS = 1;
-export const MAX_GUESTS = 4;
+export const MAX_GUESTS = FALLBACK_MAX_GUESTS;
 
-/** Forces any number into the bookable range. The only way guests are set. */
+/** Forces any number into the portfolio-wide bookable range. */
 export function clampGuests(value: number | undefined): number | undefined {
-  if (value === undefined || !Number.isFinite(value)) return undefined;
-  return Math.min(MAX_GUESTS, Math.max(MIN_GUESTS, Math.floor(value)));
+  return clampGuestsFor(value, MAX_GUESTS);
 }
 
 /** What a visitor selected in the availability panel. ISO `YYYY-MM-DD`. */
@@ -53,47 +55,15 @@ export interface StayQuery {
 }
 
 /**
- * Which availability source is connected.
+ * Whether a stay can be completed on the website end to end.
  *
- * 'none'  — nothing is connected. The only honest answer to "is it free?" is
- *           "we will check and tell you", so the UI routes to the enquiry.
- * 'pms'   — reserved for the channel-manager integration.
- *
- * NEEDS CONFIRMATION — Booking.com onboarding is pending and no PMS contract
- * exists yet, so this cannot be anything but 'none'.
- */
-export const AVAILABILITY_SOURCE: 'none' | 'pms' = 'none';
-
-/** True only when a real, synchronised availability source is connected. */
-export function hasLiveAvailability(): boolean {
-  return AVAILABILITY_SOURCE !== 'none';
-}
-
-/**
- * True only when a stay can be completed on the website end to end.
- * Requires both a real availability source and an enabled payment path.
+ * Payment is the portfolio-wide half of the answer and lives in `brand.ts`.
+ * The other half — whether THIS residence has live availability — is per unit
+ * and comes back on the availability response as `unsourced`. Both are
+ * required, and the booking dialog reads them together.
  */
 export function canBookOnline(): boolean {
-  return hasLiveAvailability() && PAYMENT_ENABLED;
-}
-
-export type AvailabilityResult =
-  /** No source connected — hand the query to the enquiry flow. */
-  | { kind: 'no-source' }
-  /** Reserved for the PMS integration. Never constructed today. */
-  | { kind: 'available'; unitSlugs: string[] }
-  | { kind: 'unavailable' };
-
-/**
- * Ask the availability service about a stay.
- *
- * Async by design: the PMS answer will be a network call, and every caller is
- * already written to await it, so connecting the real provider is a change to
- * this function alone.
- */
-export async function checkAvailability(_query: StayQuery): Promise<AvailabilityResult> {
-  // No source. Returning anything else here would be a fabricated answer.
-  return { kind: 'no-source' };
+  return PAYMENT_ENABLED;
 }
 
 /** Normalises a `<input type="date">` value to `YYYY-MM-DD` or undefined. */

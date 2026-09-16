@@ -17,7 +17,13 @@ export default function robots(): MetadataRoute.Robots {
         // robots.txt is not access control. The admin surface is gone from
         // this application; the database permissions are the real control and
         // are handled in supabase/migrations/.
-        disallow: [],
+        //
+        // The two entries below are about crawl budget and nothing else. The
+        // booking API answers only POSTs and authenticated reads, and
+        // /booking/return is a transactional page carrying a reservation
+        // reference in its query string — it also sends `noindex` in its own
+        // metadata, which is what actually keeps it out of an index.
+        disallow: ['/api/', '/booking/return'],
       },
     ],
     sitemap: `${SITE_URL}/sitemap.xml`,

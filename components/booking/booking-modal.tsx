@@ -1,41 +1,58 @@
 'use client';
 
 /**
- * The short-term booking dialog.
+ * ══════════════════════════════════════════════════════════════════════════
+ * THE SHORT-TERM BOOKING DIALOG.
  *
- * Five steps, selection-first: guests, dates, contact, payment method, done.
- * Only three fields are ever typed — name, email, phone — everything else is a
- * tap. Values already collected upstream (hero bar → detail view) arrive
- * pre-filled, so a visitor who set their dates on the homepage lands on step 1
- * with steps 1 and 2 already answered.
+ * Same five screens, same order, same premium furniture: guests, dates,
+ * contact, payment, done. What changed is what stands behind them.
  *
- * ── What is real and what is a shell ─────────────────────────────────────
- * Real: the whole flow, the state, the payload, the submission to the existing
- * enquiry endpoint.
+ * ── Two modes, decided by data, never by a flag ──────────────────────────
  *
- * Not real, and never claimed to be: live availability (no PMS — see
- * lib/booking/availability.ts) and live payment (PAYMENT_ENABLED is false).
- * Step 4 therefore records a *preferred* payment method and says plainly that
- * nothing is being charged; step 5 confirms a booking request that a person
- * confirms, not a completed reservation. When the PMS and the payment provider
- * are connected, step 4 gains the provider handoff and step 5's wording follows
- * `canBookOnline()` — the steps around them do not move.
+ *   BOOKABLE     the residence is connected to the channel manager. The
+ *                calendar shows real reserved nights, the price is a live
+ *                Beds24 offer, submitting creates a BoLaGio booking intent,
+ *                blocks the inventory, and hands off to Stripe or PayPal.
  *
- * ── The calendar entry ───────────────────────────────────────────────────
- * Step 5 offers "Zum Kalender hinzufügen" only when the backend answers with a
- * confirmed booking. It does not today, so the action is simply absent and the
- * screen says the booking is not confirmed and nothing was charged. It appears
- * by itself once real confirmations start coming back — see the rule at the top
- * of lib/booking/calendar.ts.
+ *   ENQUIRY      the residence has no connected source — the Opernstraße
+ *                flats today, and every unit until its Beds24 mapping exists.
+ *                Exactly the previous behaviour, unchanged: a booking request
+ *                to the existing endpoint, confirmed by a person afterwards.
+ *
+ * The switch is `calendar.unsourced`, which the server computes. There is no
+ * developer toggle and no way to make a residence look bookable that is not.
+ *
+ * ── What this component is not allowed to do ─────────────────────────────
+ * Compute a total. Decide whether dates are free. Decide whether a booking is
+ * confirmed. All three are read from server responses — see lib/booking/client.
+ * The confirmation screen says "confirmed" only when the backend status says
+ * so, and that status only ever moves through an authenticated callback.
+ * ══════════════════════════════════════════════════════════════════════════
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowLeft, Banknote, Check, CreditCard, Loader as Loader2, Minus, Plus, Wallet } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
 import { brand, ENQUIRY_ENDPOINT } from '@/lib/content/brand';
-import { canBookOnline, clampGuests, MAX_GUESTS, MIN_GUESTS, nightsBetween } from '@/lib/booking/availability';
+import { nightsBetween } from '@/lib/booking/availability';
+import { clampGuestsFor, maxGuestsFor, MIN_GUESTS } from '@/lib/booking/occupancy';
 import { formatDateOrDash } from '@/lib/booking/date-format';
+import {
+  BookingRequestError,
+  createBookingIntent,
+  fetchAvailability,
+  fetchQuote,
+  formatMoney,
+  startPayment,
+} from '@/lib/booking/client';
+import { track } from '@/lib/booking/analytics';
+import type {
+  AvailabilityCalendar,
+  BookingErrorCode,
+  BookingQuote,
+  InventoryDay,
+} from '@/lib/booking/types';
 import {
   readConfirmedStay,
   readResponsePayload,
@@ -45,18 +62,27 @@ import {
 import { useStay } from '@/lib/booking/stay-context';
 import { DialogModal, Step, StepActions } from '@/components/ui-kit/modal';
 import { StayCalendar } from '@/components/booking/stay-calendar';
+import { BookingNotice } from '@/components/booking/booking-notice';
 import { useUnitFlow } from '@/components/units/unit-flow-context';
 import { CtaButton } from '@/components/ui-kit/cta';
-import { ContactFields, EMAIL_PATTERN, SubmitError } from '@/components/enquiry/enquiry-fields';
+import { ContactFields, EMAIL_PATTERN } from '@/components/enquiry/enquiry-fields';
 import { AddToCalendar } from '@/components/booking/add-to-calendar';
 
 type Status = 'idle' | 'sending' | 'success' | 'error';
 
-/** The payment providers the flow is built to hand off to. */
+/**
+ * The payment providers.
+ *
+ * `handoff` marks the two the architecture can actually execute through n8n.
+ * Bank transfer is offered only in enquiry mode, where it is a stated
+ * preference that a person follows up on — it cannot be offered beside a
+ * fifteen-minute inventory hold, because a hold that short and a transfer that
+ * slow contradict each other.
+ */
 const METHODS = [
-  { id: 'card', icon: CreditCard, de: 'Kreditkarte', en: 'Card', note: { de: 'über Stripe', en: 'via Stripe' } },
-  { id: 'paypal', icon: Wallet, de: 'PayPal', en: 'PayPal', note: { de: 'über PayPal', en: 'via PayPal' } },
-  { id: 'transfer', icon: Banknote, de: 'Überweisung', en: 'Bank transfer', note: { de: 'auf Rechnung', en: 'on invoice' } },
+  { id: 'card', handoff: 'stripe', icon: CreditCard, de: 'Kreditkarte', en: 'Card', note: { de: 'über Stripe', en: 'via Stripe' } },
+  { id: 'paypal', handoff: 'paypal', icon: Wallet, de: 'PayPal', en: 'PayPal', note: { de: 'über PayPal', en: 'via PayPal' } },
+  { id: 'transfer', handoff: null, icon: Banknote, de: 'Überweisung', en: 'Bank transfer', note: { de: 'auf Rechnung', en: 'on invoice' } },
 ] as const;
 type MethodId = (typeof METHODS)[number]['id'];
 
@@ -67,63 +93,258 @@ export function BookingModal() {
   const de = locale === 'de';
   const { unit, stage, backToDetail, close } = useUnitFlow();
   const { stay, setStay } = useStay();
-  const reduce = useReducedMotion();
 
   const open = stage === 'booking' && Boolean(unit);
   const upcoming = unit?.status === 'in-preparation';
+  const maxGuests = maxGuestsFor(unit);
 
   const [step, setStep] = useState(1);
   const [direction, setDirection] = useState<1 | -1>(1);
   const [status, setStatus] = useState<Status>('idle');
   const [touched, setTouched] = useState(false);
 
-  const [guests, setGuests] = useState(clampGuests(stay.guests) ?? 2);
+  const [guests, setGuests] = useState(clampGuestsFor(stay.guests, maxGuests) ?? 2);
   const [dates, setDates] = useState({ arrival: stay.arrival, departure: stay.departure });
   const [method, setMethod] = useState<MethodId>('card');
   const [contact, setContact] = useState({ name: '', email: '', phone: '' });
-  /**
-   * Set only when the backend answers with a confirmed booking. It cannot be
-   * set from the form: while no availability source and no live payment stand
-   * behind the request, the endpoint has nothing to confirm and this stays
-   * null, so the confirmation screen offers no calendar entry and calls the
-   * submission a request. See lib/booking/calendar.ts.
-   */
+
+  /** Real inventory for this residence, or an `unsourced` answer. */
+  const [calendar, setCalendar] = useState<AvailabilityCalendar | null>(null);
+  const [calendarLoading, setCalendarLoading] = useState(false);
+
+  /** The live Beds24 offer. The only source of a price anywhere on screen. */
+  const [quote, setQuote] = useState<BookingQuote | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+
+  /** Whatever went wrong last, as a code the notice component has copy for. */
+  const [notice, setNotice] = useState<{ code: BookingErrorCode; meta?: Record<string, number | string | boolean> } | null>(null);
+
+  /** Set only when the backend confirms. Never inferred from a successful POST. */
   const [confirmed, setConfirmed] = useState<ConfirmedStay | null>(null);
+  const [reference, setReference] = useState<string | null>(null);
+
+  /**
+   * One id per opening of the dialog.
+   *
+   * It rides along on the booking request so the server can tell a deliberate
+   * retry from a double-click. The idempotency guarantee itself is the unique
+   * index on the server; this is the part the client can usefully contribute.
+   */
+  const attemptId = useRef<string>('');
+
+  const bookable = Boolean(calendar && !calendar.unsourced) && !upcoming;
+  const days: InventoryDay[] = calendar?.days ?? [];
 
   // Adopt whatever the hero bar and detail view already know, on each open.
   useEffect(() => {
     if (!open) return;
-    setGuests(clampGuests(stay.guests) ?? 2);
+    setGuests(clampGuestsFor(stay.guests, maxGuests) ?? 2);
     setDates({ arrival: stay.arrival, departure: stay.departure });
     setStep(1);
     setDirection(1);
     setStatus('idle');
     setTouched(false);
     setConfirmed(null);
-  }, [open, stay.arrival, stay.departure, stay.guests]);
+    setReference(null);
+    setQuote(null);
+    setNotice(null);
+    attemptId.current =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : String(Date.now());
+  }, [open, stay.arrival, stay.departure, stay.guests, maxGuests]);
+
+  /**
+   * Load the calendar once per opening.
+   *
+   * From the Supabase cache, so paging through months afterwards costs
+   * nothing — the whole horizon arrives in one response and the calendar
+   * component pages through it locally.
+   */
+  useEffect(() => {
+    if (!open || !unit || upcoming) return;
+    const controller = new AbortController();
+    setCalendarLoading(true);
+    track('booking_calendar_opened', { unitSlug: unit.slug });
+
+    fetchAvailability(unit.slug, {}, controller.signal)
+      .then(setCalendar)
+      .catch((cause) => {
+        if (controller.signal.aborted) return;
+        // A calendar that could not load is NOT an empty calendar. It falls
+        // back to the enquiry behaviour, which claims nothing.
+        setCalendar(null);
+        if (cause instanceof BookingRequestError && cause.code === 'provider_unavailable') {
+          setNotice({ code: 'provider_unavailable' });
+        }
+      })
+      .finally(() => !controller.signal.aborted && setCalendarLoading(false));
+
+    return () => controller.abort();
+  }, [open, unit, upcoming]);
 
   const nights = nightsBetween(dates.arrival, dates.departure);
+  const complete = Boolean(dates.arrival && dates.departure && nights);
+
+  /**
+   * Re-quote whenever the stay changes.
+   *
+   * Live, server-side, every time. A stale total is never carried forward and
+   * the browser never adjusts one — change the party size by one and this runs
+   * again rather than multiplying anything locally.
+   */
+  const loadQuote = useCallback(
+    (signal?: AbortSignal) => {
+      if (!unit || !bookable || !dates.arrival || !dates.departure) return;
+      setQuoteLoading(true);
+      setNotice(null);
+      fetchQuote(
+        {
+          unitSlug: unit.slug,
+          checkIn: dates.arrival,
+          checkOut: dates.departure,
+          adults: guests,
+          children: 0,
+        },
+        signal
+      )
+        .then((next) => {
+          setQuote(next);
+          track('booking_quote_loaded', {
+            unitSlug: unit.slug,
+            nights: next.nights,
+            guests,
+            amountCents: next.totalCents,
+            currency: next.currency,
+          });
+        })
+        .catch((cause) => {
+          if (signal?.aborted) return;
+          setQuote(null);
+          setNotice(toNotice(cause));
+        })
+        .finally(() => !signal?.aborted && setQuoteLoading(false));
+    },
+    [unit, bookable, dates.arrival, dates.departure, guests]
+  );
+
+  useEffect(() => {
+    if (!open || !complete || !bookable) return;
+    const controller = new AbortController();
+    loadQuote(controller.signal);
+    return () => controller.abort();
+  }, [open, complete, bookable, loadQuote]);
+
   const nameValid = contact.name.trim().length >= 2;
   const emailValid = EMAIL_PATTERN.test(contact.email.trim());
   const contactValid = nameValid && emailValid && contact.phone.trim().length >= 5;
 
   const canAdvance = useMemo(() => {
-    if (step === 1) return guests >= MIN_GUESTS && guests <= MAX_GUESTS;
-    if (step === 2) return Boolean(dates.arrival && dates.departure);
+    if (step === 1) return guests >= MIN_GUESTS && guests <= maxGuests;
+    if (step === 2) return complete;
     if (step === 3) return contactValid;
     return true;
-  }, [step, guests, dates, contactValid]);
+  }, [step, guests, maxGuests, complete, contactValid]);
 
   const go = (delta: 1 | -1) => {
     if (delta === 1 && !canAdvance) { setTouched(true); return; }
+    if (delta === 1 && step === 2 && unit) {
+      track('booking_dates_selected', { unitSlug: unit.slug, nights: nights ?? undefined, guests });
+    }
+    if (delta === 1 && step === 3 && unit) {
+      track('guest_details_completed', { unitSlug: unit.slug });
+    }
     setDirection(delta);
     setStep((s) => Math.min(LAST_STEP, Math.max(1, s + delta)));
     setTouched(false);
   };
 
-  const submit = async () => {
+  /**
+   * ── The booking path ─────────────────────────────────────────────────
+   *
+   *  1. create the intent — the server revalidates availability LIVE at
+   *     Beds24, prices it, and blocks the inventory before any money moves;
+   *  2. hand off to the payment provider through n8n;
+   *  3. leave. Confirmation happens on the authenticated callback, not here.
+   *
+   * If the dates went while the guest was typing, step 1 comes back as a
+   * conflict and the guest is returned to the calendar with everything they
+   * typed still in place.
+   */
+  const book = async () => {
+    if (!unit || !quote) return;
     setStatus('sending');
-    // Push the choices back up, so a visitor who closes and reopens keeps them.
+    setNotice(null);
+    setStay({ arrival: dates.arrival, departure: dates.departure, guests });
+
+    const { firstName, lastName } = splitName(contact.name);
+    const chosen = METHODS.find((m) => m.id === method);
+
+    try {
+      track('payment_method_selected', { unitSlug: unit.slug, paymentProvider: chosen?.handoff ?? 'none' });
+
+      const { intent } = await createBookingIntent({
+        unitSlug: unit.slug,
+        checkIn: dates.arrival!,
+        checkOut: dates.departure!,
+        adults: guests,
+        children: 0,
+        guest: {
+          firstName,
+          lastName,
+          email: contact.email.trim(),
+          phone: contact.phone.trim(),
+          locale,
+        },
+        attemptId: attemptId.current,
+      });
+
+      setReference(intent.reference);
+      track('booking_started', {
+        unitSlug: unit.slug,
+        nights: intent.nights,
+        guests,
+        amountCents: intent.totalCents ?? undefined,
+        currency: intent.currency,
+      });
+
+      if (!chosen?.handoff) {
+        // Should not be reachable in bookable mode — transfer is not offered
+        // there — but a hold with no payment route is still a held booking, so
+        // it ends on the honest confirmation screen rather than nowhere.
+        setStatus('success');
+        setDirection(1);
+        return;
+      }
+
+      const session = await startPayment(intent.reference, chosen.handoff);
+      track('payment_started', { unitSlug: unit.slug, paymentProvider: chosen.handoff });
+
+      // The handoff. Everything after this happens on the provider's page and
+      // comes back through the authenticated callback.
+      window.location.assign(session.redirectUrl);
+    } catch (cause) {
+      setNotice(toNotice(cause));
+      setStatus('idle');
+
+      // An availability conflict sends the guest back to the calendar with
+      // their contact details intact — losing a filled-in form because someone
+      // else booked first would be a second insult.
+      if (cause instanceof BookingRequestError && cause.code === 'availability_conflict') {
+        setQuote(null);
+        setDates((d) => ({ arrival: d.arrival, departure: undefined }));
+        setDirection(-1);
+        setStep(2);
+      }
+    }
+  };
+
+  /**
+   * ── The enquiry path ─────────────────────────────────────────────────
+   * Unchanged from before this integration. A residence with no connected
+   * source cannot be reserved, so nothing pretends otherwise: this is a
+   * request, a person answers it, and the confirmation screen says so.
+   */
+  const requestBooking = async () => {
+    setStatus('sending');
     setStay({ arrival: dates.arrival, departure: dates.departure, guests });
 
     try {
@@ -137,13 +358,11 @@ export function BookingModal() {
             arrival: dates.arrival ?? null,
             departure: dates.departure ?? null,
             nights: nights ?? null,
-            // Clamped again on the way out. The stepper and the quick choices
-            // cannot produce a fifth guest, and neither can anything else.
-            guests: clampGuests(guests) ?? MIN_GUESTS,
+            guests: clampGuestsFor(guests, maxGuests) ?? MIN_GUESTS,
           },
           payment: {
             // A stated preference, not a transaction. No provider is contacted
-            // from the frontend while PAYMENT_ENABLED is false.
+            // on this path.
             preferredMethod: method,
             captured: false,
           },
@@ -157,15 +376,16 @@ export function BookingModal() {
         }),
       });
       if (!response.ok) throw new Error(`Booking request failed with ${response.status}`);
-      // A confirmation, if the backend sent one. Today it does not, and the
-      // success screen stays a request confirmation with no calendar action.
       setConfirmed(readConfirmedStay(await readResponsePayload(response)) ?? null);
       setDirection(1);
       setStatus('success');
     } catch {
-      setStatus('error');
+      setNotice({ code: 'unexpected' });
+      setStatus('idle');
     }
   };
+
+  const submit = () => (bookable && quote ? book() : requestBooking());
 
   if (!unit) return null;
 
@@ -201,6 +421,7 @@ export function BookingModal() {
               firstName={contact.name.split(' ')[0]}
               upcoming={upcoming}
               confirmed={confirmed}
+              reference={reference}
               unitName={unit.name[locale]}
               onClose={close}
             />
@@ -213,12 +434,12 @@ export function BookingModal() {
                 onChange={(k, v) => setContact((c) => ({ ...c, [k]: v }))}
                 touched={touched}
               />
-              {status === 'error' && <div className="mt-5"><SubmitError locale={locale} /></div>}
+              {notice && <div className="mt-5"><BookingNotice code={notice.code} meta={notice.meta} locale={locale} /></div>}
               <div className="mt-7">
                 <CtaButton
                   full
                   disabled={status === 'sending'}
-                  onClick={() => (nameValid && emailValid ? submit() : setTouched(true))}
+                  onClick={() => (nameValid && emailValid ? requestBooking() : setTouched(true))}
                 >
                   {status === 'sending' ? <Sending /> : de ? 'Benachrichtigen' : 'Notify me'}
                 </CtaButton>
@@ -226,12 +447,16 @@ export function BookingModal() {
             </Step>
           ) : (
             <Step key={step} direction={direction}>
-              {step === 1 && <StepGuests guests={guests} setGuests={setGuests} />}
+              {step === 1 && <StepGuests guests={guests} setGuests={setGuests} maxGuests={maxGuests} />}
               {step === 2 && (
                 <StepDates
                   arrival={dates.arrival}
                   departure={dates.departure}
                   nights={nights}
+                  days={days}
+                  loading={calendarLoading}
+                  quote={quote}
+                  quoteLoading={quoteLoading}
                   onSelect={(next) => setDates((d) => ({ ...d, ...next }))}
                 />
               )}
@@ -241,6 +466,7 @@ export function BookingModal() {
                   setContact={setContact}
                   touched={touched}
                   valid={contactValid}
+                  bookable={bookable}
                 />
               )}
               {step === 4 && (
@@ -252,10 +478,13 @@ export function BookingModal() {
                   departure={dates.departure}
                   nights={nights}
                   guests={guests}
+                  quote={quote}
+                  quoteLoading={quoteLoading}
+                  bookable={bookable}
                 />
               )}
 
-              {status === 'error' && <div className="mt-5"><SubmitError locale={locale} /></div>}
+              {notice && <div className="mt-5"><BookingNotice code={notice.code} meta={notice.meta} locale={locale} /></div>}
 
               <StepActions>
                 <div className="flex items-center gap-3">
@@ -274,9 +503,19 @@ export function BookingModal() {
                       {de ? 'Weiter' : 'Continue'}
                     </CtaButton>
                   ) : (
-                    <CtaButton full disabled={status === 'sending'} onClick={submit}>
+                    <CtaButton
+                      full
+                      // Disabled while a quote is in flight so nobody can
+                      // submit against a price that is being replaced. The
+                      // real duplicate-submit guarantee is the server's
+                      // idempotency key, not this attribute.
+                      disabled={status === 'sending' || (bookable && (quoteLoading || !quote))}
+                      onClick={submit}
+                    >
                       {status === 'sending'
                         ? <Sending />
+                        : bookable
+                        ? de ? 'Verbindlich buchen' : 'Book now'
                         : de ? 'Buchung anfragen' : 'Request booking'}
                     </CtaButton>
                   )}
@@ -286,7 +525,11 @@ export function BookingModal() {
               {step === LAST_STEP && (
                 <p className="mt-4 text-center text-[12px] leading-relaxed"
                    style={{ color: 'hsl(var(--muted-foreground))' }}>
-                  {de
+                  {bookable
+                    ? de
+                      ? 'Im nächsten Schritt öffnet sich die gesicherte Zahlungsseite. Ihr Zeitraum ist bis zum Abschluss für Sie reserviert.'
+                      : 'The secure payment page opens next. Your dates are held for you until you complete it.'
+                    : de
                     ? 'Mit dem Absenden entsteht noch kein Vertrag und es wird nichts abgebucht. Wir prüfen Ihren Zeitraum und schicken Ihnen Bestätigung und Zahlungsweg.'
                     : 'Submitting creates no contract and charges nothing. We check your dates and send you confirmation and the payment details.'}
                 </p>
@@ -308,6 +551,33 @@ export function BookingModal() {
       </div>
     </DialogModal>
   );
+}
+
+/**
+ * A thrown value, reduced to something the notice component has copy for.
+ * Anything unrecognised becomes `unexpected` — no raw message ever surfaces.
+ */
+function toNotice(cause: unknown): { code: BookingErrorCode; meta?: Record<string, number | string | boolean> } {
+  if (cause instanceof BookingRequestError) return { code: cause.code, meta: cause.meta };
+  return { code: 'unexpected' };
+}
+
+/**
+ * One typed name into the two fields a reservation needs.
+ *
+ * The contact form asks for a name in one field, which is what the site has
+ * always done and is less friction than two. The last whitespace-separated
+ * token is taken as the surname, the rest as the given name — which is right
+ * for the overwhelming majority of German and international guests, and wrong
+ * in a way that is corrected on arrival rather than blocking a booking. A
+ * single token becomes the surname, because that is the name a reservation is
+ * looked up under.
+ */
+function splitName(value: string): { firstName: string; lastName: string } {
+  const parts = value.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { firstName: '', lastName: '' };
+  if (parts.length === 1) return { firstName: parts[0], lastName: parts[0] };
+  return { firstName: parts.slice(0, -1).join(' '), lastName: parts[parts.length - 1] };
 }
 
 function Sending() {
@@ -422,7 +692,9 @@ function Progress({ step }: { step: number }) {
 
 /* ── Steps ──────────────────────────────────────────────────────────────── */
 
-function StepGuests({ guests, setGuests }: { guests: number; setGuests: (n: number) => void }) {
+function StepGuests({
+  guests, setGuests, maxGuests,
+}: { guests: number; setGuests: (n: number) => void; maxGuests: number }) {
   const { locale } = useI18n();
   const de = locale === 'de';
 
@@ -446,13 +718,14 @@ function StepGuests({ guests, setGuests }: { guests: number; setGuests: (n: numb
             {de ? (guests === 1 ? 'Person' : 'Personen') : guests === 1 ? 'Guest' : 'Guests'}
           </p>
         </div>
-        <StepperButton onClick={() => setGuests(Math.min(MAX_GUESTS, guests + 1))} disabled={guests >= MAX_GUESTS}
+        <StepperButton onClick={() => setGuests(Math.min(maxGuests, guests + 1))} disabled={guests >= maxGuests}
                        label={de ? 'Mehr' : 'More'}><Plus className="h-4 w-4" /></StepperButton>
       </div>
 
       <div className="mt-8 flex flex-wrap justify-center gap-2">
-        {/* Every size these apartments sleep, from one to four. */}
-        {Array.from({ length: MAX_GUESTS - MIN_GUESTS + 1 }, (_, i) => MIN_GUESTS + i).map((n) => (
+        {/* Every party size this residence takes. Read from the unit, not from
+            a constant — see lib/booking/occupancy.ts. */}
+        {Array.from({ length: maxGuests - MIN_GUESTS + 1 }, (_, i) => MIN_GUESTS + i).map((n) => (
           <button
             key={n}
             type="button"
@@ -490,9 +763,13 @@ function StepperButton({
 }
 
 function StepDates({
-  arrival, departure, nights, onSelect,
+  arrival, departure, nights, days, loading, quote, quoteLoading, onSelect,
 }: {
   arrival?: string; departure?: string; nights?: number;
+  days: InventoryDay[];
+  loading: boolean;
+  quote: BookingQuote | null;
+  quoteLoading: boolean;
   onSelect: (n: { arrival?: string; departure?: string }) => void;
 }) {
   const { locale } = useI18n();
@@ -506,19 +783,49 @@ function StepDates({
           : de ? 'Wählen Sie Anreise und Abreise.' : 'Choose your arrival and departure.'}
       </p>
       <div className="mt-6">
-        <StayCalendar arrival={arrival} departure={departure} onSelect={onSelect} />
+        <StayCalendar
+          arrival={arrival}
+          departure={departure}
+          onSelect={onSelect}
+          days={days}
+          loading={loading}
+        />
       </div>
+
+      {/*
+        The price, the moment the stay is complete. It is the live offer and
+        nothing else — while it is loading the row says so rather than showing
+        a stale number, and if there is no offer there is no price on screen.
+      */}
+      {nights && (quote || quoteLoading) && (
+        <div
+          className="mt-6 flex items-baseline justify-between gap-4 p-4"
+          style={{ background: 'hsl(var(--secondary) / 0.55)', borderRadius: 'var(--radius-md)' }}
+        >
+          <span className="text-[13px]" style={{ color: 'hsl(var(--muted-foreground))' }}>
+            {de ? 'Gesamtpreis' : 'Total'}
+          </span>
+          <span className="font-serif text-[22px] leading-none" style={{ color: 'hsl(var(--foreground))' }}>
+            {quoteLoading || !quote ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              formatMoney(quote.totalCents, quote.currency, locale)
+            )}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
 
 function StepContact({
-  contact, setContact, touched, valid,
+  contact, setContact, touched, valid, bookable,
 }: {
   contact: { name: string; email: string; phone: string };
   setContact: (fn: (c: { name: string; email: string; phone: string }) => { name: string; email: string; phone: string }) => void;
   touched: boolean;
   valid: boolean;
+  bookable: boolean;
 }) {
   const { locale } = useI18n();
   const de = locale === 'de';
@@ -526,7 +833,11 @@ function StepContact({
     <div>
       <h3 className="display-3 text-[20px]">{de ? 'Wie erreichen wir Sie?' : 'How do we reach you?'}</h3>
       <p className="body-copy mt-2 text-[14px]">
-        {de
+        {bookable
+          ? de
+            ? 'Wir schicken Ihnen Bestätigung und Anreisedetails an diese Adresse.'
+            : 'We send your confirmation and arrival details to this address.'
+          : de
           ? 'Wir melden uns persönlich mit Bestätigung und Preis — meist am selben Tag.'
           : 'We reply personally with confirmation and price — usually the same day.'}
       </p>
@@ -549,33 +860,71 @@ function StepContact({
 }
 
 function StepPayment({
-  method, setMethod, unitName, arrival, departure, nights, guests,
+  method, setMethod, unitName, arrival, departure, nights, guests, quote, quoteLoading, bookable,
 }: {
   method: MethodId; setMethod: (m: MethodId) => void;
   unitName: string; arrival?: string; departure?: string; nights?: number; guests: number;
+  quote: BookingQuote | null;
+  quoteLoading: boolean;
+  bookable: boolean;
 }) {
   const { locale } = useI18n();
   const de = locale === 'de';
   // One date shape across the whole site — see lib/booking/date-format.ts.
   const fmt = (d?: string) => formatDateOrDash(d);
 
+  // Only the providers that can actually be executed are offered against a
+  // live inventory hold. See the note on METHODS.
+  const methods = bookable ? METHODS.filter((m) => m.handoff) : METHODS;
+
   return (
     <div>
       <h3 className="display-3 text-[20px]">{de ? 'Wie möchten Sie zahlen?' : 'How would you like to pay?'}</h3>
 
-      {/* No total. No nightly rate. No rate has been supplied to this site. */}
       <div className="mt-5 p-4" style={{ background: 'hsl(var(--secondary) / 0.55)', borderRadius: 'var(--radius-md)' }}>
         <dl className="space-y-1.5 text-[13.5px]">
           <Row label={de ? 'Apartment' : 'Apartment'} value={unitName} />
           <Row label={de ? 'Zeitraum' : 'Dates'} value={`${fmt(arrival)} – ${fmt(departure)}`} />
           <Row label={de ? 'Nächte' : 'Nights'} value={nights ? String(nights) : '—'} />
           <Row label={de ? 'Personen' : 'Guests'} value={String(guests)} />
-          <Row label={de ? 'Preis' : 'Price'} value={de ? 'auf Anfrage' : 'on request'} muted />
+
+          {/*
+            Line items, exactly as the provider priced them. Nothing is derived
+            here and no tax breakdown is invented — different items carry
+            different treatment and this site does not guess which.
+          */}
+          {quote?.components.map((component) => (
+            <Row
+              key={component.code}
+              label={component.label[locale]}
+              value={formatMoney(component.amountCents, quote.currency, locale)}
+            />
+          ))}
+
+          <div className="pt-2" style={{ borderTop: '1px solid hsl(var(--border))' }}>
+            <Row
+              label={de ? 'Gesamt' : 'Total'}
+              value={
+                quote
+                  ? formatMoney(quote.totalCents, quote.currency, locale)
+                  : quoteLoading
+                  ? de ? 'wird geprüft …' : 'checking …'
+                  : de ? 'auf Anfrage' : 'on request'
+              }
+              muted={!quote}
+            />
+          </div>
         </dl>
+
+        {quote?.cancellationPolicy && (
+          <p className="mt-3 text-[12px] leading-relaxed" style={{ color: 'hsl(var(--muted-foreground))' }}>
+            {quote.cancellationPolicy[locale]}
+          </p>
+        )}
       </div>
 
       <div className="mt-6 flex flex-col gap-2.5">
-        {METHODS.map((m) => {
+        {methods.map((m) => {
           const active = method === m.id;
           return (
             <button
@@ -611,10 +960,30 @@ function StepPayment({
       </div>
 
       {/*
-        The one sentence that keeps this step honest while the providers are not
-        connected. It disappears on its own once canBookOnline() is true.
+        The contractual furniture. Germany requires the terms and the privacy
+        notice to be reachable before a booking is concluded, and they are the
+        site's own existing pages — nothing legal is invented here. Consent to
+        them is given by completing the booking, which is stated rather than
+        hidden behind a pre-ticked box; there is no marketing opt-in on this
+        screen at all, pre-selected or otherwise.
       */}
-      {!canBookOnline() && (
+      {bookable && (
+        <p className="mt-5 text-[12px] leading-relaxed" style={{ color: 'hsl(var(--muted-foreground))' }}>
+          {de ? 'Mit der Buchung akzeptieren Sie unsere ' : 'By booking you accept our '}
+          <a href="/agb" className="underline underline-offset-2" target="_blank" rel="noopener noreferrer">
+            {de ? 'Allgemeinen Geschäftsbedingungen' : 'terms and conditions'}
+          </a>
+          {de ? ' und unsere ' : ' and our '}
+          <a href="/datenschutz" className="underline underline-offset-2" target="_blank" rel="noopener noreferrer">
+            {de ? 'Datenschutzerklärung' : 'privacy policy'}
+          </a>
+          {de
+            ? '. Die Stornierungsbedingungen entnehmen Sie den AGB.'
+            : '. Cancellation conditions are set out in the terms.'}
+        </p>
+      )}
+
+      {!bookable && (
         <p className="mt-5 text-[12px] leading-relaxed" style={{ color: 'hsl(var(--muted-foreground))' }}>
           {de
             ? 'Hier wird noch nicht bezahlt. Sie wählen nur, wie Sie später zahlen möchten — den Zahlungsweg schicken wir Ihnen mit der Bestätigung.'
@@ -640,12 +1009,14 @@ function Row({ label, value, muted = false }: { label: string; value: string; mu
 /* ── Confirmation ───────────────────────────────────────────────────────── */
 
 function SuccessState({
-  firstName, upcoming, confirmed, unitName, onClose,
+  firstName, upcoming, confirmed, reference, unitName, onClose,
 }: {
   firstName: string;
   upcoming: boolean;
   /** A booking the backend actually confirmed, or null. Never inferred here. */
   confirmed: ConfirmedStay | null;
+  /** The BoLaGio reference, when one was created. Never a Beds24 id. */
+  reference: string | null;
   unitName: string;
   onClose: () => void;
 }) {
@@ -681,6 +1052,13 @@ function SuccessState({
           ? `Danke, ${firstName}. Wir prüfen Ihren Zeitraum persönlich und melden uns mit Bestätigung, Preis und Zahlungsweg — meist am selben Tag.`
           : `Thank you, ${firstName}. We check your dates personally and come back with confirmation, price and payment details — usually the same day.`}
       </p>
+
+      {/* BoLaGio's own reservation number. Never a provider identifier. */}
+      {reference && (
+        <p className="mt-4 text-[12px] uppercase tracking-[0.14em]" style={{ color: 'hsl(var(--champagne-dark))' }}>
+          {de ? 'Referenz' : 'Reference'} · {reference}
+        </p>
+      )}
 
       {/*
         The calendar entry belongs to a confirmed stay and to nothing else. A

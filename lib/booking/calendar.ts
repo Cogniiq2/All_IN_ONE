@@ -16,10 +16,12 @@
  * submitted successfully.
  *
  * Today neither flow produces one:
- *   • a booking is a *request*. No availability source and no live payment
- *     stand behind it (AVAILABILITY_SOURCE is 'none', PAYMENT_ENABLED is
- *     false), so a person confirms it afterwards, off the website. The
- *     confirmation screen therefore shows no calendar action at all.
+ *   • a booking against a residence with no connected channel-manager source
+ *     is a *request*. A person confirms it afterwards, off the website, so the
+ *     confirmation screen shows no calendar action at all. A residence that IS
+ *     connected produces a real reservation — and the calendar action appears
+ *     there only once the backend booking status is actually 'confirmed',
+ *     which only an authenticated payment callback can set.
  *   • a rental enquiry asks for an appointment; BoLaGio still has to answer
  *     with a time. There is no appointment to add until then.
  *

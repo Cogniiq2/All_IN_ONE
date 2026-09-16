@@ -19,14 +19,15 @@
  * navigation is instant (lib/booking/stay-context.tsx).
  *
  * ── What it may not claim ────────────────────────────────────────────────
- * `lib/booking/availability.ts` reports that no availability source is
- * connected, so the panel does not claim to check anything. The heading plans a
- * stay and the button names exactly what pressing it does — it shows the
- * apartments, carrying the visitor's choices with them. It deliberately says
- * neither "Verfügbarkeit prüfen" (there is no live answer behind it) nor "Jetzt
- * buchen" (it selects an apartment, it does not book one). When
- * `hasLiveAvailability()` becomes true the submit can filter the selection by a
- * real answer, and the note below stops being needed.
+ * This panel stands in front of the whole portfolio, before a residence has
+ * been chosen, so it cannot know whether a given residence has live
+ * availability — that is a per-unit fact answered by
+ * /api/booking/availability once there is a unit. It therefore claims nothing
+ * about availability at all. The heading plans a stay and the button names
+ * exactly what pressing it does: it shows the residences, carrying the
+ * visitor's choices with them. It deliberately says neither "Verfügbarkeit
+ * prüfen" (this panel has no answer behind it) nor "Jetzt buchen" (it selects
+ * a residence, it does not book one).
  *
  * It must never be used for long-term rental. A tenancy has no nightly
  * availability, and offering dates for one would misrepresent the product —
@@ -42,7 +43,6 @@ import { CONTROL_HEIGHT, DateField } from '@/components/ui-kit/date-field';
 import { useStay } from '@/lib/booking/stay-context';
 import {
   clampGuests,
-  hasLiveAvailability,
   MAX_GUESTS,
   MIN_GUESTS,
   nextDayIso,
@@ -202,17 +202,16 @@ export function AvailabilitySearch({
       </div>
 
       {/*
-        No availability source is connected, and the panel says so rather than
-        implying a live calendar behind it. This line disappears on its own once
-        hasLiveAvailability() is true.
+        Says what the button does and nothing more. It deliberately no longer
+        promises that availability is confirmed personally: that is true for a
+        residence with no connected source and false for one that can be booked
+        online, and this panel does not know which it is about yet.
       */}
-      {!hasLiveAvailability() && (
-        <p className="mt-4 text-[12px] leading-relaxed text-muted-foreground">
-          {de
-            ? 'Wir zeigen Ihnen im nächsten Schritt unsere Apartments — Ihre Angaben nehmen wir mit. Verfügbarkeit und Preis bestätigen wir persönlich.'
-            : 'We show you our apartments in the next step, with your details carried over. Availability and price are confirmed by us personally.'}
-        </p>
-      )}
+      <p className="mt-4 text-[12px] leading-relaxed text-muted-foreground">
+        {de
+          ? 'Wir zeigen Ihnen im nächsten Schritt unsere Apartments — Ihre Angaben nehmen wir mit.'
+          : 'We show you our apartments in the next step, with your details carried over.'}
+      </p>
     </form>
   );
 }
