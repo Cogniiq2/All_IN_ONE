@@ -72,18 +72,33 @@ Generate each shared secret with real entropy, e.g. `openssl rand -hex 32`.
    constraint that makes two active holds on the same dates impossible.
    It does not touch the three earlier migrations, which belong to the
    archived admin application.
-2. **Seed the registry.** Run `supabase/seed/bolagio_booking_units.sql`. It
-   inserts the five units with `is_bookable = false`.
-3. **Fill in the Beds24 mapping.** Uncomment the blocks at the bottom of the
-   seed file with the real property and room ids.
-4. **Confirm occupancy.** `max_guests` is `NULL` for every unit because the
+2. **Seed the registry and the mapping.** Run
+   `supabase/seed/bolagio_booking_units.sql`. It inserts the five units with
+   `is_bookable = false`, and the two confirmed Beds24 mappings:
+
+   | Unit | Beds24 property | Beds24 room |
+   |---|---|---|
+   | `schulstrasse-i` | `354659` | `731147` |
+   | `schulstrasse-ii` | `354658` | `731146` |
+
+   The three Opernstraße flats deliberately get no mapping row — no ids have
+   been confirmed for them, and a unit with no mapping is reported as
+   `unsourced` and keeps the enquiry flow, whereas one pointed at the wrong
+   room sells the wrong apartment and looks healthy doing it.
+3. **Confirm occupancy.** `max_guests` is `NULL` for every unit because the
    owners have not verified it, so the application falls back to four. Set the
    real figure per unit when it is known — no deploy is needed.
-5. **Check RLS.** Every table is RLS-enabled with *no* permissive policy, and
+4. **Check RLS.** Every table is RLS-enabled with *no* permissive policy, and
    `anon`/`authenticated` are revoked. Verify with the Supabase advisor that no
    policy has been added: the browser must never read these tables.
-6. **Open a residence.** `update bolagio_units set is_bookable = true where
-   slug = '…';` — but only after step 3 and a successful sync.
+5. **Open a residence.** `update bolagio_units set is_bookable = true where
+   slug = '…';`
+
+   Still commented out in the seed, deliberately. The mapping is confirmed,
+   but nothing that WRITES to Beds24 has been exercised — so a guest reaching
+   the booking flow would be the first write ever attempted against this
+   account. Run the controlled hold/release test first:
+   `docs/beds24-write-test-plan.md`.
 
 ---
 
