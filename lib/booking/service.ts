@@ -26,7 +26,12 @@ import 'server-only';
  * ══════════════════════════════════════════════════════════════════════════
  */
 
-import { holdMinutes, inventoryMonths, quoteMinutes } from '@/lib/booking/config';
+import { directBookingEnabled, inventoryMonths, quoteMinutes } from '@/lib/booking/config';
+import { transitionIntent } from '@/lib/booking/commands';
+import { acquireHold, HoldError } from '@/lib/booking/hold';
+import { evaluateLease } from '@/lib/booking/lease';
+import { releaseHold as releaseHoldSaga } from '@/lib/booking/release';
+import { quoteHashOf } from '@/lib/booking/quote-hash';
 import { createLogger, type BookingLogger } from '@/lib/booking/logger';
 import { bookingIdempotencyKey, newBookingReference } from '@/lib/booking/reference';
 import {
@@ -34,10 +39,8 @@ import {
   findIntentByIdempotencyKey,
   findUnitBySlug,
   listBookableUnits,
-  logTransition,
   OverlappingHoldError,
   readInventory,
-  updateIntent,
   upsertInventory,
   type BookableUnit,
   type IntentRecord,
@@ -50,17 +53,16 @@ import {
   validateStayShape,
   type StayRequest,
 } from '@/lib/booking/stay-rules';
-import { apply, isHoldExpired, isQuoteExpired } from '@/lib/booking/state-machine';
+import { isHoldExpired, isQuoteExpired } from '@/lib/booking/state-machine';
+import { reservesInventory } from '@/lib/booking/states';
 import type {
   AvailabilityCalendar,
   BookingErrorBody,
   BookingErrorCode,
   BookingIntentView,
   BookingQuote,
-  BookingStatus,
   GuestDetails,
   IsoDate,
-  PaymentProvider,
 } from '@/lib/booking/types';
 import { bookingProvider } from '@/lib/integrations/beds24';
 import { ProviderError } from '@/lib/integrations/provider';
@@ -243,28 +245,25 @@ export interface StartBookingInput extends StayRequest {
 }
 
 /**
- * Create the booking intent and block the inventory.
+ * Create the booking intent and reserve the inventory.
  *
- * ── Overbooking protection, step by step ─────────────────────────────────
- *  1. The unit, its occupancy and its provider mapping come from the database.
- *  2. The stay is revalidated in shape and against the cached calendar.
- *  3. Beds24 is asked LIVE for an offer. If Booking.com took the dates while
- *     the guest was typing their name, this is where it surfaces — as an
- *     availability conflict, not a 500.
- *  4. The intent is created under an idempotency key. A second concurrent
- *     submission loses the unique-index race and is handed the same row.
- *  5. The hold is created at Beds24, which pushes the closed night out to
- *     Booking.com and Airbnb.
- *  6. The database's exclusion constraint refuses a second active hold
- *     overlapping the same unit, whatever the provider said.
- *
- * The total written to the row is the one Beds24 just returned. Nothing the
- * browser sent is read as an amount at any point.
+ * ── Order of operations, and why it changed ──────────────────────────────
+ *  1. The launch gate. A curl request runs into this, not just a hidden button.
+ *  2. The unit, its occupancy and its provider mapping come from the database.
+ *  3. The stay is revalidated in shape and against the cached calendar.
+ *  4. The intent is created under an idempotency key, so a double-click, a
+ *     retried fetch and a page refresh all land on one row.
+ *  5. A LIVE Beds24 offer sets the authoritative total. Nothing the browser
+ *     sent is read as an amount at any point.
+ *  6. `acquireHold` takes the LOCAL lock first, then the Beds24 hold, then
+ *     verifies both. Locking locally first is the change that makes concurrent
+ *     direct bookings safe — see the header of lib/booking/hold.ts.
  */
 export async function startBooking(
   input: StartBookingInput,
   logger: BookingLogger = createLogger()
 ): Promise<{ intent: BookingIntentView; quote: BookingQuote }> {
+  requireDirectBooking();
   const unit = await requireBookableUnit(input.unitSlug);
 
   const shapeError = validateStayShape(input, {
@@ -286,10 +285,10 @@ export async function startBooking(
   });
 
   // A second press of the same button finds the first attempt. If it already
-  // holds inventory, that hold is the answer — creating another would be the
+  // holds inventory, that hold IS the answer — creating another would be the
   // duplicate booking this whole mechanism exists to prevent.
   const existing = await findIntentByIdempotencyKey(idempotencyKey);
-  if (existing && existing.beds24BookingId && !isHoldExpired(existing.status, existing.holdExpiresAt)) {
+  if (existing && existing.beds24BookingId && reservesInventory(existing.status)) {
     logger.info('intent.create', { reference: existing.reference, outcome: 'idempotent-replay' });
     return { intent: toView(existing), quote: quoteFromIntent(existing) };
   }
@@ -332,210 +331,115 @@ export async function startBooking(
     currency: quote.currency,
   });
 
-  const quoted = await transition(intent, 'quoted', logger, {
-    quotedTotalCents: quote.totalCents,
-    quoteComponents: quote.components,
-    currency: quote.currency,
-    quoteExpiresAt: quote.expiresAt,
-  });
+  const quoted = await transitionIntent(
+    intent.id,
+    {
+      expected: intent.status,
+      to: 'quoted',
+      reason: 'quote_attached',
+      patch: {
+        quotedTotalCents: quote.totalCents,
+        quoteComponents: quote.components,
+        quoteHash: await quoteHashOf(quote),
+        currency: quote.currency,
+        quoteExpiresAt: quote.expiresAt,
+      },
+    },
+    logger
+  );
+  if (!quoted) throw new BookingError('unexpected');
 
-  const holdExpiresAt = new Date(Date.now() + holdMinutes() * 60_000).toISOString();
-
-  let held: IntentRecord;
   try {
-    const booking = await bookingProvider().createHold({
-      unit: unit.providerRef!,
-      unitSlug: unit.slug,
-      reference: quoted.reference,
-      checkIn: input.checkIn,
-      checkOut: input.checkOut,
-      adults: input.adults,
-      children: input.children,
-      guest,
-      totalCents: quote.totalCents,
-      currency: quote.currency,
-      idempotencyKey,
-      holdExpiresAt,
-    });
-
-    held = await transition(quoted, 'hold_created', logger, {
-      beds24BookingId: booking.externalBookingId,
-      holdExpiresAt,
-      providerSnapshot: booking.snapshot,
-    });
-
-    logger.info('beds24.hold', {
-      reference: held.reference,
-      providerBookingId: booking.externalBookingId,
-      unitSlug: unit.slug,
-    });
+    const { intent: held } = await acquireHold(quoted, unit, quote, logger);
+    return { intent: toView(held), quote };
   } catch (cause) {
-    const error = fromProvider(cause);
-    logger.warn('beds24.hold', { reference: quoted.reference, errorCode: error.code });
-    // The intent stays in the database in a non-holding status. It is a record
-    // of an attempt, not a reservation, and it cannot block anyone's dates.
-    await transition(quoted, 'cancelled', logger, {}, `hold_failed:${error.code}`).catch(() => {});
-    throw error;
+    throw fromHoldFailure(cause);
   }
-
-  return { intent: toView(held), quote };
 }
-
-/* ── Payment handoff ───────────────────────────────────────────────────── */
 
 /**
- * Move a held intent to `payment_pending`.
+ * A hold saga failure, translated for the guest.
  *
- * The amount is NOT a parameter. The caller supplies a reference and a
- * provider; everything chargeable is read back out of the row that the server
- * itself wrote from a Beds24 offer. This is the single most important line of
- * defence against a browser that edits a price before submitting it.
+ * The `uncertain` branch is the one that matters. It becomes
+ * `pending_verification`, whose copy tells the guest to WAIT and explicitly not
+ * to try again — because a retry is precisely what would create the second
+ * Beds24 booking. Every other branch invites a retry, because in every other
+ * branch nothing was created.
  */
-export async function beginPayment(
-  reference: string,
-  provider: PaymentProvider,
-  logger: BookingLogger = createLogger()
-): Promise<IntentRecord> {
-  const intent = await requireIntent(reference);
-
-  if (isHoldExpired(intent.status, intent.holdExpiresAt)) {
-    await transition(intent, 'expired', logger, {}, 'hold_expired');
-    throw new BookingError('hold_expired');
+function fromHoldFailure(cause: unknown): BookingError {
+  if (!(cause instanceof HoldError)) return fromProvider(cause);
+  switch (cause.failure.kind) {
+    case 'conflict':
+      return new BookingError('availability_conflict');
+    case 'stay_rules':
+      return new BookingError('stay_rules', cause.failure.meta);
+    case 'unavailable':
+      return new BookingError('provider_unavailable');
+    case 'uncertain':
+      return new BookingError('pending_verification');
+    default:
+      return new BookingError('unexpected');
   }
-  if (isQuoteExpired(intent.quoteExpiresAt)) {
-    throw new BookingError('quote_expired');
-  }
-  if (!intent.quotedTotalCents || intent.quotedTotalCents <= 0) {
-    throw new BookingError('unexpected');
-  }
-
-  // Already handed off. Returning the same session rather than opening a
-  // second one is what stops a refresh from creating two Stripe checkouts.
-  if (intent.status === 'payment_pending' && intent.paymentSessionId) return intent;
-
-  return transition(intent, 'payment_pending', logger, { paymentProvider: provider });
 }
 
-export async function attachPaymentSession(
-  intent: IntentRecord,
-  sessionId: string
-): Promise<IntentRecord> {
-  return (await updateIntent(intent.id, { paymentSessionId: sessionId })) ?? intent;
-}
-
-/* ── Payment outcome ───────────────────────────────────────────────────── */
-
-export type PaymentOutcome = 'succeeded' | 'failed' | 'cancelled' | 'expired';
+/* ── Release ───────────────────────────────────────────────────────────── */
 
 /**
- * Apply a payment result that a TRUSTED caller reported.
+ * Give a hold back, verified.
  *
- * "Trusted" means the shared secret was verified by the route handler. A
- * browser arriving at a success URL never reaches this function; that is the
- * whole point of the separation.
- *
- * Idempotent in both directions:
- *   • the same outcome twice is a quiet success (the state machine's 'noop');
- *   • a late `failed` after a `confirmed` is refused, because a guest who has
- *     paid does not lose their stay to a retried webhook.
+ * Delegates to the release saga, which refuses outright for anything on the
+ * paid side and leaves the local range RESERVED when it cannot prove the
+ * nights reopened. The old implementation logged a failed release and freed
+ * the range anyway — see docs/booking-core-audit.md §2.3.
  */
-export async function settlePayment(
-  reference: string,
-  outcome: PaymentOutcome,
-  logger: BookingLogger = createLogger(),
-  detail?: { paymentSessionId?: string }
-): Promise<BookingIntentView> {
-  const intent = await requireIntent(reference);
-  const provider = bookingProvider();
-
-  if (outcome === 'succeeded') {
-    // A hold that ran out while the guest was paying means the nights went
-    // back on sale. The payment is real, so this is not a silent failure — it
-    // becomes 'paid' and stops there, awaiting a human, rather than being
-    // announced as a confirmed reservation that Beds24 does not have.
-    if (isHoldExpired(intent.status, intent.holdExpiresAt)) {
-      logger.warn('payment.callback', { reference, outcome: 'paid_after_hold_expiry' });
-      const paid = await transition(intent, 'paid', logger, detail?.paymentSessionId
-        ? { paymentSessionId: detail.paymentSessionId }
-        : {}, 'hold_expired_before_payment');
-      return toView(paid);
-    }
-
-    const paid = await transition(
-      intent,
-      'paid',
-      logger,
-      detail?.paymentSessionId ? { paymentSessionId: detail.paymentSessionId } : {}
-    );
-    if (paid.status !== 'paid') return toView(paid); // already past 'paid'
-
-    if (paid.beds24BookingId) {
-      try {
-        const booking = await provider.confirmBooking(paid.beds24BookingId);
-        const confirmed = await transition(paid, 'confirmed', logger, {
-          providerSnapshot: booking.snapshot,
-          holdExpiresAt: null,
-        });
-        logger.info('beds24.confirm', {
-          reference,
-          providerBookingId: paid.beds24BookingId,
-          amountCents: paid.quotedTotalCents ?? undefined,
-        });
-        return toView(confirmed);
-      } catch (cause) {
-        // Money taken, provider would not confirm. It stays 'paid' — never
-        // 'confirmed' — so no screen anywhere tells the guest their stay is
-        // secured when the channel manager does not agree.
-        logger.error('beds24.confirm', cause, { reference });
-        return toView(paid);
-      }
-    }
-    return toView(paid);
-  }
-
-  const to: BookingStatus = outcome === 'failed' ? 'payment_failed' : 'expired';
-  const next = await transition(intent, to, logger, {}, `payment_${outcome}`);
-  // Give the nights back. A guest who abandoned a checkout must not cost a
-  // sellable night for the rest of the hold window.
-  await releaseIfHeld(next, `payment_${outcome}`, logger);
-  return toView(next);
-}
-
-/** Release a Beds24 hold, tolerating a hold that is already gone. */
 export async function releaseIfHeld(
   intent: IntentRecord,
   reason: string,
   logger: BookingLogger
 ): Promise<void> {
-  if (!intent.beds24BookingId) return;
-  if (intent.status === 'confirmed' || intent.status === 'paid') return;
-  try {
-    await bookingProvider().releaseHold(intent.beds24BookingId, reason);
-    logger.info('beds24.hold_release', {
-      reference: intent.reference,
-      providerBookingId: intent.beds24BookingId,
-      outcome: reason,
-    });
-  } catch (cause) {
-    // Logged, not thrown. The BoLaGio-side status is already correct, and the
-    // next inventory sync reconciles whatever Beds24 still thinks.
-    logger.error('beds24.hold_release', cause, { reference: intent.reference });
-  }
+  await releaseHoldSaga(intent, reason, logger);
 }
 
-/** Sweep holds that ran out. Called by the scheduled sync. */
+/**
+ * Sweep holds whose lease ran out.
+ *
+ * `evaluateLease` decides, not the clock. A lease running out is permission to
+ * ASK whether the guest paid, never permission to cancel — see the header of
+ * lib/booking/lease.ts for the ordering this protects against.
+ */
 export async function expireStaleHolds(
   intents: IntentRecord[],
   logger: BookingLogger
-): Promise<number> {
+): Promise<{ released: number; heldForPayment: number }> {
   let released = 0;
+  let heldForPayment = 0;
+
   for (const intent of intents) {
-    const expired = await transition(intent, 'expired', logger, {}, 'hold_timeout').catch(() => null);
+    const decision = await evaluateLease(intent, logger);
+    if (decision.action !== 'release') {
+      if (decision.action === 'hold') heldForPayment += 1;
+      continue;
+    }
+    const expired = await transitionIntent(
+      intent.id,
+      {
+        expected: intent.status,
+        to: 'expired',
+        reason: 'lease_expired',
+        patch: { lastFailureCode: 'BOOKING_LEASE_EXPIRED' },
+        outbox: {
+          type: 'booking.expired',
+          payload: { reference: intent.reference, unitSlug: intent.unitSlug },
+        },
+      },
+      logger
+    );
     if (!expired) continue;
-    await releaseIfHeld(expired, 'hold_timeout', logger);
-    released += 1;
+    const result = await releaseHoldSaga(expired, 'lease_expired', logger);
+    if (result.outcome === 'released' || result.outcome === 'nothing_to_release') released += 1;
   }
-  return released;
+
+  return { released, heldForPayment };
 }
 
 /* ── Inventory synchronisation ─────────────────────────────────────────── */
@@ -585,6 +489,18 @@ export async function syncInventory(
 
 /* ── Shared helpers ────────────────────────────────────────────────────── */
 
+/**
+ * The launch gate, checked before anything that can reserve inventory or
+ * create a payment order.
+ *
+ * A hidden frontend button is not a gate. This is: a curl request to the
+ * command endpoints runs into it, and the per-unit `is_bookable` flag in the
+ * database is the second, independent one.
+ */
+export function requireDirectBooking(): void {
+  if (!directBookingEnabled()) throw new BookingError('booking_disabled');
+}
+
 async function requireBookableUnit(slug: string): Promise<BookableUnit> {
   if (typeof slug !== 'string' || !/^[a-z0-9-]{2,64}$/.test(slug)) {
     throw new BookingError('invalid_input');
@@ -594,69 +510,25 @@ async function requireBookableUnit(slug: string): Promise<BookableUnit> {
   return unit;
 }
 
-async function requireIntent(reference: string): Promise<IntentRecord> {
+export async function requireIntent(reference: string): Promise<IntentRecord> {
   const { findIntentByReference } = await import('@/lib/booking/repository');
   const intent = await findIntentByReference(reference);
   if (!intent) throw new BookingError('invalid_input');
   return intent;
 }
 
-/**
- * Move an intent, through the state machine and with a compare-and-set write.
+/*
+ * The old `transition()` helper lived here.
  *
- * `apply()` decides whether the move is legal at all; `expectedStatus` on the
- * update makes the write lose cleanly if something else moved the row first.
- * Together those two are why concurrent callbacks cannot corrupt a booking.
+ * It applied the state machine in TypeScript and wrote the status with a
+ * compare-and-set — correct, but only for callers who remembered to use it,
+ * and the audit row was a separate write that could fail on its own. Both are
+ * now `bolagio_booking_transition()` in PostgreSQL: the machine, the
+ * compare-and-set, the audit row and the outbox row in one transaction, with a
+ * trigger that refuses any status change made another way.
+ *
+ * The typed wrapper is `transitionIntent` in lib/booking/commands.ts.
  */
-async function transition(
-  intent: IntentRecord,
-  to: BookingStatus,
-  logger: BookingLogger,
-  patch: Parameters<typeof updateIntent>[1] = {},
-  reason?: string
-): Promise<IntentRecord> {
-  const outcome = apply(intent.status, to);
-
-  if (outcome === 'noop') return intent;
-  if (outcome === 'illegal') {
-    logger.warn('intent.transition', {
-      reference: intent.reference,
-      fromStatus: intent.status,
-      toStatus: to,
-      outcome: 'illegal',
-    });
-    return intent;
-  }
-
-  const updated = await updateIntent(intent.id, { ...patch, status: to }, intent.status);
-  if (!updated) {
-    // Something else moved it between the read and the write. Whatever it did
-    // is at least as current as what we were about to do.
-    logger.warn('intent.transition', {
-      reference: intent.reference,
-      fromStatus: intent.status,
-      toStatus: to,
-      outcome: 'lost-race',
-    });
-    return intent;
-  }
-
-  logger.info('intent.transition', {
-    reference: intent.reference,
-    fromStatus: intent.status,
-    toStatus: to,
-    outcome: reason ?? 'applied',
-  });
-  await logTransition({
-    intentId: intent.id,
-    from: intent.status,
-    to,
-    reason,
-    correlationId: logger.correlationId,
-  });
-
-  return updated;
-}
 
 function normaliseGuest(guest: GuestDetails): GuestDetails {
   return {
@@ -683,6 +555,10 @@ export function toView(intent: IntentRecord): BookingIntentView {
     totalCents: intent.quotedTotalCents,
     components: intent.quoteComponents,
     holdExpiresAt: intent.holdExpiresAt ?? undefined,
+    // What the MONEY is doing, separately from the reservation. The return
+    // page needs both to tell "we are still confirming your payment" apart
+    // from "your payment did not go through".
+    paymentStatus: intent.paymentStatus,
   };
 }
 

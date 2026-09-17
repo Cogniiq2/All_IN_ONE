@@ -82,6 +82,23 @@ export interface ProviderBooking {
   externalBookingId: string;
   /** Exactly what the provider answered, for reconciliation. */
   snapshot: unknown;
+
+  /* ── Read back for verification ──────────────────────────────────────── */
+  /**
+   * What the provider says this booking IS, narrowed but not interpreted.
+   *
+   * Present on a read; usually present on a write. Everything below is what a
+   * verification step compares against what it asked for, because a 200 with
+   * a booking id is not proof the booking is the one we meant — it could be
+   * the right id on the wrong room, or the right room on the wrong dates.
+   */
+  status?: string;
+  externalPropertyId?: string;
+  externalRoomId?: string;
+  checkIn?: IsoDate;
+  checkOut?: IsoDate;
+  /** The BoLaGio reference the provider echoes back, when it does. */
+  reference?: string;
 }
 
 /**
@@ -130,4 +147,29 @@ export interface BookingProvider {
 
   /** Release a hold whose payment failed, was cancelled or timed out. */
   releaseHold(externalBookingId: string, reason: string): Promise<void>;
+
+  /**
+   * Read one booking back.
+   *
+   * Every write in this system is followed by a read. A write response is the
+   * provider's account of what it did; a read is what is actually there, and
+   * after a hold, a finalization or a release those are the only two facts
+   * worth acting on. Returns null when the booking does not exist.
+   */
+  getBooking(externalBookingId: string): Promise<ProviderBooking | null>;
+
+  /**
+   * Find bookings the provider holds for a unit and arrival date.
+   *
+   * Used by ONE caller: reconciliation of an `outcome_unknown` create. When a
+   * POST times out we cannot retry — so instead we ask the provider what it
+   * has, and match on the BoLaGio reference we wrote into the booking. If the
+   * provider does not return that field, this yields nothing, the operation
+   * stays unresolved, and it escalates to a human. That is the safe failure.
+   */
+  findBookings(query: {
+    unit: ProviderUnitRef;
+    arrivalFrom: IsoDate;
+    arrivalTo: IsoDate;
+  }): Promise<ProviderBooking[]>;
 }

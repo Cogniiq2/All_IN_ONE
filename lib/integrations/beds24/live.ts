@@ -9,7 +9,7 @@ import 'server-only';
  * property id.
  */
 
-import { quoteMinutes } from '@/lib/booking/config';
+import { beds24ConfirmedStatus, quoteMinutes } from '@/lib/booking/config';
 import type { BookingQuote, InventoryDay } from '@/lib/booking/types';
 import {
   ProviderError,
@@ -22,7 +22,9 @@ import {
 import { beds24Request } from '@/lib/integrations/beds24/client';
 import { mapCalendar, mapOffer } from '@/lib/integrations/beds24/mapper';
 import type {
+  Beds24Booking,
   Beds24BookingStatus,
+  Beds24BookingsResponse,
   Beds24BookingWriteResponse,
   Beds24CalendarResponse,
   Beds24OffersResponse,
@@ -47,8 +49,17 @@ import type {
  * overbooking.
  */
 const HOLD_STATUS: Beds24BookingStatus = 'new';
-const CONFIRMED_STATUS: Beds24BookingStatus = 'confirmed';
 const RELEASED_STATUS: Beds24BookingStatus = 'cancelled';
+
+/**
+ * The status a paid booking is promoted to. Configurable, because it is the
+ * one part of this adapter the live test did not prove — see
+ * `beds24ConfirmedStatus()` in lib/booking/config.ts. The finalizer reads the
+ * booking back and verifies it, so a wrong value fails loudly.
+ */
+function confirmedStatus(): Beds24BookingStatus {
+  return beds24ConfirmedStatus() as Beds24BookingStatus;
+}
 
 /** Marks every reservation this website creates, for channel attribution. */
 const DIRECT_REFERER = 'BoLaGio Direct';
@@ -138,6 +149,38 @@ export const beds24LiveProvider: BookingProvider = {
     return readWriteResponse(response, 'hold');
   },
 
+  async getBooking(externalBookingId: string): Promise<ProviderBooking | null> {
+    // The authoritative read. Every write in this adapter is followed by one:
+    // a write response is Beds24's account of what it did, this is what is
+    // actually there.
+    const response = await beds24Request<Beds24BookingsResponse>({
+      path: '/bookings',
+      query: { id: externalBookingId, includeInvoiceItems: 'false' },
+    });
+    const booking = response.data?.[0];
+    if (!booking || booking.id === undefined || booking.id === null) return null;
+    return toProviderBooking(booking);
+  },
+
+  async findBookings({ unit, arrivalFrom, arrivalTo }): Promise<ProviderBooking[]> {
+    // Used only to reconcile an `outcome_unknown` create, never in the guest
+    // flow. Filtered as narrowly as Beds24 allows so a reconciliation sweep
+    // cannot become an account-wide scan.
+    const response = await beds24Request<Beds24BookingsResponse>({
+      path: '/bookings',
+      query: {
+        propertyId: unit.externalPropertyId,
+        roomId: unit.externalRoomId,
+        arrivalFrom,
+        arrivalTo,
+        includeInvoiceItems: 'false',
+      },
+    });
+    return (response.data ?? [])
+      .filter((b) => b.id !== undefined && b.id !== null)
+      .map(toProviderBooking);
+  },
+
   async confirmBooking(externalBookingId: string): Promise<ProviderBooking> {
     const response = await beds24Request<Beds24BookingWriteResponse>({
       path: '/bookings',
@@ -145,7 +188,7 @@ export const beds24LiveProvider: BookingProvider = {
       // The booking id IS the idempotency domain here: confirming twice must
       // be the same as confirming once.
       idempotencyKey: `confirm:${externalBookingId}`,
-      body: [{ id: Number(externalBookingId) || externalBookingId, status: CONFIRMED_STATUS }],
+      body: [{ id: Number(externalBookingId) || externalBookingId, status: confirmedStatus() }],
     });
     return readWriteResponse(response, 'confirm');
   },
@@ -167,6 +210,24 @@ export const beds24LiveProvider: BookingProvider = {
     });
   },
 };
+
+/**
+ * A Beds24 booking, narrowed. Nothing INTERPRETED — the caller compares these
+ * against what it asked for; deciding here what "matches" means would put the
+ * verification rule in the adapter, where a second provider could not reuse it.
+ */
+function toProviderBooking(booking: Beds24Booking): ProviderBooking {
+  return {
+    externalBookingId: String(booking.id),
+    snapshot: booking,
+    status: booking.status ? String(booking.status) : undefined,
+    externalPropertyId: booking.propertyId !== undefined ? String(booking.propertyId) : undefined,
+    externalRoomId: booking.roomId !== undefined ? String(booking.roomId) : undefined,
+    checkIn: booking.arrival,
+    checkOut: booking.departure,
+    reference: booking.reference,
+  };
+}
 
 function previousDay(date: string): string {
   const d = new Date(`${date}T00:00:00Z`);
@@ -200,5 +261,14 @@ function readWriteResponse(
     );
   }
 
-  return { externalBookingId: String(id), snapshot: booking };
+  return {
+    externalBookingId: String(id),
+    snapshot: booking,
+    status: booking?.status ? String(booking.status) : undefined,
+    externalPropertyId: booking?.propertyId !== undefined ? String(booking.propertyId) : undefined,
+    externalRoomId: booking?.roomId !== undefined ? String(booking.roomId) : undefined,
+    checkIn: booking?.arrival,
+    checkOut: booking?.departure,
+    reference: booking?.reference,
+  };
 }

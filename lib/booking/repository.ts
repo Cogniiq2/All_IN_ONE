@@ -22,6 +22,7 @@ import type {
   InventoryDay,
   IsoDate,
   PaymentProvider,
+  PaymentStatus,
   QuoteComponent,
 } from '@/lib/booking/types';
 import type { ProviderUnitRef } from '@/lib/integrations/provider';
@@ -244,6 +245,39 @@ export interface IntentRecord {
   quoteExpiresAt: string | null;
   holdExpiresAt: string | null;
   guest: GuestDetails | null;
+
+  /* ── Added by the hardening pass ───────────────────────────────────────
+   * Everything below answers one question: if every running process
+   * disappeared, could a cold reconciliation worker work out what to do from
+   * this row alone? Nothing here is a convenience copy.
+   */
+
+  /** What the MONEY is doing, separately from what the reservation is doing. */
+  paymentStatus: PaymentStatus;
+  paymentOrderId: string | null;
+  paymentCaptureId: string | null;
+  paidAmountCents: number | null;
+  paidCurrency: string | null;
+
+  /** The local lock lease. Set while `locking`, cleared once resolved. */
+  lockExpiresAt: string | null;
+
+  /**
+   * The Beds24 ids the hold was ACTUALLY made with, snapshotted at the time.
+   * The mapping table can change; a booking must still be releasable against
+   * the ids it was created with, or recovery depends on current configuration
+   * being the same as historical configuration.
+   */
+  beds24PropertyId: string | null;
+  beds24RoomId: string | null;
+  beds24Status: string | null;
+  beds24VerifiedAt: string | null;
+
+  quoteHash: string | null;
+  lastFailureCode: string | null;
+  reconciliationState: 'ok' | 'pending' | 'failed' | 'manual';
+  confirmedAt: string | null;
+  paidAt: string | null;
 }
 
 const INTENT_COLUMNS =
@@ -251,6 +285,9 @@ const INTENT_COLUMNS =
   ' quoted_total_cents, quote_components, status, source, beds24_booking_id,' +
   ' payment_provider, payment_session_id, quote_expires_at, hold_expires_at,' +
   ' guest_first_name, guest_last_name, guest_email, guest_phone, country, locale,' +
+  ' payment_status, payment_order_id, payment_capture_id, paid_amount_cents, paid_currency,' +
+  ' lock_expires_at, beds24_property_id, beds24_room_id, beds24_status, beds24_verified_at,' +
+  ' quote_hash, last_failure_code, reconciliation_state, confirmed_at, paid_at,' +
   ' bolagio_units(slug)';
 
 /**
@@ -342,6 +379,23 @@ export async function findIntentByReference(reference: string): Promise<IntentRe
   return data ? toIntent(data as unknown as IntentRow) : null;
 }
 
+/**
+ * Find a booking by its PAYMENT ORDER id.
+ *
+ * The fallback attribution path for a verified provider event that does not
+ * carry our reference. Without it such an event would be an unattributable
+ * payment, and silently dropping one is how a guest's money goes missing.
+ */
+export async function findIntentByOrderId(orderId: string): Promise<IntentRecord | null> {
+  const { data, error } = await supabaseAdmin()
+    .from('bolagio_booking_intents')
+    .select(INTENT_COLUMNS)
+    .eq('payment_order_id', orderId)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? toIntent(data as unknown as IntentRow) : null;
+}
+
 export async function findIntentByProviderBookingId(id: string): Promise<IntentRecord | null> {
   const { data, error } = await supabaseAdmin()
     .from('bolagio_booking_intents')
@@ -352,8 +406,15 @@ export async function findIntentByProviderBookingId(id: string): Promise<IntentR
   return data ? toIntent(data as unknown as IntentRow) : null;
 }
 
+/**
+ * A patch that CANNOT change the status.
+ *
+ * `status` was removed deliberately, and the database now enforces the same
+ * thing with a trigger: a status change is only accepted from inside
+ * `bolagio_booking_transition()`. Anything that wants to move a booking calls
+ * `transitionIntent` in lib/booking/commands.ts.
+ */
 export interface UpdateIntentInput {
-  status?: BookingStatus;
   quotedTotalCents?: number | null;
   quoteComponents?: QuoteComponent[];
   currency?: string;
@@ -381,7 +442,6 @@ export async function updateIntent(
   expectedStatus?: BookingStatus
 ): Promise<IntentRecord | null> {
   const row: Record<string, unknown> = {};
-  if (patch.status !== undefined) row.status = patch.status;
   if (patch.quotedTotalCents !== undefined) row.quoted_total_cents = patch.quotedTotalCents;
   if (patch.quoteComponents !== undefined) row.quote_components = patch.quoteComponents;
   if (patch.currency !== undefined) row.currency = patch.currency;
@@ -465,6 +525,21 @@ interface IntentRow {
   guest_phone: string | null;
   country: string | null;
   locale: string | null;
+  payment_status: PaymentStatus;
+  payment_order_id: string | null;
+  payment_capture_id: string | null;
+  paid_amount_cents: number | null;
+  paid_currency: string | null;
+  lock_expires_at: string | null;
+  beds24_property_id: string | null;
+  beds24_room_id: string | null;
+  beds24_status: string | null;
+  beds24_verified_at: string | null;
+  quote_hash: string | null;
+  last_failure_code: string | null;
+  reconciliation_state: 'ok' | 'pending' | 'failed' | 'manual';
+  confirmed_at: string | null;
+  paid_at: string | null;
   bolagio_units?: { slug: string } | { slug: string }[] | null;
 }
 
@@ -489,6 +564,21 @@ function toIntent(row: IntentRow): IntentRecord {
     paymentSessionId: row.payment_session_id,
     quoteExpiresAt: row.quote_expires_at,
     holdExpiresAt: row.hold_expires_at,
+    paymentStatus: row.payment_status ?? 'not_created',
+    paymentOrderId: row.payment_order_id,
+    paymentCaptureId: row.payment_capture_id,
+    paidAmountCents: row.paid_amount_cents,
+    paidCurrency: row.paid_currency,
+    lockExpiresAt: row.lock_expires_at,
+    beds24PropertyId: row.beds24_property_id,
+    beds24RoomId: row.beds24_room_id,
+    beds24Status: row.beds24_status,
+    beds24VerifiedAt: row.beds24_verified_at,
+    quoteHash: row.quote_hash,
+    lastFailureCode: row.last_failure_code,
+    reconciliationState: row.reconciliation_state ?? 'ok',
+    confirmedAt: row.confirmed_at,
+    paidAt: row.paid_at,
     guest: row.guest_email
       ? {
           firstName: row.guest_first_name ?? '',

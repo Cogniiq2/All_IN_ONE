@@ -85,6 +85,20 @@ const MESSAGES: Record<BookingErrorCode, Copy> = {
     de: 'Einen Moment bitte — versuchen Sie es gleich noch einmal.',
     en: 'One moment please — try again in a few seconds.',
   },
+  booking_disabled: {
+    de: 'Die Online-Buchung ist noch nicht freigeschaltet. Schreiben Sie uns — wir bestätigen Ihre Daten persönlich.',
+    en: 'Online booking is not open yet. Write to us and we will confirm your dates personally.',
+  },
+  /*
+   * The careful one. The guest must WAIT and must not press the button again:
+   * a retry is exactly what would double-book or double-charge them. So the
+   * wording promises a person rather than inviting an action, and says
+   * plainly that nothing is lost.
+   */
+  pending_verification: {
+    de: 'Wir prüfen gerade den Stand Ihrer Buchung. Bitte versuchen Sie es nicht erneut — es geht nichts verloren, und wir melden uns in Kürze bei Ihnen.',
+    en: 'We are checking the status of your booking. Please do not try again — nothing is lost, and we will come back to you shortly.',
+  },
   unexpected: {
     de: 'Das hat leider nicht funktioniert. Es wurde nichts abgebucht.',
     en: 'That did not work. No payment has been taken.',
@@ -97,6 +111,8 @@ const MESSAGES: Record<BookingErrorCode, Copy> = {
  */
 const OFFER_CONTACT = new Set<BookingErrorCode>([
   'not_bookable',
+  'booking_disabled',
+  'pending_verification',
   'payment_handoff_failed',
   'unexpected',
 ]);

@@ -33,8 +33,22 @@ export type BookingLogEvent =
   | 'beds24.confirm'
   | 'intent.create'
   | 'intent.transition'
-  | 'payment.handoff'
+  | 'beds24.finalize'
+  | 'beds24.verify'
+  | 'beds24.search'
+  | 'intent.lock'
+  | 'external.operation'
+  | 'payment.order'
+  | 'payment.capture'
   | 'payment.callback'
+  | 'payment.event'
+  | 'payment.refund'
+  | 'reconcile.claim'
+  | 'reconcile.resolve'
+  | 'outbox.claim'
+  | 'outbox.ack'
+  | 'n8n.request'
+  | 'webhook.paypal'
   | 'webhook.beds24';
 
 /** Field names a booking log line is allowed to carry. Nothing else survives. */
@@ -44,6 +58,13 @@ const ALLOWED = new Set([
   'reference', 'providerBookingId', 'provider', 'mode', 'durationMs', 'count',
   'from', 'to', 'months', 'outcome', 'errorCode', 'httpStatus', 'eventType',
   'externalId', 'duplicate', 'paymentProvider', 'attempt',
+  // Added by the hardening pass. Every one of these is an id, a code, a count
+  // or a state — the allow list stays an allow list, and a guest's name still
+  // has no way through it.
+  'paymentStatus', 'paymentState', 'orderId', 'captureId', 'refundId',
+  'operationKey', 'operationType', 'eventId', 'reason', 'severity', 'jobId',
+  'claimed', 'queue', 'worker', 'verification', 'gate', 'stale', 'released',
+  'expected', 'actual', 'verified', 'resolution',
 ]);
 
 function scrub(fields: Record<string, unknown>): Record<string, unknown> {

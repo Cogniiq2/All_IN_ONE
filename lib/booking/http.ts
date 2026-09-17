@@ -41,6 +41,11 @@ const STATUS_BY_CODE: Record<BookingErrorCode, number> = {
   provider_unavailable: 503,
   not_bookable: 404,
   payment_handoff_failed: 502,
+  booking_disabled: 403,
+  // 202-shaped semantics with an error body: the guest must WAIT, not retry.
+  // A 409 here would invite the browser to try again, which is the one thing
+  // an uncertain provider outcome must not do.
+  pending_verification: 409,
   rate_limited: 429,
   unexpected: 500,
 };

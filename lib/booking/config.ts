@@ -53,6 +53,27 @@ export function beds24Config() {
   };
 }
 
+/**
+ * The Beds24 status a PAID booking is promoted to.
+ *
+ * ── An honest uncertainty, made configurable rather than guessed ─────────
+ * The live test against this account proved two things: a booking created as
+ * `new` blocks inventory, and cancelling it restores inventory. It did NOT
+ * test what `confirmed` does here, and which statuses block inventory is a
+ * PER-PROPERTY setting in Beds24, not a universal rule.
+ *
+ * So the value is configurable, it defaults to `confirmed`, and — crucially —
+ * the finalizer READS THE BOOKING BACK and verifies it landed in this status.
+ * A wrong value therefore fails loudly into `finalization_failed` with the
+ * hold still in place, rather than quietly leaving a paid guest with a
+ * reservation that does not block the night.
+ *
+ * See docs/booking-core-audit.md §5.1.
+ */
+export function beds24ConfirmedStatus(): string {
+  return env('BEDS24_CONFIRMED_STATUS') ?? 'confirmed';
+}
+
 export function supabaseConfig() {
   return {
     url: env('SUPABASE_URL') ?? env('NEXT_PUBLIC_SUPABASE_URL'),
@@ -62,17 +83,99 @@ export function supabaseConfig() {
   };
 }
 
-export function n8nPaymentConfig() {
+/* ── The launch gate ───────────────────────────────────────────────────── */
+
+/**
+ * Whether this deployment may create real direct bookings at all.
+ *
+ * Fail-closed: anything other than the exact string `true` is off. Hiding the
+ * frontend button is not a gate — a gate is something a curl request runs
+ * into. Every command endpoint that can reserve inventory or create a payment
+ * order checks this before it does anything else.
+ *
+ * The database's `bolagio_units.is_bookable` is the SECOND gate, per unit.
+ * Both must be on. See docs/direct-booking-production-readiness.md.
+ */
+export function directBookingEnabled(): boolean {
+  return env('DIRECT_BOOKING_ENABLED') === 'true';
+}
+
+/* ── PayPal ────────────────────────────────────────────────────────────── */
+
+export type PayPalMode = 'sandbox' | 'live';
+
+/**
+ * Sandbox or live — and there is no third answer, no default to live, and no
+ * inference from NODE_ENV.
+ *
+ * ── Why this throws instead of defaulting ────────────────────────────────
+ * A default of `sandbox` would be safe for money and unsafe for truth: a
+ * production deployment whose PAYPAL_MODE was lost would silently take
+ * sandbox payments, tell guests they had paid, and hold real inventory
+ * against play money. A default of `live` is obviously worse. So an absent or
+ * unrecognised value is a configuration ERROR that stops the payment path, and
+ * the guest is told the payment page could not be opened — which is true.
+ */
+export function paypalMode(): PayPalMode | null {
+  const raw = env('PAYPAL_MODE');
+  if (raw === 'sandbox' || raw === 'live') return raw;
+  return null;
+}
+
+export function paypalConfig() {
+  const mode = paypalMode();
   return {
-    webhookUrl: env('N8N_BOOKING_PAYMENT_WEBHOOK_URL'),
-    webhookSecret: env('N8N_BOOKING_PAYMENT_WEBHOOK_SECRET'),
+    mode,
+    // Derived from the mode, never read from an environment variable. A
+    // configurable base URL is one typo away from sandbox credentials being
+    // presented to the live API, or the reverse.
+    baseUrl:
+      mode === 'live' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com',
+    clientId: env('PAYPAL_CLIENT_ID'),
+    clientSecret: env('PAYPAL_CLIENT_SECRET'),
+    /** The webhook whose signature we verify. Registered in the PayPal dashboard. */
+    webhookId: env('PAYPAL_WEBHOOK_ID'),
   };
 }
 
 /**
- * The shared secret n8n and the payment workflow present when they call back
- * to say a payment succeeded, failed, was cancelled or expired. Returning to
- * /booking/success in a browser proves nothing; this does.
+ * The PayPal client id the BROWSER is given, for the JS SDK.
+ *
+ * Public by design — it identifies the merchant, it does not authorise
+ * anything. It is served from a route handler rather than a NEXT_PUBLIC_
+ * variable so that the mode and the id cannot drift apart between the build
+ * and the runtime, and so a deployment with the gate off serves no id at all.
+ */
+export function paypalPublicClientId(): string | undefined {
+  return paypalConfig().clientId;
+}
+
+/* ── n8n ───────────────────────────────────────────────────────────────── */
+
+/**
+ * The HMAC key n8n signs its internal-API calls with.
+ *
+ * NOT a bearer secret presented in a header: see lib/n8n/signing.ts for why a
+ * timestamped HMAC over the body is used instead, and docs/n8n-booking-contract.md
+ * for the exact algorithm n8n has to implement.
+ */
+export function n8nInternalSecret(): string | undefined {
+  return env('N8N_INTERNAL_SECRET');
+}
+
+/** How far out of date an n8n request signature may be. */
+export function n8nReplayWindowSeconds(): number {
+  return intEnv('N8N_REPLAY_WINDOW_SECONDS', 300, 30, 900);
+}
+
+/**
+ * The secret on the reconciliation / maintenance endpoint.
+ *
+ * ── What this no longer is ───────────────────────────────────────────────
+ * It used to authenticate a caller claiming a payment had succeeded. It does
+ * not any more, and nothing does: payment truth comes from a PayPal
+ * signature-verified event or an authoritative server-side capture, never from
+ * a caller's assertion behind a static string. See docs/booking-core-audit.md §2.1.
  */
 export function bookingCallbackSecret(): string | undefined {
   return env('BOOKING_CALLBACK_SECRET');
@@ -97,6 +200,26 @@ export function beds24WebhookSecret(): string | undefined {
  */
 export function holdMinutes(): number {
   return intEnv('BOOKING_HOLD_MINUTES', 15, 5, 120);
+}
+
+/**
+ * How long the LOCAL lock may be held before another attempt may reclaim it.
+ *
+ * This is not the guest-facing hold. It covers exactly one Beds24 POST, so it
+ * only has to outlast that request's timeout with margin. Short, because a
+ * lock whose owner died blocks those dates for everyone until it lapses.
+ */
+export function lockSeconds(): number {
+  return intEnv('BOOKING_LOCK_SECONDS', 120, 30, 600);
+}
+
+/**
+ * How long a booking may sit in a reserving state before reconciliation calls
+ * it stale, regardless of its lease. A backstop for rows whose lease was never
+ * set because the process died before setting it.
+ */
+export function staleHoldMinutes(): number {
+  return intEnv('BOOKING_STALE_HOLD_MINUTES', 180, 30, 1440);
 }
 
 /** How far ahead inventory is synchronised and the calendar may be browsed. */

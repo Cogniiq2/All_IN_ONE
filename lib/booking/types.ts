@@ -15,6 +15,9 @@
  * ══════════════════════════════════════════════════════════════════════════
  */
 
+import { isConfirmed, reservesInventory } from '@/lib/booking/states';
+import type { BookingState, PaymentState } from '@/lib/booking/states';
+
 /** ISO `YYYY-MM-DD`. The only date shape that crosses a boundary. */
 export type IsoDate = string;
 
@@ -106,16 +109,16 @@ export interface BookingQuote {
 
 /* ── Booking intent ────────────────────────────────────────────────────── */
 
-export type BookingStatus =
-  | 'draft'
-  | 'quoted'
-  | 'hold_created'
-  | 'payment_pending'
-  | 'paid'
-  | 'confirmed'
-  | 'payment_failed'
-  | 'expired'
-  | 'cancelled';
+/**
+ * The booking state, re-exported from the canonical machine.
+ *
+ * Defined in `lib/booking/states.ts` and enforced in PostgreSQL. It lives
+ * there rather than here because the machine is more than a union of strings —
+ * it is a transition table, a reserving-state predicate and a paid-side
+ * predicate, and splitting the name from its rules is how the two drift apart.
+ */
+export type BookingStatus = BookingState;
+export type PaymentStatus = PaymentState;
 
 export type PaymentProvider = 'stripe' | 'paypal';
 
@@ -153,6 +156,14 @@ export interface BookingIntentView {
   components: QuoteComponent[];
   /** ISO timestamp the inventory hold runs out at, when one is held. */
   holdExpiresAt?: string;
+  /**
+   * What the MONEY is doing, separately from what the reservation is doing.
+   *
+   * The return page needs this to tell "we are still confirming your payment"
+   * apart from "your payment did not go through", which a single status column
+   * cannot express — see the header of lib/booking/states.ts.
+   */
+  paymentStatus: PaymentStatus;
 }
 
 /**
@@ -162,12 +173,12 @@ export interface BookingIntentView {
  * server-side callback.
  */
 export function isConfirmedStatus(status: BookingStatus): boolean {
-  return status === 'confirmed';
+  return isConfirmed(status);
 }
 
 /** Statuses that hold inventory and must be released if they do not complete. */
 export function holdsInventory(status: BookingStatus): boolean {
-  return status === 'hold_created' || status === 'payment_pending' || status === 'paid' || status === 'confirmed';
+  return reservesInventory(status);
 }
 
 /* ── Failure vocabulary ────────────────────────────────────────────────── */
@@ -202,6 +213,14 @@ export type BookingErrorCode =
   | 'payment_handoff_failed'
   /** Too many attempts from one source. */
   | 'rate_limited'
+  /** Direct booking is switched off. Not a fault; a launch gate. */
+  | 'booking_disabled'
+  /**
+   * We cannot tell what a provider did. The guest is told to wait and NOT to
+   * retry, because retrying is exactly what would double-book or double-charge
+   * them. A person is already looking.
+   */
+  | 'pending_verification'
   /** Anything else. Deliberately opaque. */
   | 'unexpected';
 

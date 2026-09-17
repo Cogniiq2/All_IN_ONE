@@ -185,21 +185,71 @@ export const beds24MockProvider: BookingProvider = {
     // Derived from the idempotency key, so retrying the same attempt in mock
     // mode returns the same provider id — exactly as a real idempotent write
     // would, and what the duplicate-submit test asserts against.
-    return {
-      externalBookingId: `mock-${request.idempotencyKey.slice(0, 12)}`,
+    const id = `mock-${request.idempotencyKey.slice(0, 12)}`;
+    const booking: ProviderBooking = {
+      externalBookingId: id,
       snapshot: { mode: 'mock', status: 'new', reference: request.reference },
+      status: 'new',
+      externalPropertyId: String(request.unit.externalPropertyId),
+      externalRoomId: String(request.unit.externalRoomId),
+      checkIn: request.checkIn,
+      checkOut: request.checkOut,
+      reference: request.reference,
     };
+    // Held in module scope so `getBooking` and `findBookings` can answer, which
+    // is what lets the verification and reconciliation paths be exercised
+    // without a live channel manager.
+    MOCK_BOOKINGS.set(id, booking);
+    return booking;
   },
 
   async confirmBooking(externalBookingId: string): Promise<ProviderBooking> {
-    return { externalBookingId, snapshot: { mode: 'mock', status: 'confirmed' } };
+    const existing = MOCK_BOOKINGS.get(externalBookingId);
+    const booking: ProviderBooking = {
+      ...(existing ?? { externalBookingId, snapshot: {} }),
+      externalBookingId,
+      snapshot: { mode: 'mock', status: 'confirmed' },
+      status: 'confirmed',
+    };
+    MOCK_BOOKINGS.set(externalBookingId, booking);
+    return booking;
   },
 
-  async releaseHold(): Promise<void> {
+  async releaseHold(externalBookingId: string): Promise<void> {
     // Releasing a hold that is already gone is a success, here and in live
     // mode: the desired end state is "this booking holds no inventory".
+    const existing = MOCK_BOOKINGS.get(externalBookingId);
+    if (existing) MOCK_BOOKINGS.set(externalBookingId, { ...existing, status: 'cancelled' });
+  },
+
+  async getBooking(externalBookingId: string): Promise<ProviderBooking | null> {
+    return MOCK_BOOKINGS.get(externalBookingId) ?? null;
+  },
+
+  async findBookings({ unit, arrivalFrom, arrivalTo }): Promise<ProviderBooking[]> {
+    return Array.from(MOCK_BOOKINGS.values()).filter(
+      (b) =>
+        b.externalRoomId === String(unit.externalRoomId) &&
+        b.status !== 'cancelled' &&
+        (b.checkIn ?? '') >= arrivalFrom &&
+        (b.checkIn ?? '') <= arrivalTo
+    );
   },
 };
+
+/**
+ * The mock provider's booking store.
+ *
+ * Module scope, so it lives for one isolate or one test file and no longer.
+ * It exists so the verification and reconciliation paths — read back after a
+ * write, search for an uncertain create — are exercisable without a live
+ * channel manager. `resetMockBookings()` is called between tests.
+ */
+const MOCK_BOOKINGS = new Map<string, ProviderBooking>();
+
+export function resetMockBookings(): void {
+  MOCK_BOOKINGS.clear();
+}
 
 /** The failure fixtures. See the table at the top of this file. */
 function assertFixtureOutcome(checkIn: IsoDate, stage: 'quote' | 'hold'): void {

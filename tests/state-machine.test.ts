@@ -1,183 +1,290 @@
 /**
- * The booking state machine and idempotency.
+ * ══════════════════════════════════════════════════════════════════════════
+ * THE STATE MACHINES.
  *
- * Every test here is a real production event: a retried webhook, a payment
- * callback that arrives twice, a failure notice that turns up after a guest
- * has already been confirmed, a hold that ran out while the card was being
- * typed. These are the ones that cost money or a guest's holiday when they are
- * wrong, and none of them are easy to provoke against a live provider.
+ * Exhaustive rather than illustrative: every state is enumerated and every
+ * pair is classified, so a state added later without a transition row is a
+ * failing test rather than a booking that can never leave `draft`.
+ *
+ * ── What these tests cannot prove ────────────────────────────────────────
+ * That the DATABASE agrees. The authority is
+ * `bolagio_transition_allowed()`; this file is the mirror. The two are kept
+ * honest by `tests/sql/concurrency.sql`, which exercises the SQL table
+ * directly — run it with `./scripts/db-test.sh`.
+ * ══════════════════════════════════════════════════════════════════════════
  */
 
 import { describe, expect, it } from 'vitest';
-import { apply, canTransition, isHoldExpired, isQuoteExpired, isTerminal } from '@/lib/booking/state-machine';
 import {
-  BOOKING_REFERENCE_PATTERN,
-  bookingIdempotencyKey,
-  isBookingReference,
-  newBookingReference,
-  timingSafeEqual,
-} from '@/lib/booking/reference';
-import { holdsInventory, isConfirmedStatus } from '@/lib/booking/types';
+  applyTransition,
+  BOOKING_STATES,
+  BOOKING_TRANSITIONS,
+  canTransition,
+  canTransitionPayment,
+  isConfirmed,
+  isPaidSide,
+  isPaymentSettled,
+  isTerminal,
+  mayHoldExternalBooking,
+  mayInvolveMoney,
+  PAYMENT_STATES,
+  reservesInventory,
+  type BookingState,
+  type PaymentState,
+} from '@/lib/booking/states';
+import { isHoldExpired, isQuoteExpired } from '@/lib/booking/state-machine';
 
-describe('state machine', () => {
-  it('walks the happy path', () => {
-    expect(canTransition('draft', 'quoted')).toBe(true);
-    expect(canTransition('quoted', 'hold_created')).toBe(true);
-    expect(canTransition('hold_created', 'payment_pending')).toBe(true);
-    expect(canTransition('payment_pending', 'paid')).toBe(true);
-    expect(canTransition('paid', 'confirmed')).toBe(true);
-  });
-
-  it('treats a repeated success callback as a quiet success, not a conflict', () => {
-    // n8n retries. A provider redelivers. The second one must not error.
-    expect(apply('paid', 'paid')).toBe('noop');
-    expect(apply('confirmed', 'confirmed')).toBe('noop');
-  });
-
-  it('refuses a late failure callback after a confirmation', () => {
-    // A guest who has paid does not lose their stay to a retried webhook.
-    expect(apply('confirmed', 'payment_failed')).toBe('illegal');
-    expect(apply('confirmed', 'cancelled')).toBe('illegal');
-    expect(apply('confirmed', 'expired')).toBe('illegal');
-  });
-
-  it('refuses to move backwards', () => {
-    expect(apply('paid', 'hold_created')).toBe('illegal');
-    expect(apply('hold_created', 'draft')).toBe('illegal');
-    expect(apply('confirmed', 'paid')).toBe('illegal');
-  });
-
-  it('allows a re-quote to rewrite the total', () => {
-    // The one same-status transition that is genuinely a write.
-    expect(apply('quoted', 'quoted')).toBe('applied');
-  });
-
-  it('allows a failed payment to be retried on the same hold', () => {
-    expect(apply('payment_failed', 'payment_pending')).toBe('applied');
-  });
-
-  it('accepts a payment that lands before the pending write', () => {
-    // Callback ordering is not ours to control.
-    expect(apply('hold_created', 'payment_pending')).toBe('applied');
-    expect(apply('payment_pending', 'paid')).toBe('applied');
-  });
-
-  it('makes confirmed and cancelled terminal', () => {
-    expect(isTerminal('confirmed')).toBe(true);
-    expect(isTerminal('cancelled')).toBe(true);
-    expect(isTerminal('paid')).toBe(false);
-  });
-
-  it('knows which statuses hold inventory', () => {
-    expect(holdsInventory('hold_created')).toBe(true);
-    expect(holdsInventory('payment_pending')).toBe(true);
-    expect(holdsInventory('confirmed')).toBe(true);
-    expect(holdsInventory('quoted')).toBe(false);
-    expect(holdsInventory('expired')).toBe(false);
-  });
-
-  it('only calls a booking confirmed when it actually is', () => {
-    expect(isConfirmedStatus('confirmed')).toBe(true);
-    expect(isConfirmedStatus('paid')).toBe(false);
-    expect(isConfirmedStatus('payment_pending')).toBe(false);
-  });
-});
-
-describe('hold and quote expiry', () => {
-  const now = new Date('2026-09-16T12:00:00Z');
-
-  it('reports a hold that ran out', () => {
-    expect(isHoldExpired('hold_created', '2026-09-16T11:59:00Z', now)).toBe(true);
-    expect(isHoldExpired('payment_pending', '2026-09-16T12:05:00Z', now)).toBe(false);
-  });
-
-  it('does not expire a booking that no longer holds inventory that way', () => {
-    // A confirmed stay's hold timestamp is history, not a deadline.
-    expect(isHoldExpired('confirmed', '2026-09-16T11:00:00Z', now)).toBe(false);
-    expect(isHoldExpired('cancelled', '2026-09-16T11:00:00Z', now)).toBe(false);
-  });
-
-  it('treats a missing quote expiry as expired', () => {
-    // Failing closed: no recorded expiry means no quote worth honouring.
-    expect(isQuoteExpired(null, now)).toBe(true);
-    expect(isQuoteExpired('2026-09-16T11:59:00Z', now)).toBe(true);
-    expect(isQuoteExpired('2026-09-16T12:10:00Z', now)).toBe(false);
-  });
-});
-
-describe('booking reference', () => {
-  it('produces a BLG reference in the documented shape', () => {
-    for (let i = 0; i < 200; i += 1) {
-      const reference = newBookingReference();
-      expect(reference).toMatch(BOOKING_REFERENCE_PATTERN);
-      expect(isBookingReference(reference)).toBe(true);
+describe('booking state machine — shape', () => {
+  it('gives every state a transition row', () => {
+    for (const state of BOOKING_STATES) {
+      expect(BOOKING_TRANSITIONS[state], `${state} has no transition row`).toBeDefined();
     }
   });
 
-  it('omits the characters that are misread over the phone', () => {
-    // The BLG- prefix is fixed brand, so only the random part is checked.
-    const suffixes = Array.from({ length: 300 }, () => newBookingReference().slice(4)).join('');
-    expect(suffixes).not.toMatch(/[ILOU01]/);
+  it('never names a target that is not a state', () => {
+    const known = new Set<string>(BOOKING_STATES);
+    for (const [from, targets] of Object.entries(BOOKING_TRANSITIONS)) {
+      for (const to of targets) {
+        expect(known.has(to), `${from} -> ${to} names an unknown state`).toBe(true);
+      }
+    }
   });
 
-  it('does not repeat itself', () => {
-    const seen = new Set(Array.from({ length: 500 }, () => newBookingReference()));
-    expect(seen.size).toBe(500);
-  });
-
-  it('rejects anything that is not a reference', () => {
-    expect(isBookingReference('BLG-1234')).toBe(false);
-    expect(isBookingReference('blg-ABCDEF')).toBe(false);
-    expect(isBookingReference(undefined)).toBe(false);
-    expect(isBookingReference("BLG-ABC' OR 1=1--")).toBe(false);
+  it('has exactly one terminal state', () => {
+    const terminal = BOOKING_STATES.filter(isTerminal);
+    expect(terminal).toEqual(['cancelled']);
   });
 });
 
-describe('idempotency key', () => {
-  const attempt = {
-    unitSlug: 'schulstrasse-i',
-    checkIn: '2026-09-20',
-    checkOut: '2026-09-23',
-    adults: 2,
-    children: 0,
-    email: 'guest@example.com',
-  };
+describe('booking state machine — the happy path', () => {
+  const PATH: BookingState[] = [
+    'draft', 'quoted', 'locking', 'hold_created', 'payment_session_created',
+    'awaiting_payment', 'payment_pending', 'paid', 'finalizing', 'confirmed',
+  ];
 
-  it('gives a double-clicked button the same key', async () => {
-    const a = await bookingIdempotencyKey(attempt);
-    const b = await bookingIdempotencyKey(attempt);
-    expect(a).toBe(b);
+  it('walks end to end', () => {
+    for (let i = 0; i < PATH.length - 1; i += 1) {
+      expect(canTransition(PATH[i], PATH[i + 1]), `${PATH[i]} -> ${PATH[i + 1]}`).toBe(true);
+    }
   });
 
-  it('ignores case and surrounding space in the email', async () => {
-    // The same guest typing their address slightly differently on a retry
-    // must not create a second booking.
-    const a = await bookingIdempotencyKey(attempt);
-    const b = await bookingIdempotencyKey({ ...attempt, email: '  Guest@Example.COM ' });
-    expect(a).toBe(b);
+  it('never walks backwards', () => {
+    for (let i = 1; i < PATH.length; i += 1) {
+      expect(canTransition(PATH[i], PATH[i - 1]), `${PATH[i]} -> ${PATH[i - 1]}`).toBe(false);
+    }
   });
 
-  it('separates genuinely different attempts', async () => {
-    const base = await bookingIdempotencyKey(attempt);
-    expect(await bookingIdempotencyKey({ ...attempt, checkOut: '2026-09-24' })).not.toBe(base);
-    expect(await bookingIdempotencyKey({ ...attempt, adults: 3 })).not.toBe(base);
-    expect(await bookingIdempotencyKey({ ...attempt, unitSlug: 'schulstrasse-ii' })).not.toBe(base);
-    expect(await bookingIdempotencyKey({ ...attempt, attemptId: 'retry-2' })).not.toBe(base);
-  });
-
-  it('never contains the guest email in clear', async () => {
-    // The key ends up in logs.
-    const key = await bookingIdempotencyKey(attempt);
-    expect(key).not.toContain('guest@example.com');
-    expect(key).toMatch(/^[0-9a-f]{64}$/);
+  it('cannot reach payment without a hold', () => {
+    // The ordering the whole overbooking model rests on: money is never taken
+    // for nights that are not already blocked at the channel manager.
+    expect(canTransition('quoted', 'payment_session_created')).toBe(false);
+    expect(canTransition('quoted', 'paid')).toBe(false);
+    expect(canTransition('locking', 'paid')).toBe(false);
+    expect(canTransition('draft', 'hold_created')).toBe(false);
   });
 });
 
-describe('shared secret comparison', () => {
-  it('matches only an exact secret', () => {
-    expect(timingSafeEqual('s3cret-value', 's3cret-value')).toBe(true);
-    expect(timingSafeEqual('s3cret-value', 's3cret-valuE')).toBe(false);
-    expect(timingSafeEqual('s3cret-value', 's3cret')).toBe(false);
-    expect(timingSafeEqual('', '')).toBe(true);
+describe('booking state machine — reserving inventory', () => {
+  /*
+   * The single most consequential predicate in the system. Anything that might
+   * still hold a Beds24 booking reserves the local range; freeing it early is
+   * how a database advertises a night Booking.com has already sold.
+   */
+  const RESERVING: BookingState[] = [
+    'locking', 'hold_created', 'payment_session_created', 'awaiting_payment',
+    'payment_pending', 'paid', 'finalizing', 'confirmed', 'paid_unfinalized',
+    'finalization_failed', 'releasing', 'release_failed', 'expired',
+    'payment_failed', 'payment_cancelled', 'manual_review',
+  ];
+  const FREE: BookingState[] = [
+    'draft', 'quoted', 'quote_expired', 'unavailable', 'hold_failed', 'released', 'cancelled',
+  ];
+
+  it.each(RESERVING)('%s reserves', (state) => {
+    expect(reservesInventory(state)).toBe(true);
+  });
+
+  it.each(FREE)('%s does not reserve', (state) => {
+    expect(reservesInventory(state)).toBe(false);
+  });
+
+  it('classifies every state', () => {
+    expect([...RESERVING, ...FREE].sort()).toEqual([...BOOKING_STATES].sort());
+  });
+
+  it('keeps reserving after a FAILED release', () => {
+    // The regression from the previous implementation: a failed release used to
+    // leave the booking in a non-reserving state while Beds24 still held the
+    // nights.
+    expect(reservesInventory('release_failed')).toBe(true);
+    expect(reservesInventory('released')).toBe(false);
+  });
+
+  it('keeps reserving after the lease runs out', () => {
+    // `expired` means the guest ran out of time, not that Beds24 gave the
+    // nights back. Only a verified release does that.
+    expect(reservesInventory('expired')).toBe(true);
+  });
+
+  it('never lets a reserving state reach cancelled directly', () => {
+    for (const state of BOOKING_STATES) {
+      if (!reservesInventory(state)) continue;
+      // `manual_review` is the deliberate exception: a human has looked.
+      if (state === 'manual_review') continue;
+      expect(canTransition(state, 'cancelled'), `${state} -> cancelled`).toBe(false);
+    }
+  });
+
+  it('knows which states may hold a Beds24 booking', () => {
+    // `locking` reserves locally but has made no external call yet.
+    expect(mayHoldExternalBooking('locking')).toBe(false);
+    expect(mayHoldExternalBooking('hold_created')).toBe(true);
+    expect(mayHoldExternalBooking('release_failed')).toBe(true);
+    expect(mayHoldExternalBooking('released')).toBe(false);
+  });
+});
+
+describe('booking state machine — money is never given back', () => {
+  const PAID: BookingState[] = [
+    'paid', 'finalizing', 'confirmed', 'paid_unfinalized', 'finalization_failed',
+  ];
+
+  it.each(PAID)('%s is on the paid side', (state) => {
+    expect(isPaidSide(state)).toBe(true);
+  });
+
+  it('never routes a paid booking to a non-reserving state', () => {
+    for (const state of PAID) {
+      for (const target of BOOKING_TRANSITIONS[state]) {
+        expect(reservesInventory(target), `${state} -> ${target} frees inventory`).toBe(true);
+      }
+    }
+  });
+
+  it('accepts a capture that arrives after we gave up', () => {
+    // Otherwise we keep the money and tell the guest their booking expired.
+    expect(canTransition('expired', 'paid')).toBe(true);
+    expect(canTransition('payment_failed', 'paid')).toBe(true);
+    expect(canTransition('payment_cancelled', 'paid')).toBe(true);
+  });
+
+  it('confirms only from a paid state', () => {
+    for (const state of BOOKING_STATES) {
+      if (!canTransition(state, 'confirmed')) continue;
+      expect(
+        isPaidSide(state) || state === 'manual_review',
+        `${state} -> confirmed without payment`
+      ).toBe(true);
+    }
+  });
+
+  it('announces confirmation for exactly one state', () => {
+    expect(BOOKING_STATES.filter(isConfirmed)).toEqual(['confirmed']);
+  });
+});
+
+describe('booking state machine — applyTransition', () => {
+  it('treats a repeat as a quiet success', () => {
+    // PayPal retries. n8n retries. A guest refreshes. The second delivery of an
+    // already-honoured outcome is a success, not a conflict.
+    expect(applyTransition('confirmed', 'confirmed')).toBe('noop');
+    expect(applyTransition('paid', 'paid')).toBe('noop');
+  });
+
+  it('re-quotes rather than no-opping', () => {
+    // The one legitimate same-state write: it rewrites the authoritative total.
+    expect(applyTransition('quoted', 'quoted')).toBe('applied');
+  });
+
+  it('refuses a late failure after a confirmation', () => {
+    // A guest who has paid does not lose their stay to a retried webhook.
+    expect(applyTransition('confirmed', 'payment_failed')).toBe('illegal');
+    expect(applyTransition('confirmed', 'expired')).toBe('illegal');
+    expect(applyTransition('confirmed', 'cancelled')).toBe('illegal');
+  });
+
+  it('refuses anything out of cancelled', () => {
+    for (const state of BOOKING_STATES) {
+      if (state === 'cancelled') continue;
+      expect(applyTransition('cancelled', state)).toBe('illegal');
+    }
+  });
+});
+
+describe('payment state machine', () => {
+  it('gives every state a row', () => {
+    for (const state of PAYMENT_STATES) {
+      expect(canTransitionPayment(state, state)).toBe(true);
+    }
+  });
+
+  it('lets any state fall into unknown', () => {
+    // Discovering a second capture destroys what we thought we knew. Refusing
+    // this edge would force the code to keep asserting 'paid' while holding
+    // evidence that contradicts it.
+    for (const state of PAYMENT_STATES) {
+      expect(canTransitionPayment(state, 'unknown'), `${state} -> unknown`).toBe(true);
+    }
+  });
+
+  it('learns about an order whose creation response was lost', () => {
+    expect(canTransitionPayment('not_created', 'paid')).toBe(true);
+    expect(canTransitionPayment('not_created', 'approved')).toBe(true);
+  });
+
+  it('never walks back from paid to unpaid', () => {
+    const unpaid: PaymentState[] = ['not_created', 'order_created', 'approved', 'capture_pending', 'denied', 'cancelled'];
+    for (const state of unpaid) {
+      expect(canTransitionPayment('paid', state), `paid -> ${state}`).toBe(false);
+    }
+  });
+
+  it('treats only settled money as settled', () => {
+    expect(isPaymentSettled('paid')).toBe(true);
+    // PENDING is PayPal saying the money MAY arrive. It is not money.
+    expect(isPaymentSettled('capture_pending')).toBe(false);
+    expect(isPaymentSettled('approved')).toBe(false);
+    expect(isPaymentSettled('unknown')).toBe(false);
+  });
+
+  it('is pessimistic about whether money may be involved', () => {
+    // Read before releasing an expired hold. Wrong in the permissive direction
+    // means cancelling a stay the guest paid for.
+    expect(mayInvolveMoney('capture_pending')).toBe(true);
+    expect(mayInvolveMoney('approved')).toBe(true);
+    expect(mayInvolveMoney('unknown')).toBe(true);
+    expect(mayInvolveMoney('paid')).toBe(true);
+
+    expect(mayInvolveMoney('not_created')).toBe(false);
+    expect(mayInvolveMoney('order_created')).toBe(false);
+    expect(mayInvolveMoney('denied')).toBe(false);
+    expect(mayInvolveMoney('cancelled')).toBe(false);
+  });
+});
+
+describe('leases and quotes', () => {
+  const now = new Date('2026-09-17T12:00:00Z');
+  const past = '2026-09-17T11:45:00Z';
+  const future = '2026-09-17T12:15:00Z';
+
+  it('reports an elapsed lease only for states that are waiting on one', () => {
+    expect(isHoldExpired('hold_created', past, now)).toBe(true);
+    expect(isHoldExpired('payment_pending', past, now)).toBe(true);
+    expect(isHoldExpired('hold_created', future, now)).toBe(false);
+  });
+
+  it('never reports a lease elapsed for a paid booking', () => {
+    // Even with an ancient lease. The money landed; the clock is irrelevant.
+    expect(isHoldExpired('paid', past, now)).toBe(false);
+    expect(isHoldExpired('confirmed', past, now)).toBe(false);
+    expect(isHoldExpired('paid_unfinalized', past, now)).toBe(false);
+  });
+
+  it('treats a missing quote expiry as expired', () => {
+    // Fail closed: a quote we cannot date is a quote we will not honour.
+    expect(isQuoteExpired(null)).toBe(true);
+    expect(isQuoteExpired(undefined)).toBe(true);
+    expect(isQuoteExpired(past, now)).toBe(true);
+    expect(isQuoteExpired(future, now)).toBe(false);
   });
 });

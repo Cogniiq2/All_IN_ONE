@@ -143,6 +143,20 @@ export type Beds24BookingWriteResponse = Array<{
   errors?: Array<{ field?: string; message?: string }>;
 }>;
 
+/**
+ * `GET /bookings` — the read-back and the reconciliation search.
+ *
+ * UNVERIFIED against this account. In particular it is NOT established that
+ * Beds24 returns the `reference` field we write on a hold; if it does not, the
+ * reconciliation of an uncertain create finds nothing, the operation stays
+ * unresolved and escalates to a human — which is the safe failure, and is
+ * what the code does. See docs/booking-core-audit.md §5.4.
+ */
+export interface Beds24BookingsResponse {
+  success?: boolean;
+  data?: Beds24Booking[];
+}
+
 export interface Beds24Booking {
   id?: number | string;
   roomId?: number | string;
@@ -154,6 +168,8 @@ export interface Beds24Booking {
   numChild?: number | string;
   price?: number | string;
   referer?: string;
+  /** The BoLaGio reference we write on a hold. Echoed back where supported. */
+  reference?: string;
 }
 
 /**
