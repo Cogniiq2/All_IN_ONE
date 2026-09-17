@@ -1,7 +1,28 @@
-# Booking integration — Beds24 + Supabase + n8n
+# Booking integration — Beds24 + Supabase
 
-The runbook for the booking foundation. Read `lib/booking/service.ts` for the
-rules themselves; this file is what a person has to *do*.
+> **Partly superseded, 2026-09-17.**
+>
+> This document was written when n8n executed payments and a shared-secret
+> callback was what confirmed a booking. **That is no longer the
+> architecture** — PayPal is implemented server-side in this repository and
+> n8n cannot mark a booking paid or confirmed. See
+> `docs/booking-core-audit.md` §2.1 for why it changed.
+>
+> What is still accurate and still worth reading here: the Supabase and Beds24
+> setup steps, mock mode, and overbooking protection. The payment sections have
+> been corrected in place.
+>
+> | For | Read |
+> |---|---|
+> | the current architecture | `docs/booking-architecture.md` |
+> | the state machines | `docs/booking-state-machine.md` |
+> | payments | `docs/payment-paypal.md` |
+> | the n8n contract | `docs/n8n-booking-contract.md` |
+> | recovery | `docs/booking-reconciliation.md` |
+> | an incident | `docs/booking-runbook.md` |
+
+The operational setup for the booking foundation. Read `lib/booking/service.ts`
+for the rules themselves; this file is what a person has to *do*.
 
 ---
 
@@ -14,23 +35,26 @@ Beds24 UI ───┘      ▲            │              │
                     │            ▼              │
       live quote ───┤      Supabase cache ──────┤
       live hold  ───┤   (bolagio_unit_inventory_days)
-      confirm    ───┘            ▲              │
+      finalize   ───┘            ▲              │
                                  │              ▼
                     POST /api/booking/sync   BoLaGio website
                     (cron, every 15–60 min)
 
-guest ─► /api/booking/quote  ─► Beds24 live  ─► authoritative price
-      ─► /api/booking/intent ─► Beds24 live  ─► HOLD, before any money moves
-      ─► /api/booking/payment-session ─► n8n ─► Stripe / PayPal
-                                          │
-      n8n ─► POST /api/booking/callback ◄─┘   the ONLY thing that confirms
+guest ─► /api/booking/quote          ─► Beds24 live ─► authoritative price
+      ─► /api/booking/intent         ─► local lock, then Beds24 HOLD
+      ─► /api/booking/payment/order  ─► PayPal, amount read from the ROW
+      ─► /api/booking/payment/capture─► PayPal decides
+
+PayPal ─► Supabase Edge Function ─► payment inbox ─► reconciliation
+                                                      │
+                                              finalize at Beds24
+                                                      │
+                                              outbox ─► n8n (messages only)
 ```
 
-**Beds24 is authoritative.** Supabase is a fast read model plus BoLaGio's own
-data. n8n executes payments. The website renders server answers and computes
-nothing chargeable.
-
----
+**Beds24 is authoritative for availability. PayPal is authoritative for money.
+Postgres is authoritative for state.** Supabase is also a fast read model for
+browsing. n8n sends messages and cannot decide anything.
 
 ## Responsibilities
 
@@ -38,7 +62,8 @@ nothing chargeable.
 |---|---|
 | **Beds24** | live availability, rates, channel inventory, reservations, Booking.com + Airbnb sync |
 | **Supabase** | unit registry, provider mapping, availability cache, booking intents, guest data, payment state, raw provider events |
-| **n8n** | Stripe and PayPal execution, and the trusted callback that reports the outcome |
+| **PayPal** | whether money moved. Implemented server-side here, never in n8n |
+| **n8n** | guest messages, invoices, alerts. It consumes durable events and cannot change a booking |
 | **Website** | all guest-facing UX, and every validation re-run server-side |
 
 ---
@@ -54,11 +79,17 @@ Set them as Cloudflare Worker secrets for preview and production:
 ```bash
 npx wrangler secret put BEDS24_REFRESH_TOKEN
 npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
-npx wrangler secret put N8N_BOOKING_PAYMENT_WEBHOOK_SECRET
-npx wrangler secret put BOOKING_CALLBACK_SECRET
 npx wrangler secret put BOOKING_SYNC_SECRET
 npx wrangler secret put BEDS24_WEBHOOK_SECRET
+npx wrangler secret put PAYPAL_CLIENT_ID
+npx wrangler secret put PAYPAL_CLIENT_SECRET
+npx wrangler secret put PAYPAL_WEBHOOK_ID
+npx wrangler secret put N8N_INTERNAL_SECRET
 ```
+
+The PayPal values must **also** be set as Supabase function secrets, which are
+a separate store — the Edge Function does not read Cloudflare's. See
+`docs/payment-paypal.md` §2.
 
 Generate each shared secret with real entropy, e.g. `openssl rand -hex 32`.
 
@@ -66,11 +97,21 @@ Generate each shared secret with real entropy, e.g. `openssl rand -hex 32`.
 
 ## Manual steps — Supabase
 
-1. **Apply the migration.** `supabase/migrations/20260916120000_booking_foundation.sql`,
-   via `supabase db push` or the SQL editor. It creates `btree_gist`, six
-   `bolagio_*` tables, the enums, the triggers, and the overlap exclusion
-   constraint that makes two active holds on the same dates impossible.
-   It does not touch the three earlier migrations, which belong to the
+1. **Apply the migrations, in order.** Via `supabase db push` or the SQL editor:
+
+   | File | What it does |
+   |---|---|
+   | `20260916120000_booking_foundation.sql` | `btree_gist`, six `bolagio_*` tables, the enums, the triggers |
+   | `20260917100000_booking_core_states.sql` | **enum values only** |
+   | `20260917110000_booking_core_hardening.sql` | the transactional core |
+
+   The middle one is separate for a hard PostgreSQL reason: a value added to an
+   enum cannot be *used* until the transaction that added it has committed.
+   Merging it into the third works only on a database that already has the
+   values, which is the worst available failure mode. Apply them as three
+   statements, not one.
+
+   None of them touches the three earlier migrations, which belong to the
    archived admin application.
 2. **Seed the registry and the mapping.** Run
    `supabase/seed/bolagio_booking_units.sql`. It inserts the five units with
@@ -164,57 +205,17 @@ arrive.
 
 ---
 
-## The n8n contract
+## Payments and n8n
 
-**BoLaGio → n8n** (`N8N_BOOKING_PAYMENT_WEBHOOK_URL`), header
-`x-bolagio-signature: <N8N_BOOKING_PAYMENT_WEBHOOK_SECRET>`:
+**Removed from this document.** The contract it described —
+`POST /api/booking/payment-session` to n8n, and n8n calling back with
+`{ outcome: "succeeded" }` behind a static secret — no longer exists. Anything
+holding that secret could mark any reference paid and confirmed, with no
+provider verification behind it.
 
-```json
-{
-  "reference": "BLG-7K2M9Q",
-  "paymentProvider": "stripe",
-  "amountCents": 46500,
-  "currency": "EUR",
-  "unitSlug": "schulstrasse-i",
-  "checkIn": "2026-09-20",
-  "checkOut": "2026-09-23",
-  "adults": 2,
-  "children": 0,
-  "guest": { "firstName": "…", "lastName": "…", "email": "…", "locale": "de" },
-  "returnUrl": "https://bolagio.de/booking/return?ref=BLG-7K2M9Q",
-  "cancelUrl": "https://bolagio.de/booking/return?ref=BLG-7K2M9Q&cancelled=1"
-}
-```
-
-Every chargeable value there was written by the server from a live Beds24
-offer. The browser sends a reference and a provider choice; nothing else.
-
-**n8n → BoLaGio**, expected response:
-
-```json
-{ "paymentSessionId": "cs_test_…", "redirectUrl": "https://…", "expiresAt": "…" }
-```
-
-`redirectUrl` must be absolute `https:` with no embedded credentials — it is
-validated before a guest is sent to it, because an unchecked URL from an
-upstream system is an open redirect with a payment page in front of it.
-
-**n8n → BoLaGio**, the outcome (`POST /api/booking/callback`), header
-`x-bolagio-signature: <BOOKING_CALLBACK_SECRET>`:
-
-```json
-{ "reference": "BLG-7K2M9Q", "outcome": "succeeded", "paymentSessionId": "cs_test_…" }
-```
-
-`outcome` is one of `succeeded` | `failed` | `cancelled` | `expired`.
-
-**This is the only thing in the system that can confirm a booking.** A guest
-arriving at `/booking/return` proves a browser navigated and nothing more, so
-that page only ever *reads* status. Retry the callback freely: repeated
-outcomes are quiet successes, and a late `failed` after a `confirmed` is
-refused rather than un-confirming a stay someone has paid for.
-
----
+* Payments: `docs/payment-paypal.md`
+* What n8n may now do, and the HMAC it signs with:
+  `docs/n8n-booking-contract.md`
 
 ## Overbooking protection
 
@@ -273,27 +274,7 @@ half.
 
 ## Still open
 
-- **Verified live on 2026-09-17** (Actions run 35192013491): authentication,
-  `GET /properties`, and `GET /inventory/rooms/calendar`. The calendar shape is
-  exactly as modelled — nine compressed runs expanded to 30 nights, 21
-  available, matching the raw `numAvail` counted by hand. `closedArrival` and
-  `closedDeparture` were absent from the response, which the mapper handles
-  correctly (absent means not closed). That response is frozen as a fixture in
-  `tests/beds24-live-shape.test.ts`.
-- **Still unverified:** the offers endpoint (`fetchOffer`), the bookings
-  endpoint (`createHold` / `confirmBooking` / `releaseHold`), and the key rooms
-  are nested under in the properties response (`roomTypes` vs `rooms` — the
-  mapper accepts either). Nothing that writes to Beds24 has been exercised at
-  all, deliberately.
-- **The unit → Beds24 mapping is not yet established.** It must come from the
-  discovery call, confirmed by a person against the property names, before any
-  `bolagio_unit_integrations` row is written.
-- `PAYMENT_ENABLED` in `lib/content/brand.ts` is still `false`. The booking
-  path is reachable as soon as a unit is `is_bookable` with a provider mapping;
-  that flag governs the portfolio-wide payment claim and should be reviewed
-  with the n8n workflows when they exist.
-- German legal review of the checkout: the terms, privacy policy and
-  cancellation conditions are linked from the payment step and are the site's
-  own existing pages. No tax breakdown is displayed, because none has been
-  established — `QuoteComponent.taxCategory` carries the structure for one
-  without asserting a rate.
+Tracked in `docs/direct-booking-production-readiness.md`, which is the
+authoritative list. In short: the Beds24 offers endpoint has never been called
+live, `BEDS24_CONFIRMED_STATUS` is unproven, PayPal has not been exercised even
+in sandbox, and both launch gates are off.

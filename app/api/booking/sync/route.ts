@@ -52,12 +52,24 @@ export async function POST(request: NextRequest) {
       // An empty body means "everything", which is the normal scheduled case.
     }
 
-    // Released first: a hold that has just expired should be back on sale in
-    // the same pass that refreshes the calendar, not in the next one.
-    const expired = await expireStaleHolds(await findExpiredHolds(), logger);
+    /*
+     * Leases first: a hold that has just run out should be back on sale in the
+     * same pass that refreshes the calendar, not the next one.
+     *
+     * `expireStaleHolds` does NOT release on the clock. Each candidate goes
+     * through `evaluateLease`, which refuses while any payment evidence exists
+     * — a paid-side state, a payment column that is not a definitive no, an
+     * uncertain external operation, or a verified webhook still unprocessed.
+     * `heldForPayment` counts the ones it refused, which is the number worth
+     * watching: a rising count means payments are landing later than the lease.
+     */
+    const leases = await expireStaleHolds(await findExpiredHolds(), logger);
     const result = await syncInventory(logger, unitSlug);
 
-    return bookingJson({ ...result, holdsReleased: expired }, logger);
+    return bookingJson(
+      { ...result, holdsReleased: leases.released, heldForPayment: leases.heldForPayment },
+      logger
+    );
   } catch (cause) {
     return bookingErrorResponse(cause, logger);
   }
