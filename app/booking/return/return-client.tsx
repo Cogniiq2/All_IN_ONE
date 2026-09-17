@@ -34,8 +34,20 @@ import { isConfirmedStatus, type BookingIntentView } from '@/lib/booking/types';
 import { CtaLink } from '@/components/ui-kit/cta';
 import { Section } from '@/components/ui-kit/section';
 
-/** Statuses that are still moving. The page waits on these, briefly. */
-const SETTLING = new Set(['payment_pending', 'paid', 'hold_created', 'draft', 'quoted']);
+/**
+ * Statuses that are still moving. The page waits on these, briefly.
+ *
+ * `paid`, `finalizing` and `paid_unfinalized` are in here deliberately: the
+ * money has arrived and the reservation is not confirmed yet. That is an
+ * ordinary state — Beds24 can be slow, and the reconciliation engine finishes
+ * the job — and the honest thing to show is "we are confirming", not a
+ * confirmation and not a failure.
+ */
+const SETTLING = new Set([
+  'draft', 'quoted', 'locking', 'hold_created', 'payment_session_created',
+  'awaiting_payment', 'payment_pending', 'paid', 'finalizing',
+  'paid_unfinalized', 'finalization_failed', 'manual_review',
+]);
 
 /** Six polls at five seconds. Long enough for a webhook, short of a hang. */
 const POLL_MS = 5_000;
@@ -98,8 +110,22 @@ export default function BookingReturnClient() {
     if (!valid || failed) return 'unknown' as const;
     if (loading || !booking) return 'loading' as const;
     if (isConfirmedStatus(booking.status)) return 'confirmed' as const;
+    /*
+     * The payment column decides this branch, not the booking column.
+     *
+     * A booking can be `payment_failed` while the money is in fact ours — a
+     * denied first attempt followed by a capture that has not been processed
+     * yet. Telling that guest their payment did not go through would be wrong
+     * and would invite them to pay twice. So a booking whose payment is
+     * settled or still in motion is always "we are confirming".
+     */
+    if (booking.paymentStatus === 'paid' || booking.paymentStatus === 'capture_pending') {
+      return 'settling' as const;
+    }
     if (booking.status === 'payment_failed') return 'failed' as const;
-    if (booking.status === 'cancelled' || booking.status === 'expired') return 'stopped' as const;
+    if (booking.status === 'cancelled' || booking.status === 'expired' || booking.status === 'released') {
+      return 'stopped' as const;
+    }
     return 'settling' as const;
   }, [valid, failed, loading, booking]);
 

@@ -17,8 +17,24 @@
  *     Beds24 id is ever hardcoded.
  *  4. Invalidates the affected nights in the cache, and asks for a fresh bulk
  *     sync of that unit so the calendar is right again within seconds.
- *  5. Reconciles a BoLaGio booking if the event concerns one — a cancellation
- *     made in Beds24 must not leave a stay showing as confirmed here.
+ *  5. QUEUES a reconciliation job when the event concerns a booking of ours.
+ *     It does NOT act on what the payload says.
+ *
+ * ── The change, and why ──────────────────────────────────────────────────
+ * This endpoint used to call `releaseIfHeld` directly on `action === 'cancelled'`.
+ * The webhook secret is a static shared string, so a forged payload could
+ * release a confirmed booking's hold — and even a genuine payload is a claim
+ * about the past that may arrive late, twice, or out of order.
+ *
+ * A webhook is a SIGNAL that something changed, not evidence of what it is
+ * now. So the flow is:
+ *
+ *     webhook → durable event → reconciliation job → FRESH BEDS24 READ → act
+ *
+ * The inventory resync below is the exception, and safely so: it closes the
+ * affected nights immediately and then re-reads the calendar from Beds24. The
+ * worst a forged payload achieves is a few nights briefly shown as unavailable
+ * until the resync corrects them — the safe direction.
  *
  * ── What it never does ───────────────────────────────────────────────────
  * Return an internal error to the caller. Beds24 sees 200 (accepted) or 401
@@ -43,7 +59,9 @@ import {
   markIntegrationEvent,
   recordIntegrationEvent,
 } from '@/lib/booking/repository';
-import { releaseIfHeld, syncInventory } from '@/lib/booking/service';
+import { queueReconciliation } from '@/lib/booking/commands';
+import { syncInventory } from '@/lib/booking/service';
+import { mayHoldExternalBooking } from '@/lib/booking/states';
 import { isIsoDate } from '@/lib/booking/stay-rules';
 import type { Beds24WebhookPayload } from '@/lib/integrations/beds24/types';
 
@@ -132,12 +150,31 @@ async function process(
     }
   }
 
-  // A reservation this website created, changed at the provider. A
-  // cancellation in Beds24 releases whatever BoLaGio still thinks it holds.
+  /*
+   * A reservation this website created, changed at the provider.
+   *
+   * The payload says it was cancelled or modified. That is a CLAIM, and this
+   * endpoint does not act on claims — it queues a job, and the reconciliation
+   * engine reads the booking back from Beds24 before changing anything. A
+   * forged 'cancelled' therefore achieves at most one wasted Beds24 read.
+   */
   if (externalId && (action === 'cancelled' || action === 'modified')) {
     const intent = await findIntentByProviderBookingId(externalId);
-    if (intent && action === 'cancelled') {
-      await releaseIfHeld(intent, 'provider_cancelled', logger);
+    if (intent && mayHoldExternalBooking(intent.status)) {
+      await queueReconciliation(
+        intent.id,
+        // Deliberately the release-verification job: it re-reads Beds24 and
+        // only frees the local range once the nights are provably open.
+        'BEDS24_RELEASE_UNVERIFIED',
+        2,
+        { source: 'beds24_webhook', action }
+      );
+      logger.info('webhook.beds24', {
+        reference: intent.reference,
+        externalId,
+        eventType: action,
+        outcome: 'queued_for_reconciliation',
+      });
     }
   }
 }

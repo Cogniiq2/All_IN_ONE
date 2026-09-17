@@ -38,13 +38,13 @@ import { brand, ENQUIRY_ENDPOINT } from '@/lib/content/brand';
 import { nightsBetween } from '@/lib/booking/availability';
 import { clampGuestsFor, maxGuestsFor, MIN_GUESTS } from '@/lib/booking/occupancy';
 import { formatDateOrDash } from '@/lib/booking/date-format';
+import { PayPalButton } from '@/components/booking/paypal-button';
 import {
   BookingRequestError,
   createBookingIntent,
   fetchAvailability,
   fetchQuote,
   formatMoney,
-  startPayment,
 } from '@/lib/booking/client';
 import { track } from '@/lib/booking/analytics';
 import type {
@@ -68,20 +68,33 @@ import { CtaButton } from '@/components/ui-kit/cta';
 import { ContactFields, EMAIL_PATTERN } from '@/components/enquiry/enquiry-fields';
 import { AddToCalendar } from '@/components/booking/add-to-calendar';
 
-type Status = 'idle' | 'sending' | 'success' | 'error';
+/**
+ * `paying` is the state where the inventory is HELD and the PayPal button is
+ * on screen. It is distinct from `success` because a held booking is not a
+ * paid one, and the modal must not show a confirmation screen for either
+ * until the server says so.
+ */
+type Status = 'idle' | 'sending' | 'paying' | 'success' | 'error';
 
 /**
  * The payment providers.
  *
- * `handoff` marks the two the architecture can actually execute through n8n.
- * Bank transfer is offered only in enquiry mode, where it is a stated
- * preference that a person follows up on — it cannot be offered beside a
- * fifteen-minute inventory hold, because a hold that short and a transfer that
- * slow contradict each other.
+ * `handoff` marks the ones that can actually be EXECUTED against a live
+ * inventory hold. Today that is PayPal alone, implemented server-side in this
+ * repository — see lib/payments/paypal.
+ *
+ * Card is deliberately not `paypal` in disguise. It will be Stripe, through
+ * the same `PaymentProviderAdapter` seam, and until that adapter exists it is
+ * offered only in enquiry mode as a stated preference. Showing a card button
+ * that opens a PayPal page would be a small lie at the most trust-sensitive
+ * moment of the journey.
+ *
+ * Bank transfer is enquiry-only for a different reason: a fifteen-minute
+ * inventory hold and a two-day transfer contradict each other.
  */
 const METHODS = [
-  { id: 'card', handoff: 'stripe', icon: CreditCard, de: 'Kreditkarte', en: 'Card', note: { de: 'über Stripe', en: 'via Stripe' } },
-  { id: 'paypal', handoff: 'paypal', icon: Wallet, de: 'PayPal', en: 'PayPal', note: { de: 'über PayPal', en: 'via PayPal' } },
+  { id: 'paypal', handoff: 'paypal', icon: Wallet, de: 'PayPal', en: 'PayPal', note: { de: 'sicher über PayPal', en: 'securely via PayPal' } },
+  { id: 'card', handoff: null, icon: CreditCard, de: 'Kreditkarte', en: 'Card', note: { de: 'auf Anfrage', en: 'on request' } },
   { id: 'transfer', handoff: null, icon: Banknote, de: 'Überweisung', en: 'Bank transfer', note: { de: 'auf Rechnung', en: 'on invoice' } },
 ] as const;
 type MethodId = (typeof METHODS)[number]['id'];
@@ -122,6 +135,16 @@ export function BookingModal() {
   /** Set only when the backend confirms. Never inferred from a successful POST. */
   const [confirmed, setConfirmed] = useState<ConfirmedStay | null>(null);
   const [reference, setReference] = useState<string | null>(null);
+
+  /**
+   * The booking status the SERVER returned after a capture.
+   *
+   * Distinct from `confirmed`, which only the backend's own confirmation
+   * fills. A guest who has paid but whose Beds24 finalization has not landed
+   * yet is `paid`, not `confirmed`, and must be told the first thing rather
+   * than the second — see the settling branch in SuccessState.
+   */
+  const [settledStatus, setSettledStatus] = useState<string | null>(null);
 
   /**
    * One id per opening of the dialog.
@@ -262,8 +285,13 @@ export function BookingModal() {
    *
    *  1. create the intent — the server revalidates availability LIVE at
    *     Beds24, prices it, and blocks the inventory before any money moves;
-   *  2. hand off to the payment provider through n8n;
-   *  3. leave. Confirmation happens on the authenticated callback, not here.
+   *  2. render the PayPal button, which asks OUR server for an order;
+   *  3. on approval, OUR server captures and PayPal decides.
+   *
+   * The guest does not leave the page. Nothing here concludes that a payment
+   * succeeded: `onSettled` receives the SERVER's view, and even that is only
+   * rendered as a status — the word "confirmed" comes from the booking status,
+   * never from having got this far.
    *
    * If the dates went while the guest was typing, step 1 comes back as a
    * conflict and the guest is returned to the calendar with everything they
@@ -307,20 +335,18 @@ export function BookingModal() {
       });
 
       if (!chosen?.handoff) {
-        // Should not be reachable in bookable mode — transfer is not offered
-        // there — but a hold with no payment route is still a held booking, so
-        // it ends on the honest confirmation screen rather than nowhere.
+        // Not reachable in bookable mode — only executable providers are
+        // offered there — but a hold with no payment route is still a held
+        // booking, so it ends on the honest confirmation screen.
         setStatus('success');
         setDirection(1);
         return;
       }
 
-      const session = await startPayment(intent.reference, chosen.handoff);
       track('payment_started', { unitSlug: unit.slug, paymentProvider: chosen.handoff });
-
-      // The handoff. Everything after this happens on the provider's page and
-      // comes back through the authenticated callback.
-      window.location.assign(session.redirectUrl);
+      // The nights are held. The PayPal button renders in place of the submit
+      // button; the guest stays on this page.
+      setStatus('paying');
     } catch (cause) {
       setNotice(toNotice(cause));
       setStatus('idle');
@@ -423,6 +449,7 @@ export function BookingModal() {
               confirmed={confirmed}
               reference={reference}
               unitName={unit.name[locale]}
+              settledStatus={settledStatus}
               onClose={close}
             />
           ) : upcoming ? (
@@ -498,7 +525,35 @@ export function BookingModal() {
                       <ArrowLeft className="h-4 w-4" aria-hidden="true" />
                     </button>
                   )}
-                  {step < LAST_STEP ? (
+                  {step === LAST_STEP && status === 'paying' && reference ? (
+                    /*
+                     * The nights are held and the guest is paying. The submit
+                     * button is gone — pressing it again is the double-charge
+                     * the whole idempotency chain exists to prevent, and the
+                     * simplest way to make that impossible is not to render it.
+                     */
+                    <PayPalButton
+                      reference={reference}
+                      onSettled={(result) => {
+                        // What the SERVER says, not what PayPal told the
+                        // browser. The confirmation screen reads the status.
+                        setSettledStatus(result.status);
+                        setStatus('success');
+                        setDirection(1);
+                      }}
+                      onCancel={() => {
+                        // The hold stands. The lease check verifies there is no
+                        // payment before anything is released, so an abandoned
+                        // checkout costs the guest nothing and loses nothing.
+                        setStatus('idle');
+                        setNotice(null);
+                      }}
+                      onError={(cause) => {
+                        setNotice(toNotice(cause));
+                        setStatus('idle');
+                      }}
+                    />
+                  ) : step < LAST_STEP ? (
                     <CtaButton full withArrow onClick={() => go(1)}>
                       {de ? 'Weiter' : 'Continue'}
                     </CtaButton>
@@ -527,8 +582,8 @@ export function BookingModal() {
                    style={{ color: 'hsl(var(--muted-foreground))' }}>
                   {bookable
                     ? de
-                      ? 'Im nächsten Schritt öffnet sich die gesicherte Zahlungsseite. Ihr Zeitraum ist bis zum Abschluss für Sie reserviert.'
-                      : 'The secure payment page opens next. Your dates are held for you until you complete it.'
+                      ? 'Die Zahlung läuft gesichert über PayPal. Ihr Zeitraum ist bis zum Abschluss für Sie reserviert.'
+                      : 'Payment runs securely through PayPal. Your dates are held for you until you complete it.'
                     : de
                     ? 'Mit dem Absenden entsteht noch kein Vertrag und es wird nichts abgebucht. Wir prüfen Ihren Zeitraum und schicken Ihnen Bestätigung und Zahlungsweg.'
                     : 'Submitting creates no contract and charges nothing. We check your dates and send you confirmation and the payment details.'}
@@ -1009,12 +1064,21 @@ function Row({ label, value, muted = false }: { label: string; value: string; mu
 /* ── Confirmation ───────────────────────────────────────────────────────── */
 
 function SuccessState({
-  firstName, upcoming, confirmed, reference, unitName, onClose,
+  firstName, upcoming, confirmed, reference, unitName, settledStatus, onClose,
 }: {
   firstName: string;
   upcoming: boolean;
   /** A booking the backend actually confirmed, or null. Never inferred here. */
   confirmed: ConfirmedStay | null;
+  /**
+   * The status the server reported after a capture, when one happened.
+   *
+   * `paid` means the money is ours and the reservation is not yet confirmed at
+   * the channel manager. That is a real, ordinary state — Beds24 can be slow,
+   * and the reconciliation engine finishes the job — and the guest is told
+   * exactly that instead of a confirmation we cannot stand behind.
+   */
+  settledStatus: string | null;
   /** The BoLaGio reference, when one was created. Never a Beds24 id. */
   reference: string | null;
   unitName: string;
@@ -1023,6 +1087,13 @@ function SuccessState({
   const { locale } = useI18n();
   const de = locale === 'de';
   const reduce = useReducedMotion();
+
+  /*
+   * Paid, and not yet confirmed. The word "confirmed" is reserved for a
+   * reservation the channel manager has actually accepted, so this branch says
+   * what is true: the money arrived and the dates are held.
+   */
+  const settled = !confirmed && settledStatus !== null && settledStatus !== 'confirmed';
 
   return (
     <motion.div
@@ -1037,6 +1108,8 @@ function SuccessState({
           ? de ? 'Wir melden uns' : 'We will be in touch'
           : confirmed
           ? de ? 'Ihre Buchung ist bestätigt' : 'Your booking is confirmed'
+          : settled
+          ? de ? 'Zahlung erhalten' : 'Payment received'
           : de ? 'Ihre Buchungsanfrage ist bei uns' : 'Your booking request has arrived'}
       </h3>
       <p className="body-copy mx-auto mt-3 text-[14.5px]">
@@ -1048,6 +1121,10 @@ function SuccessState({
           ? de
             ? `Danke, ${firstName}. Ihr Aufenthalt vom ${formatDateOrDash(confirmed.arrival)} bis ${formatDateOrDash(confirmed.departure)} ist bestätigt. Alle Anreisedetails schicken wir Ihnen per E-Mail.`
             : `Thank you, ${firstName}. Your stay from ${formatDateOrDash(confirmed.arrival)} to ${formatDateOrDash(confirmed.departure)} is confirmed. We are sending you all the arrival details by email.`
+          : settled
+          ? de
+            ? `Danke, ${firstName}. Ihre Zahlung ist bei uns eingegangen und Ihr Zeitraum ist für Sie reserviert. Die endgültige Bestätigung schicken wir Ihnen per E-Mail, sobald sie vorliegt — meist innerhalb weniger Minuten.`
+            : `Thank you, ${firstName}. Your payment has reached us and your dates are reserved for you. We will email you the final confirmation as soon as it is ready — usually within a few minutes.`
           : de
           ? `Danke, ${firstName}. Wir prüfen Ihren Zeitraum persönlich und melden uns mit Bestätigung, Preis und Zahlungsweg — meist am selben Tag.`
           : `Thank you, ${firstName}. We check your dates personally and come back with confirmation, price and payment details — usually the same day.`}

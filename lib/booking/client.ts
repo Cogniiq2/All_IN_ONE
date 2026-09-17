@@ -116,14 +116,61 @@ export function createBookingIntent(
   return call('/api/booking/intent', { method: 'POST', body: JSON.stringify(input), signal });
 }
 
-export function startPayment(
+/* ── Payment ───────────────────────────────────────────────────────────── */
+
+export interface PaymentConfig {
+  provider: 'paypal';
+  clientId: string;
+  currency: string;
+  mode: 'sandbox' | 'live';
+}
+
+/**
+ * What the PayPal SDK needs to load.
+ *
+ * Fetched rather than baked into the bundle as a NEXT_PUBLIC_ variable, so a
+ * deployment with the launch gate off serves no client id at all and no
+ * payment UI can appear — even on a stale page someone left open.
+ */
+export function fetchPaymentConfig(signal?: AbortSignal): Promise<PaymentConfig> {
+  return call<PaymentConfig>('/api/booking/payment/config', { method: 'GET', signal });
+}
+
+/**
+ * Create the provider order.
+ *
+ * Note what is NOT sent: no amount, no currency. The server reads both from
+ * the booking intent it wrote from a live Beds24 offer. The amount that comes
+ * BACK is for rendering only — it travels to PayPal inside the order the
+ * server created, never through this browser.
+ */
+export function createPaymentOrder(
   reference: string,
-  paymentProvider: 'stripe' | 'paypal',
   signal?: AbortSignal
-): Promise<{ redirectUrl: string; expiresAt?: string }> {
-  return call('/api/booking/payment-session', {
+): Promise<{ orderId: string; approveUrl?: string; amountCents: number; currency: string }> {
+  return call('/api/booking/payment/order', {
     method: 'POST',
-    body: JSON.stringify({ reference, paymentProvider }),
+    body: JSON.stringify({ reference }),
+    signal,
+  });
+}
+
+/**
+ * Ask the server to capture an approved order.
+ *
+ * The PayPal SDK telling this browser that the guest approved is a PROMPT, not
+ * evidence. The server calls PayPal, PayPal decides, and the answer is
+ * validated against the authoritative quote. A guest who closes the tab here
+ * still gets their booking: the webhook is an independent path to the same
+ * place.
+ */
+export function capturePayment(
+  reference: string,
+  signal?: AbortSignal
+): Promise<{ status: string; paymentStatus: string }> {
+  return call('/api/booking/payment/capture', {
+    method: 'POST',
+    body: JSON.stringify({ reference }),
     signal,
   });
 }
