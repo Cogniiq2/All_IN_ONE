@@ -22,6 +22,28 @@ import 'server-only';
 
 import type { BookingQuote, GuestDetails, InventoryDay, IsoDate } from '@/lib/booking/types';
 
+/**
+ * What the provider says it has — one property and its rooms.
+ *
+ * This is an OPERATIONS shape, not a guest-flow one. It exists to establish
+ * the `unit_integrations` mapping once, by asking the provider what actually
+ * exists rather than trusting an id someone typed into a spreadsheet. It is
+ * never read during a booking.
+ */
+export interface ProviderPropertySummary {
+  externalPropertyId: string;
+  name: string;
+  currency?: string;
+  rooms: ProviderRoomSummary[];
+}
+
+export interface ProviderRoomSummary {
+  externalRoomId: string;
+  name: string;
+  /** The provider's occupancy, where it states one. */
+  maxGuests?: number;
+}
+
 /** Where a unit lives at the provider. Resolved from the database, never hardcoded. */
 export interface ProviderUnitRef {
   provider: 'beds24';

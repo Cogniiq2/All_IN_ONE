@@ -1,27 +1,46 @@
 # ══════════════════════════════════════════════════════════════════════════
-# TEMPORARY — Beds24 read-only live check.
+# TEMPORARY — Beds24 read-only live check (revision 2).
 #
-# One-off diagnostic to confirm the Beds24 API V2 credentials and ids work
-# before wiring the real integration up to production. Delete this file (or
-# this branch) once the check has been run and the result is confirmed.
+# Revision 1 established that authentication, property access and the
+# inventory calendar all work, and that the real mapper parses the live
+# calendar correctly. It also established two things that were wrong:
 #
-# What it does, and nothing else:
-#   1. authentication  — exchange the refresh token for an access token
-#   2. property access — GET /properties?propertyId=354659
-#   3. room access     — GET /properties/rooms?propertyId=...&roomId=731147
-#   4. calendar        — GET /inventory/rooms/calendar (next 30 days),
-#                         then run it through the SAME mapping logic as
-#                         lib/integrations/beds24/mapper.ts to confirm the
-#                         live response is compatible with the existing code.
+#   • `GET /properties/rooms` is NOT a V2 endpoint. It returned HTTP 500
+#     with a non-JSON body. Rooms are nested inside the properties response
+#     behind `includeAllRooms=true`. That call is gone from here and from
+#     the integration.
+#   • property 354659 is named "designAparts - II - by MorenoPisano", which
+#     does not obviously correspond to the unit it was assumed to be. The
+#     mapping cannot be taken on trust.
 #
-# It issues GET requests ONLY. There is no code path here that can reach
-# POST /bookings or any other endpoint capable of creating, modifying,
-# holding, confirming or cancelling a reservation.
+# So this revision stops assuming ids and ENUMERATES the account instead:
+# every property the token can see, with its rooms, printed as a table a
+# person can read and confirm against Beds24. That table is what the
+# `bolagio_unit_integrations` rows get built from.
 #
-# The token is read exclusively from `secrets.BEDS24_REFRESH_TOKEN`, passed
-# to the job as an environment variable (which GitHub Actions automatically
-# masks in logs), and is never printed, echoed or included in any output —
-# only pass/fail results and non-secret response fields are shown.
+# ── What it does ─────────────────────────────────────────────────────────
+#   Part A  live Beds24, read-only:
+#             1. authentication
+#             2. discovery — every property and room on the account
+#             3. whether the currently-configured ids exist in that list
+#             4. inventory calendar for the configured room
+#   Part B  feature-branch validation, best-effort and non-blocking:
+#             the branch's unit tests, then the REAL mapCalendar and
+#             mapProperties run over the responses Part A received.
+#
+# ── The secret boundary, which is deliberate ─────────────────────────────
+# `BEDS24_REFRESH_TOKEN` is scoped to the ONE step that needs it (Part A),
+# and that step runs only the script written inline below. No feature-branch
+# code and no npm dependency executes while the token is in scope: `npm ci`
+# (which runs package lifecycle scripts) and everything after it cannot see
+# it. Checkout uses `persist-credentials: false`.
+#
+# ── What it categorically does not do ────────────────────────────────────
+# GET requests only. There is no code path that can reach POST /bookings or
+# any other endpoint capable of creating, modifying, holding, confirming or
+# cancelling a reservation. The token is never printed.
+#
+# Delete this file once the mapping is confirmed.
 # ══════════════════════════════════════════════════════════════════════════
 
 name: "[TEMP] Beds24 read-only live check"
@@ -36,111 +55,119 @@ concurrency:
   group: beds24-readonly-check
   cancel-in-progress: false
 
+env:
+  # The branch whose integration code this validates. Pinned rather than
+  # taken as an input: the branch selector in the "Run workflow" dialog
+  # chooses which workflow FILE runs, which is a different thing, and a
+  # free-form ref plus a live credential is a combination worth not
+  # offering. The resolved ref and SHA are printed in the summary.
+  TARGET_REF: claude/opernstrasse-ii-iii-calendar-cta-dates
+  # The ids currently believed to be correct. This run tests that belief
+  # rather than relying on it — see the discovery step.
+  BEDS24_PROPERTY_ID: "354659"
+  BEDS24_ROOM_ID: "731147"
+  # Printed for manual cross-reference only. Never queried.
+  BOOKING_COM_PROPERTY_ID: "14282341"
+
 jobs:
   check:
     name: Read-only Beds24 smoke test
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
+      - name: Check out the feature branch (read-only)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_REF }}
+          persist-credentials: false
+
+      - name: Record which commit is under test
+        id: target
+        run: |
+          set -euo pipefail
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "Checked out ${TARGET_REF} at $(git rev-parse --short HEAD)"
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
+          cache: npm
 
-      - name: Run read-only check
+      # ── PART A ─────────────────────────────────────────────────────────
+      - name: "Part A — live Beds24 read-only check"
+        id: live
         env:
           BEDS24_REFRESH_TOKEN: ${{ secrets.BEDS24_REFRESH_TOKEN }}
         run: |
           set -euo pipefail
-          cat <<'NODE_EOF' > check.mjs
-          // Standalone, read-only. No dependencies beyond Node's global fetch.
+          cat <<'NODE_EOF' > "$RUNNER_TEMP/live-check.mjs"
+          // Standalone and read-only. Node's global fetch, no dependencies,
+          // nothing imported from the checked-out repository.
+          import { writeFileSync } from 'node:fs';
+
           const BASE_URL = process.env.BEDS24_API_BASE_URL?.trim() || 'https://beds24.com/api/v2';
           const REFRESH_TOKEN = process.env.BEDS24_REFRESH_TOKEN?.trim();
+          const PROPERTY_ID = process.env.BEDS24_PROPERTY_ID;
+          const ROOM_ID = process.env.BEDS24_ROOM_ID;
+          const BOOKING_COM_PROPERTY_ID = process.env.BOOKING_COM_PROPERTY_ID;
+          const TEMP = process.env.RUNNER_TEMP;
 
-          // The real ids supplied for this check. Read-only endpoints only.
-          const PROPERTY_ID = '354659';
-          const ROOM_ID = '731147';
-          const BOOKING_COM_PROPERTY_ID = '14282341'; // printed for manual cross-check only, never queried
+          const results = {
+            auth: 'NOT RUN',
+            discovery: 'NOT RUN',
+            configuredIds: 'NOT RUN',
+            calendar: 'NOT RUN',
+          };
 
-          const results = { auth: 'NOT RUN', property: 'NOT RUN', room: 'NOT RUN', calendar: 'NOT RUN' };
-          const summaryLines = [];
-
-          function todayIso() { return new Date().toISOString().slice(0, 10); }
-          function addDaysIso(iso, days) {
+          const todayIso = () => new Date().toISOString().slice(0, 10);
+          const addDaysIso = (iso, days) => {
             const d = new Date(`${iso}T00:00:00Z`);
             d.setUTCDate(d.getUTCDate() + days);
             return d.toISOString().slice(0, 10);
-          }
-
-          // ── The SAME calendar-mapping logic as lib/integrations/beds24/mapper.ts ──
-          // (mapCalendar, num, flag, addDays) — copied here deliberately, not
-          // imported, so this script stays standalone. If it drifts from the repo
-          // file, that file is the source of truth.
-          function num(value) {
-            if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
-            if (typeof value === 'string' && value.trim() !== '') {
-              const n = Number(value);
-              return Number.isFinite(n) ? n : undefined;
+          };
+          const pad = (v, w) => String(v ?? '').padEnd(w, ' ');
+          // Third-party error text, capped. It does not need to be unbounded.
+          const brief = (v) => JSON.stringify(v ?? null).slice(0, 800);
+          const id = (...xs) => {
+            for (const x of xs) {
+              if (typeof x === 'number' && Number.isFinite(x)) return String(x);
+              if (typeof x === 'string' && x.trim() !== '') return x.trim();
             }
             return undefined;
-          }
-          function flag(value) {
-            if (typeof value === 'boolean') return value;
-            const n = num(value);
-            return n !== undefined && n !== 0;
-          }
-          function mapCalendar(response, from, to) {
-            const entries = [];
-            for (const room of response.data ?? []) {
-              for (const entry of room.calendar ?? []) entries.push(entry);
-            }
-            const byDate = new Map();
-            for (const entry of entries) {
-              const start = entry.from;
-              const end = entry.to ?? entry.from;
-              if (!start || !end) continue;
-              const available = (num(entry.numAvail) ?? 0) > 0;
-              const closedArrival = flag(entry.closedArrival);
-              const closedDeparture = flag(entry.closedDeparture);
-              const minStay = num(entry.minStay);
-              const maxStay = num(entry.maxStay);
-              for (let d = start; d <= end; d = addDaysIso(d, 1)) {
-                byDate.set(d, {
-                  date: d,
-                  available,
-                  canCheckIn: available && !closedArrival,
-                  canCheckOut: !closedDeparture,
-                  minStay: minStay && minStay > 1 ? minStay : undefined,
-                  maxStay: maxStay && maxStay > 0 ? maxStay : undefined,
-                  displayPriceCents: num(entry.price1) !== undefined ? Math.round(num(entry.price1) * 100) : undefined,
-                });
-              }
-            }
-            const days = [];
-            for (let d = from; d < to; d = addDaysIso(d, 1)) {
-              days.push(byDate.get(d) ?? { date: d, available: false, canCheckIn: false, canCheckOut: true });
-            }
-            return days;
-          }
+          };
 
-          function pad(value, width) { return String(value ?? '').padEnd(width, ' '); }
+          function finish() {
+            console.log('════════════════════════════════════════════════════════════');
+            console.log(' PART A SUMMARY — read-only, nothing created or modified');
+            console.log('════════════════════════════════════════════════════════════');
+            console.log(`  Authentication:        ${results.auth}`);
+            console.log(`  Discovery:             ${results.discovery}`);
+            console.log(`  Configured ids exist:  ${results.configuredIds}`);
+            console.log(`  Inventory/calendar:    ${results.calendar}`);
+            console.log('════════════════════════════════════════════════════════════');
+            writeFileSync(`${TEMP}/live-results.json`, JSON.stringify(results));
+            if (Object.values(results).some((v) => String(v).startsWith('FAIL'))) process.exitCode = 1;
+          }
 
           async function main() {
             console.log('════════════════════════════════════════════════════════════');
-            console.log(' BEDS24 API V2 — READ-ONLY LIVE CHECK (GitHub Actions)');
+            console.log(' BEDS24 API V2 — READ-ONLY LIVE CHECK (rev 2)');
             console.log('════════════════════════════════════════════════════════════');
-            console.log(`Base URL:                 ${BASE_URL}`);
-            console.log(`Property ID:              ${PROPERTY_ID}`);
-            console.log(`Room ID:                  ${ROOM_ID}`);
-            console.log(`Booking.com property ID:  ${BOOKING_COM_PROPERTY_ID}  (reference only, not queried)`);
+            console.log(`Base URL:                    ${BASE_URL}`);
+            console.log(`Configured property id:      ${PROPERTY_ID}`);
+            console.log(`Configured room id:          ${ROOM_ID}`);
+            console.log(`Booking.com property id:     ${BOOKING_COM_PROPERTY_ID}  (reference only, not queried)`);
             console.log('');
 
             if (!REFRESH_TOKEN) {
-              console.error('✗ BEDS24_REFRESH_TOKEN secret is empty or not set. Aborting.');
-              process.exitCode = 1;
+              console.error('✗ The BEDS24_REFRESH_TOKEN secret is empty or not set on this repository.');
+              results.auth = 'FAIL (secret not set)';
+              finish();
               return;
             }
 
+            // ── 1. Authentication ──────────────────────────────────────
             console.log('── 1. Authentication ──────────────────────────────────────');
             let accessToken;
             try {
@@ -156,7 +183,7 @@ jobs:
               } else {
                 results.auth = `FAIL (HTTP ${res.status})`;
                 console.log(`✗ Authentication failed — HTTP ${res.status}`);
-                console.log(`  Response: ${JSON.stringify(body)}`);
+                console.log(`  Response: ${brief(body)}`);
               }
             } catch (err) {
               results.auth = `FAIL (${err.message})`;
@@ -164,56 +191,86 @@ jobs:
             }
             console.log('');
 
-            if (!accessToken) { printSummary(); process.exitCode = 1; return; }
+            if (!accessToken) { finish(); return; }
+            const headers = { accept: 'application/json', token: accessToken };
 
-            const authHeaders = { accept: 'application/json', token: accessToken };
-
-            console.log('── 2. Property access ─────────────────────────────────────');
+            // ── 2. Discovery ───────────────────────────────────────────
+            // No propertyId filter: enumerate everything this token can see.
+            // This is the step that establishes the mapping, instead of
+            // assuming one. `GET /properties/rooms` does not exist — rooms
+            // arrive nested here, behind includeAllRooms=true.
+            console.log('── 2. Discovery — every property and room on the account ──');
+            let properties = [];
             try {
-              const res = await fetch(`${BASE_URL}/properties?propertyId=${PROPERTY_ID}`, { headers: authHeaders });
+              const res = await fetch(`${BASE_URL}/properties?includeAllRooms=true`, { headers });
               const body = await res.json().catch(() => null);
-              const record = Array.isArray(body?.data) ? body.data[0] : undefined;
-              if (res.ok && record) {
-                results.property = 'PASS';
-                console.log('✓ Property visible to this account.');
-                console.log(`  name: ${record.name ?? '(not returned)'}`);
-                console.log(`  currency: ${record.currency ?? '(not returned)'}`);
-                console.log(`  timezone: ${record.timezone ?? '(not returned)'}`);
+              const records = Array.isArray(body?.data) ? body.data : [];
+
+              if (res.ok && records.length > 0) {
+                results.discovery = 'PASS';
+                console.log(`✓ ${records.length} property/properties visible to this account.`);
+                console.log('');
+                console.log('  propertyId    roomId        name');
+                console.log('  ' + '─'.repeat(74));
+
+                for (const p of records) {
+                  const pid = id(p.id, p.propertyId) ?? '(no id)';
+                  console.log(`  ${pad(pid, 12)}  ${pad('—', 12)}  ${p.name ?? '(unnamed)'}${p.currency ? `  [${p.currency}]` : ''}`);
+                  const rooms = p.roomTypes ?? p.rooms ?? [];
+                  if (rooms.length === 0) {
+                    console.log(`  ${pad('', 12)}  ${pad('(none)', 12)}  — no rooms returned for this property`);
+                  }
+                  for (const r of rooms) {
+                    const rid = id(r.id, r.roomId) ?? '(no id)';
+                    const occ = r.maxPeople !== undefined ? `  sleeps ${r.maxPeople}` : '';
+                    console.log(`  ${pad('', 12)}  ${pad(rid, 12)}  └─ ${r.name ?? '(unnamed room)'}${occ}`);
+                  }
+                  properties.push({ pid, name: p.name, rooms: rooms.map((r) => id(r.id, r.roomId)) });
+                }
+
+                console.log('');
+                console.log('  → Confirm each property/room pair above against Beds24, then map');
+                console.log('    each BoLaGio unit slug to the right pair. Do not assume.');
+                // Handed to Part B so the real mapProperties runs over it.
+                // Property and room configuration only; no guest data.
+                writeFileSync(`${TEMP}/beds24-properties.json`, JSON.stringify(body));
               } else {
-                results.property = `FAIL (HTTP ${res.status})`;
-                console.log(`✗ Property fetch failed or returned no record — HTTP ${res.status}`);
-                console.log(`  Response: ${JSON.stringify(body)}`);
+                results.discovery = `FAIL (HTTP ${res.status})`;
+                console.log(`✗ Discovery failed or returned no properties — HTTP ${res.status}`);
+                console.log(`  Response: ${brief(body)}`);
               }
             } catch (err) {
-              results.property = `FAIL (${err.message})`;
-              console.log(`✗ Property request errored: ${err.message}`);
+              results.discovery = `FAIL (${err.message})`;
+              console.log(`✗ Discovery request errored: ${err.message}`);
             }
             console.log('');
 
-            console.log('── 3. Room access ──────────────────────────────────────────');
-            try {
-              const res = await fetch(`${BASE_URL}/properties/rooms?propertyId=${PROPERTY_ID}&roomId=${ROOM_ID}`, { headers: authHeaders });
-              const body = await res.json().catch(() => null);
-              const record = Array.isArray(body?.data) ? body.data[0] : undefined;
-              if (res.ok && record) {
-                results.room = 'PASS';
-                console.log('✓ Room visible to this account.');
-                console.log(`  name: ${record.name ?? '(not returned)'}`);
-                console.log(`  maxPeople: ${record.maxPeople ?? record.qty ?? '(not returned)'}`);
+            // ── 3. Do the configured ids actually exist? ───────────────
+            console.log('── 3. Are the configured ids real? ────────────────────────');
+            if (properties.length === 0) {
+              results.configuredIds = 'FAIL (no properties to check against)';
+              console.log('✗ Nothing was discovered, so the configured ids cannot be checked.');
+            } else {
+              const match = properties.find((p) => p.pid === PROPERTY_ID);
+              if (!match) {
+                results.configuredIds = 'FAIL (property id not on this account)';
+                console.log(`✗ Property ${PROPERTY_ID} is not among the properties this token can see.`);
+              } else if (!match.rooms.includes(ROOM_ID)) {
+                results.configuredIds = 'FAIL (room id not in that property)';
+                console.log(`✓ Property ${PROPERTY_ID} exists — "${match.name}"`);
+                console.log(`✗ But room ${ROOM_ID} is not one of its rooms: [${match.rooms.join(', ') || 'none returned'}]`);
               } else {
-                results.room = `FAIL (HTTP ${res.status})`;
-                console.log(`✗ Room fetch failed or returned no record — HTTP ${res.status}`);
-                console.log(`  Response: ${JSON.stringify(body)}`);
-                console.log('  NOTE: if this 404s, the endpoint path may differ from what the');
-                console.log('  repo assumes — check the current Beds24 API V2 reference.');
+                results.configuredIds = 'PASS';
+                console.log(`✓ Property ${PROPERTY_ID} ("${match.name}") contains room ${ROOM_ID}.`);
+                console.log('  NOTE: this confirms the pair is REAL, not that it is the right');
+                console.log('  unit. Which BoLaGio apartment it is remains a human judgement');
+                console.log('  against the names printed above.');
               }
-            } catch (err) {
-              results.room = `FAIL (${err.message})`;
-              console.log(`✗ Room request errored: ${err.message}`);
             }
             console.log('');
 
-            console.log('── 4. Inventory / calendar (next 30 days) ───────────────────');
+            // ── 4. Inventory calendar ──────────────────────────────────
+            console.log('── 4. Inventory / calendar (next 30 days) ─────────────────');
             const from = todayIso();
             const to = addDaysIso(from, 30);
             try {
@@ -221,39 +278,28 @@ jobs:
                 roomId: ROOM_ID, propertyId: PROPERTY_ID, startDate: from, endDate: to,
                 includeNumAvail: 'true', includeMinStay: 'true', includeMaxStay: 'true', includePrices: 'true',
               });
-              const res = await fetch(`${BASE_URL}/inventory/rooms/calendar?${params.toString()}`, { headers: authHeaders });
+              const res = await fetch(`${BASE_URL}/inventory/rooms/calendar?${params.toString()}`, { headers });
               const body = await res.json().catch(() => null);
-              const rawEntries = (body?.data ?? []).flatMap((room) => room.calendar ?? []);
+              const runs = (body?.data ?? []).flatMap((room) => room.calendar ?? []);
 
-              if (res.ok && rawEntries.length > 0) {
+              if (res.ok && runs.length > 0) {
                 results.calendar = 'PASS';
-                console.log(`✓ Calendar data returned: ${rawEntries.length} run(s) covering ${from} → ${to}.`);
+                console.log(`✓ Calendar data returned: ${runs.length} run(s) covering ${from} → ${to}.`);
                 console.log('');
-                console.log('  Raw runs, as Beds24 sent them:');
                 console.log('  from          to            numAvail  minStay  maxStay  price1');
                 console.log('  ' + '─'.repeat(66));
-                for (const e of rawEntries) {
-                  console.log(`  ${pad(e.from, 12)}  ${pad(e.to, 12)}  ${pad(e.numAvail, 8)}  ${pad(e.minStay, 7)}  ${pad(e.maxStay, 7)}  ${e.price1 ?? ''}`);
+                for (const r of runs) {
+                  console.log(`  ${pad(r.from, 12)}  ${pad(r.to, 12)}  ${pad(r.numAvail, 8)}  ${pad(r.minStay, 7)}  ${pad(r.maxStay, 7)}  ${r.price1 ?? ''}`);
                 }
-
                 console.log('');
-                console.log('  Mapped through the SAME logic as lib/integrations/beds24/mapper.ts:');
-                console.log('  date          available  canCheckIn  canCheckOut  minStay  priceCents');
-                console.log('  ' + '─'.repeat(70));
-                const mapped = mapCalendar(body, from, to);
-                for (const d of mapped.slice(0, 14)) {
-                  console.log(`  ${pad(d.date, 12)}  ${pad(d.available, 9)}  ${pad(d.canCheckIn, 10)}  ${pad(d.canCheckOut, 11)}  ${pad(d.minStay ?? '', 7)}  ${d.displayPriceCents ?? ''}`);
-                }
-                console.log(`  … (${mapped.length} days total, first 14 shown)`);
-                console.log('');
-                console.log('  → This mapped shape is exactly what the booking service reads.');
-                console.log('    Open this room\'s calendar in the Beds24 UI for the same range and');
-                console.log('    confirm the dates and availability match — especially that a');
-                console.log('    reservation\'s checkout date shows canCheckIn: true (not occupied).');
+                console.log('  → Open this room\'s calendar in Beds24 for the same range and confirm');
+                console.log('    these dates match. In particular, a reservation\'s CHECKOUT date');
+                console.log('    should show numAvail > 0 — it is a departure, not an occupied night.');
+                writeFileSync(`${TEMP}/beds24-calendar.json`, JSON.stringify({ body, from, to }));
               } else {
                 results.calendar = `FAIL (HTTP ${res.status})`;
                 console.log(`✗ Calendar fetch failed or returned no data — HTTP ${res.status}`);
-                console.log(`  Response: ${JSON.stringify(body).slice(0, 2000)}`);
+                console.log(`  Response: ${brief(body)}`);
               }
             } catch (err) {
               results.calendar = `FAIL (${err.message})`;
@@ -261,37 +307,161 @@ jobs:
             }
             console.log('');
 
-            printSummary();
-            if (Object.values(results).some((v) => String(v).startsWith('FAIL'))) process.exitCode = 1;
-          }
-
-          function printSummary() {
-            console.log('════════════════════════════════════════════════════════════');
-            console.log(' SUMMARY (read-only — nothing was created or modified)');
-            console.log('════════════════════════════════════════════════════════════');
-            console.log(`  Authentication:      ${results.auth}`);
-            console.log(`  Property access:     ${results.property}`);
-            console.log(`  Room access:         ${results.room}`);
-            console.log(`  Inventory/calendar:  ${results.calendar}`);
-            console.log('════════════════════════════════════════════════════════════');
-
-            const summary = process.env.GITHUB_STEP_SUMMARY;
-            if (summary) {
-              const fs = require('fs');
-              const icon = (v) => (v === 'PASS' ? '✅' : v.startsWith('FAIL') ? '❌' : '⏸️');
-              fs.appendFileSync(summary, [
-                '## Beds24 read-only live check\n',
-                '| Check | Result |',
-                '|---|---|',
-                `| Authentication | ${icon(results.auth)} ${results.auth} |`,
-                `| Property access (354659) | ${icon(results.property)} ${results.property} |`,
-                `| Room access (731147) | ${icon(results.room)} ${results.room} |`,
-                `| Inventory/calendar | ${icon(results.calendar)} ${results.calendar} |`,
-                '\n_Read-only GET requests only. No booking was created, modified, held, confirmed or cancelled._\n',
-              ].join('\n'));
-            }
+            finish();
           }
 
           main();
           NODE_EOF
-          node check.mjs
+          node "$RUNNER_TEMP/live-check.mjs"
+
+      # ── PART B ─────────────────────────────────────────────────────────
+      # No credential from here on. Feature-branch code executes only in
+      # these steps, and only after the token has gone out of scope.
+      - name: "Part B — install feature-branch dependencies"
+        id: install
+        if: always()
+        continue-on-error: true
+        run: npm ci
+
+      - name: "Part B — feature-branch unit tests"
+        id: unit
+        if: always() && steps.install.outcome == 'success'
+        continue-on-error: true
+        run: npm test
+
+      - name: "Part B — live responses through the REAL mappers"
+        id: mapper
+        if: always() && steps.install.outcome == 'success'
+        continue-on-error: true
+        env:
+          BEDS24_CALENDAR_JSON: ${{ runner.temp }}/beds24-calendar.json
+          BEDS24_PROPERTIES_JSON: ${{ runner.temp }}/beds24-properties.json
+        run: |
+          set -euo pipefail
+          cat <<'SPEC_EOF' > tests/live-mapper-compat.test.ts
+          /**
+           * Live Beds24 responses × the real mappers.
+           *
+           * Imports lib/integrations/beds24/mapper.ts itself — not a copy — so a
+           * pass here means the shipped code genuinely understands what Beds24
+           * actually sends, rather than what the repository assumed it sends.
+           *
+           * Written by the workflow at run time. Not committed.
+           */
+          import { existsSync, readFileSync } from 'node:fs';
+          import { describe, expect, it } from 'vitest';
+          import { mapCalendar, mapProperties } from '@/lib/integrations/beds24/mapper';
+
+          const calendarPath = process.env.BEDS24_CALENDAR_JSON as string;
+          const propertiesPath = process.env.BEDS24_PROPERTIES_JSON as string;
+
+          describe.runIf(existsSync(calendarPath))('live calendar through the real mapper', () => {
+            const payload = JSON.parse(readFileSync(calendarPath, 'utf8'));
+            const days = mapCalendar(payload.body, payload.from, payload.to);
+
+            it('produces one well-formed InventoryDay per date in the window', () => {
+              expect(days.length).toBeGreaterThan(0);
+              for (const day of days) {
+                expect(day.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+                expect(typeof day.available).toBe('boolean');
+                expect(typeof day.canCheckIn).toBe('boolean');
+                expect(typeof day.canCheckOut).toBe('boolean');
+              }
+            });
+
+            it('covers the window contiguously, with no duplicate or missing dates', () => {
+              const dates = days.map((d) => d.date);
+              expect(new Set(dates).size).toBe(dates.length);
+              expect(dates[0]).toBe(payload.from);
+            });
+
+            it('actually read the response rather than failing closed on all of it', () => {
+              const read = days.some(
+                (d) => d.available || d.displayPriceCents !== undefined || d.minStay !== undefined || !d.canCheckOut
+              );
+              console.log(`  ${days.filter((d) => d.available).length} of ${days.length} nights read as available`);
+              expect(read).toBe(true);
+            });
+          });
+
+          describe.runIf(existsSync(propertiesPath))('live properties through the real mapper', () => {
+            const properties = mapProperties(JSON.parse(readFileSync(propertiesPath, 'utf8')));
+
+            it('reads at least one property with an id and a name', () => {
+              expect(properties.length).toBeGreaterThan(0);
+              for (const p of properties) {
+                expect(p.externalPropertyId).toMatch(/^\S+$/);
+                expect(p.name.length).toBeGreaterThan(0);
+              }
+            });
+
+            it('prints the mapping the unit_integrations rows should be built from', () => {
+              for (const p of properties) {
+                console.log(`  property ${p.externalPropertyId}  ${p.name}`);
+                for (const r of p.rooms) {
+                  console.log(`      room ${r.externalRoomId}  ${r.name}${r.maxGuests ? `  sleeps ${r.maxGuests}` : ''}`);
+                }
+                if (p.rooms.length === 0) console.log('      (no rooms read from this property)');
+              }
+              // Rooms nested under an unexpected key would surface here as a
+              // property with zero rooms, which is the thing worth knowing.
+              expect(properties.some((p) => p.rooms.length > 0)).toBe(true);
+            });
+          });
+          SPEC_EOF
+          npx vitest run tests/live-mapper-compat.test.ts --reporter=verbose
+
+      # ── Result ─────────────────────────────────────────────────────────
+      - name: Publish summary
+        if: always()
+        env:
+          LIVE_OUTCOME: ${{ steps.live.outcome }}
+          INSTALL_OUTCOME: ${{ steps.install.outcome }}
+          UNIT_OUTCOME: ${{ steps.unit.outcome }}
+          MAPPER_OUTCOME: ${{ steps.mapper.outcome }}
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          set -euo pipefail
+          icon() { case "$1" in PASS|success) echo "✅";; skipped) echo "⏭️";; *) echo "❌";; esac; }
+
+          AUTH="UNKNOWN"; DISC="UNKNOWN"; IDS="UNKNOWN"; CAL="UNKNOWN"
+          RESULTS="$RUNNER_TEMP/live-results.json"
+          if [ -f "$RESULTS" ]; then
+            AUTH=$(node -p "require('$RESULTS').auth")
+            DISC=$(node -p "require('$RESULTS').discovery")
+            IDS=$(node -p "require('$RESULTS').configuredIds")
+            CAL=$(node -p "require('$RESULTS').calendar")
+          fi
+
+          {
+            echo "## Beds24 read-only live check (rev 2)"
+            echo ""
+            echo "Branch under test: \`${TARGET_REF}\` @ \`${TARGET_SHA:0:7}\`"
+            echo ""
+            echo "### Part A — live Beds24 API (read-only)"
+            echo ""
+            echo "| Check | Result |"
+            echo "|---|---|"
+            echo "| Authentication | $(icon "$AUTH") $AUTH |"
+            echo "| Discovery — all properties + rooms | $(icon "$DISC") $DISC |"
+            echo "| Configured ids exist (${BEDS24_PROPERTY_ID} / ${BEDS24_ROOM_ID}) | $(icon "$IDS") $IDS |"
+            echo "| Inventory / calendar | $(icon "$CAL") $CAL |"
+            echo ""
+            echo "### Part B — feature-branch code (best-effort, non-blocking)"
+            echo ""
+            echo "| Check | Result |"
+            echo "|---|---|"
+            echo "| npm ci | $(icon "$INSTALL_OUTCOME") $INSTALL_OUTCOME |"
+            echo "| Unit tests | $(icon "$UNIT_OUTCOME") $UNIT_OUTCOME |"
+            echo "| Live responses × real mappers | $(icon "$MAPPER_OUTCOME") $MAPPER_OUTCOME |"
+            echo ""
+            echo "**The property/room table is in the \`Part A\` step log, under \"Discovery\".**"
+            echo "That table is what the unit mapping must be built from."
+            echo ""
+            echo "_GET requests only. No booking was created, modified, held, confirmed or cancelled._"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$LIVE_OUTCOME" != "success" ]; then
+            echo "Part A did not fully pass — see the summary above."
+            exit 1
+          fi

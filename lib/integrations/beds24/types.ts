@@ -10,11 +10,27 @@ import 'server-only';
  * ever indexes into one of these objects.
  *
  * ── Verification status ──────────────────────────────────────────────────
- * Written against the published Beds24 API V2 surface. The exact field casing
- * per endpoint cannot be confirmed from inside this repository because no
- * Beds24 credentials exist yet — `mapper.ts` reads defensively for that
- * reason, and `BEDS24_MODE=live` must be smoke-tested against a real account
- * before the first guest sees it. See the final report.
+ * VERIFIED against a live Beds24 account on 2026-09-17 (GitHub Actions run
+ * 35192013491), for the endpoints the booking flow actually depends on:
+ *
+ *   GET /authentication/token      → { token, expiresIn: 86400 }
+ *   GET /properties?propertyId=…   → { data: [ { name, currency, … } ] }
+ *   GET /inventory/rooms/calendar  → { data: [ { calendar: [ … ] } ] }
+ *
+ * The calendar run shape was confirmed exactly as modelled below: `from`/`to`
+ * inclusive, `numAvail` a number, `minStay`/`maxStay` numbers, `price1` a
+ * number. `closedArrival` and `closedDeparture` were NOT present in the
+ * response at all, which the mapper already handles — an absent flag reads as
+ * "not closed", which is the correct default.
+ *
+ * STILL UNVERIFIED: the offers endpoint, the bookings endpoint, and the exact
+ * key under which rooms are nested in the properties response. Everything
+ * stays optional and `mapper.ts` keeps reading defensively for that reason.
+ *
+ * ── One endpoint that does NOT exist ─────────────────────────────────────
+ * `GET /properties/rooms` returned HTTP 500 with a non-JSON body. It is not a
+ * V2 endpoint and nothing in this repository may call it. Rooms are nested
+ * inside the properties response — see `Beds24PropertiesResponse`.
  */
 
 /** `GET /inventory/rooms/calendar` — one entry per room per date range. */
@@ -43,6 +59,54 @@ export interface Beds24CalendarEntry {
   closedArrival?: number | string | boolean;
   closedDeparture?: number | string | boolean;
   price1?: number | string;
+}
+
+/**
+ * `GET /properties` — the account's properties, and optionally their rooms.
+ *
+ * Rooms have no endpoint of their own. They arrive nested here when the
+ * request carries `includeAllRooms=true`:
+ *
+ *     GET /properties?includeAllRooms=true
+ *
+ * This is the call that establishes which Beds24 property and room a BoLaGio
+ * unit maps to. It is read-only and is used by `discovery.ts` to build the
+ * `bolagio_unit_integrations` rows — never at request time in the guest flow.
+ *
+ * `name` and `currency` are confirmed present. The nesting key for rooms is
+ * accepted under either `roomTypes` or `rooms`, because the two appear in
+ * different places in the V2 surface and only the offers endpoint's use of
+ * `roomTypes` has been seen first-hand. Whichever is present is read.
+ */
+export interface Beds24PropertiesResponse {
+  success?: boolean;
+  data?: Beds24Property[];
+}
+
+export interface Beds24Property {
+  id?: number | string;
+  /** Some responses echo the id under this name instead. */
+  propertyId?: number | string;
+  name?: string;
+  currency?: string;
+  /** Not returned by default — absent in the verified live response. */
+  timezone?: string;
+  city?: string;
+  country?: string;
+  roomTypes?: Beds24Room[];
+  rooms?: Beds24Room[];
+}
+
+export interface Beds24Room {
+  id?: number | string;
+  /** As above: the id is echoed under either key depending on the endpoint. */
+  roomId?: number | string;
+  name?: string;
+  /** Occupancy. `maxPeople` is the V2 name; `qty` is the unit count, not occupancy. */
+  maxPeople?: number | string;
+  qty?: number | string;
+  minStay?: number | string;
+  maxStay?: number | string;
 }
 
 /** `GET /inventory/rooms/offers` — bookable offers for a concrete stay. */

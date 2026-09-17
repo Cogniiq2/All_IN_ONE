@@ -92,8 +92,21 @@ Generate each shared secret with real entropy, e.g. `openssl rand -hex 32`.
 1. **API V2 access.** Settings → Account → API. Generate an invite code,
    exchange it for a **refresh token**, and put that in `BEDS24_REFRESH_TOKEN`.
    The V1 `apiKey`/`propKey` scheme is deprecated and is not implemented here.
-2. **Note the ids.** Property id (Settings → Properties) and room id
-   (Settings → Rooms) for each unit, into the seed file.
+   *Verified 2026-09-17: the token exchange works and returns a token valid
+   for 86400s.*
+2. **Get the ids from the API, not from a spreadsheet.** Run the discovery
+   call — `GET /properties?includeAllRooms=true`, wrapped by
+   `listPropertiesWithRooms()` in `lib/integrations/beds24/discovery.ts` — and
+   read the property and room ids out of the response, with their names.
+
+   Do not type ids in from memory. A slug pointed at the wrong room sells the
+   wrong apartment and nothing downstream can detect it: the calendar looks
+   perfectly healthy either way. The first attempt at this mapping was wrong —
+   property `354659` turned out to be named *"designAparts - II - by
+   MorenoPisano"*, not the unit it had been assumed to be.
+
+   **There is no `GET /properties/rooms`.** It returns HTTP 500. Rooms exist
+   only nested inside the properties response.
 3. **⚠ Confirm which statuses block inventory.** This is the setting that
    matters most.
 
@@ -245,10 +258,21 @@ half.
 
 ## Still open
 
-- Beds24 field casing per endpoint is written against the published V2 surface
-  and **has not been verified against a live account** — no credentials exist
-  yet. `mapper.ts` reads defensively for that reason. Smoke-test `live` mode
-  against a real property before the first guest sees it.
+- **Verified live on 2026-09-17** (Actions run 35192013491): authentication,
+  `GET /properties`, and `GET /inventory/rooms/calendar`. The calendar shape is
+  exactly as modelled — nine compressed runs expanded to 30 nights, 21
+  available, matching the raw `numAvail` counted by hand. `closedArrival` and
+  `closedDeparture` were absent from the response, which the mapper handles
+  correctly (absent means not closed). That response is frozen as a fixture in
+  `tests/beds24-live-shape.test.ts`.
+- **Still unverified:** the offers endpoint (`fetchOffer`), the bookings
+  endpoint (`createHold` / `confirmBooking` / `releaseHold`), and the key rooms
+  are nested under in the properties response (`roomTypes` vs `rooms` — the
+  mapper accepts either). Nothing that writes to Beds24 has been exercised at
+  all, deliberately.
+- **The unit → Beds24 mapping is not yet established.** It must come from the
+  discovery call, confirmed by a person against the property names, before any
+  `bolagio_unit_integrations` row is written.
 - `PAYMENT_ENABLED` in `lib/content/brand.ts` is still `false`. The booking
   path is reachable as soon as a unit is `is_bookable` with a provider mapping;
   that flag governs the portfolio-wide payment claim and should be reviewed

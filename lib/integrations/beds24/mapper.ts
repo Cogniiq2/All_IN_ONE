@@ -21,11 +21,14 @@ import 'server-only';
 import { addDays, nightsBetween } from '@/lib/booking/stay-rules';
 import type { BookingQuote, InventoryDay, IsoDate, QuoteComponent } from '@/lib/booking/types';
 import { ProviderError } from '@/lib/integrations/provider';
+import type { ProviderPropertySummary } from '@/lib/integrations/provider';
 import type {
   Beds24CalendarEntry,
   Beds24CalendarResponse,
   Beds24Offer,
   Beds24OffersResponse,
+  Beds24PropertiesResponse,
+  Beds24Room,
 } from '@/lib/integrations/beds24/types';
 
 function num(value: unknown): number | undefined {
@@ -83,6 +86,13 @@ export function toCents(value: unknown): number | undefined {
  * Beds24 returns runs — "from 2026-09-16 to 2026-09-19, numAvail 0" — so a
  * year of inventory is a handful of objects rather than 365. This walks each
  * run day by day.
+ *
+ * ── Verified against the live API ────────────────────────────────────────
+ * Confirmed on 2026-09-17 against property 354659: nine compressed runs over
+ * a 30-day window expanded to exactly 30 days, 21 of them available, which
+ * matches the raw `numAvail` values counted by hand. `closedArrival` and
+ * `closedDeparture` were absent from the response entirely — `flag(undefined)`
+ * reads false, so an absent flag means "not closed", which is right.
  *
  * ── Checkout semantics ───────────────────────────────────────────────────
  * `numAvail` describes the NIGHT beginning on a date. So a date with no
@@ -248,4 +258,63 @@ export function mapOffer(
       ? { de: best.offer.cancellationPolicy, en: best.offer.cancellationPolicy }
       : undefined,
   };
+}
+
+
+/* ── Properties and rooms (operations, not the guest flow) ──────────────── */
+
+function readId(...candidates: unknown[]): string | undefined {
+  for (const candidate of candidates) {
+    if (typeof candidate === 'number' && Number.isFinite(candidate)) return String(candidate);
+    if (typeof candidate === 'string' && candidate.trim() !== '') return candidate.trim();
+  }
+  return undefined;
+}
+
+/**
+ * The account's properties and their rooms.
+ *
+ * Used once, by operations, to establish which Beds24 property and room a
+ * BoLaGio unit maps to — by asking the provider what exists rather than
+ * trusting an id copied from somewhere. Never called during a booking.
+ *
+ * Rooms are read from `roomTypes` or `rooms`, whichever the response carries:
+ * the V2 surface uses both names in different places and only `roomTypes` has
+ * been observed first-hand, on the offers endpoint. A property whose rooms
+ * cannot be read comes back with an empty `rooms` array rather than being
+ * dropped, so a mapping gap is visible instead of silent.
+ *
+ * There is no `GET /properties/rooms`. It returns HTTP 500; rooms exist only
+ * nested here, behind `includeAllRooms=true`.
+ */
+export function mapProperties(response: Beds24PropertiesResponse): ProviderPropertySummary[] {
+  const properties: ProviderPropertySummary[] = [];
+
+  for (const property of response.data ?? []) {
+    const externalPropertyId = readId(property.id, property.propertyId);
+    if (!externalPropertyId) continue;
+
+    const rawRooms: Beds24Room[] = property.roomTypes ?? property.rooms ?? [];
+    const rooms = rawRooms.flatMap((room) => {
+      const externalRoomId = readId(room.id, room.roomId);
+      if (!externalRoomId) return [];
+      // `qty` is how many of this room type exist, not how many people it
+      // sleeps, so it is deliberately not used as an occupancy fallback.
+      const maxGuests = num(room.maxPeople);
+      return [{
+        externalRoomId,
+        name: typeof room.name === 'string' && room.name.trim() !== '' ? room.name.trim() : '(unnamed room)',
+        maxGuests: maxGuests && maxGuests > 0 ? maxGuests : undefined,
+      }];
+    });
+
+    properties.push({
+      externalPropertyId,
+      name: typeof property.name === 'string' && property.name.trim() !== '' ? property.name.trim() : '(unnamed property)',
+      currency: property.currency,
+      rooms,
+    });
+  }
+
+  return properties;
 }
