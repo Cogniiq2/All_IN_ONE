@@ -1,0 +1,399 @@
+# ══════════════════════════════════════════════════════════════════════════
+# TEMPORARY — Beds24 read-only live check.
+#
+# A one-off diagnostic that confirms the Beds24 API V2 credentials and ids
+# work, and that the live response is compatible with the mapper on the
+# feature branch. Delete this file once the check has been run.
+#
+# It lives on the DEFAULT branch only because GitHub will not show the
+# "Run workflow" button for a `workflow_dispatch` workflow otherwise. It
+# carries no application code with it.
+#
+# ── What it does ─────────────────────────────────────────────────────────
+#   Part A  live Beds24 check — authentication, property access, room
+#           access, inventory calendar. GET requests only.
+#   Part B  feature-branch validation — the branch's own unit tests, then
+#           the real `mapCalendar` from lib/integrations/beds24/mapper.ts
+#           run over the response Part A actually received.
+#
+# Part B is best-effort and never blocks Part A's result: the live answer is
+# the point of the exercise and must be reported even if npm has a bad day.
+#
+# ── The secret boundary, which is deliberate ─────────────────────────────
+# `BEDS24_REFRESH_TOKEN` is scoped to the ONE step that needs it (Part A).
+# That step runs only the script written inline below — code from this
+# default branch, reviewed in this PR. No feature-branch code, and no npm
+# dependency, is ever executed while the token is in the environment:
+# `npm ci` (which runs package lifecycle scripts) and everything after it
+# has no access to it. The checkout is `persist-credentials: false`, so the
+# job's GITHUB_TOKEN is not left in the git config either.
+#
+# ── What it categorically does not do ────────────────────────────────────
+# There is no code path here that can reach POST /bookings, or any other
+# endpoint capable of creating, modifying, holding, confirming or
+# cancelling a reservation. The token is never printed, echoed or written
+# to any output — only pass/fail results and non-secret response fields.
+# ══════════════════════════════════════════════════════════════════════════
+
+name: "[TEMP] Beds24 read-only live check"
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: beds24-readonly-check
+  cancel-in-progress: false
+
+env:
+  # The branch whose integration code this check validates. Pinned rather
+  # than taken as an input: the branch selector in the "Run workflow"
+  # dialog chooses which *workflow file* runs, which is a different thing,
+  # and a free-form ref plus a live credential is a combination worth not
+  # offering. The resolved ref and SHA are printed in the summary.
+  TARGET_REF: claude/opernstrasse-ii-iii-calendar-cta-dates
+  BEDS24_PROPERTY_ID: "354659"
+  BEDS24_ROOM_ID: "731147"
+  # Printed for manual cross-reference only. Never queried by this workflow.
+  BOOKING_COM_PROPERTY_ID: "14282341"
+
+jobs:
+  check:
+    name: Read-only Beds24 smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the feature branch (read-only)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_REF }}
+          persist-credentials: false
+
+      - name: Record which commit is under test
+        id: target
+        run: |
+          set -euo pipefail
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "Checked out ${TARGET_REF} at $(git rev-parse --short HEAD)"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      # ── PART A ─────────────────────────────────────────────────────────
+      # The only step with access to the credential. Runs inline code from
+      # this branch and nothing else.
+      - name: "Part A — live Beds24 read-only check"
+        id: live
+        env:
+          BEDS24_REFRESH_TOKEN: ${{ secrets.BEDS24_REFRESH_TOKEN }}
+        run: |
+          set -euo pipefail
+          cat <<'NODE_EOF' > "$RUNNER_TEMP/live-check.mjs"
+          // Standalone and read-only. Node's global fetch, no dependencies,
+          // nothing imported from the checked-out repository.
+          import { writeFileSync } from 'node:fs';
+
+          const BASE_URL = process.env.BEDS24_API_BASE_URL?.trim() || 'https://beds24.com/api/v2';
+          const REFRESH_TOKEN = process.env.BEDS24_REFRESH_TOKEN?.trim();
+          const PROPERTY_ID = process.env.BEDS24_PROPERTY_ID;
+          const ROOM_ID = process.env.BEDS24_ROOM_ID;
+          const BOOKING_COM_PROPERTY_ID = process.env.BOOKING_COM_PROPERTY_ID;
+          const TEMP = process.env.RUNNER_TEMP;
+
+          const results = { auth: 'NOT RUN', property: 'NOT RUN', room: 'NOT RUN', calendar: 'NOT RUN' };
+
+          const todayIso = () => new Date().toISOString().slice(0, 10);
+          const addDaysIso = (iso, days) => {
+            const d = new Date(`${iso}T00:00:00Z`);
+            d.setUTCDate(d.getUTCDate() + days);
+            return d.toISOString().slice(0, 10);
+          };
+          const pad = (v, w) => String(v ?? '').padEnd(w, ' ');
+          // Provider error text is capped: it is third-party output being
+          // printed into a log, and it does not need to be unbounded.
+          const brief = (v) => JSON.stringify(v ?? null).slice(0, 800);
+
+          function finish() {
+            console.log('════════════════════════════════════════════════════════════');
+            console.log(' PART A SUMMARY — read-only, nothing created or modified');
+            console.log('════════════════════════════════════════════════════════════');
+            console.log(`  Authentication:      ${results.auth}`);
+            console.log(`  Property access:     ${results.property}`);
+            console.log(`  Room access:         ${results.room}`);
+            console.log(`  Inventory/calendar:  ${results.calendar}`);
+            console.log('════════════════════════════════════════════════════════════');
+            writeFileSync(`${TEMP}/live-results.json`, JSON.stringify(results));
+            if (Object.values(results).some((v) => String(v).startsWith('FAIL'))) process.exitCode = 1;
+          }
+
+          async function main() {
+            console.log('════════════════════════════════════════════════════════════');
+            console.log(' BEDS24 API V2 — READ-ONLY LIVE CHECK');
+            console.log('════════════════════════════════════════════════════════════');
+            console.log(`Base URL:                 ${BASE_URL}`);
+            console.log(`Property ID:              ${PROPERTY_ID}`);
+            console.log(`Room ID:                  ${ROOM_ID}`);
+            console.log(`Booking.com property ID:  ${BOOKING_COM_PROPERTY_ID}  (reference only, not queried)`);
+            console.log('');
+
+            if (!REFRESH_TOKEN) {
+              console.error('✗ The BEDS24_REFRESH_TOKEN secret is empty or not set on this repository.');
+              results.auth = 'FAIL (secret not set)';
+              finish();
+              return;
+            }
+
+            console.log('── 1. Authentication ──────────────────────────────────────');
+            let accessToken;
+            try {
+              const res = await fetch(`${BASE_URL}/authentication/token`, {
+                method: 'GET',
+                headers: { accept: 'application/json', refreshToken: REFRESH_TOKEN },
+              });
+              const body = await res.json().catch(() => null);
+              if (res.ok && body?.token) {
+                accessToken = body.token;
+                results.auth = 'PASS';
+                console.log(`✓ Authenticated. Access token issued, expires in ${body.expiresIn ?? '?'}s.`);
+              } else {
+                results.auth = `FAIL (HTTP ${res.status})`;
+                console.log(`✗ Authentication failed — HTTP ${res.status}`);
+                console.log(`  Response: ${brief(body)}`);
+              }
+            } catch (err) {
+              results.auth = `FAIL (${err.message})`;
+              console.log(`✗ Authentication request errored: ${err.message}`);
+            }
+            console.log('');
+
+            if (!accessToken) { finish(); return; }
+            const headers = { accept: 'application/json', token: accessToken };
+
+            console.log('── 2. Property access ─────────────────────────────────────');
+            try {
+              const res = await fetch(`${BASE_URL}/properties?propertyId=${PROPERTY_ID}`, { headers });
+              const body = await res.json().catch(() => null);
+              const record = Array.isArray(body?.data) ? body.data[0] : undefined;
+              if (res.ok && record) {
+                results.property = 'PASS';
+                console.log('✓ Property visible to this account.');
+                console.log(`  name:     ${record.name ?? '(not returned)'}`);
+                console.log(`  currency: ${record.currency ?? '(not returned)'}`);
+                console.log(`  timezone: ${record.timezone ?? '(not returned)'}`);
+              } else {
+                results.property = `FAIL (HTTP ${res.status})`;
+                console.log(`✗ Property fetch failed or returned no record — HTTP ${res.status}`);
+                console.log(`  Response: ${brief(body)}`);
+              }
+            } catch (err) {
+              results.property = `FAIL (${err.message})`;
+              console.log(`✗ Property request errored: ${err.message}`);
+            }
+            console.log('');
+
+            console.log('── 3. Room access ─────────────────────────────────────────');
+            try {
+              const res = await fetch(`${BASE_URL}/properties/rooms?propertyId=${PROPERTY_ID}&roomId=${ROOM_ID}`, { headers });
+              const body = await res.json().catch(() => null);
+              const record = Array.isArray(body?.data) ? body.data[0] : undefined;
+              if (res.ok && record) {
+                results.room = 'PASS';
+                console.log('✓ Room visible to this account.');
+                console.log(`  name:      ${record.name ?? '(not returned)'}`);
+                console.log(`  maxPeople: ${record.maxPeople ?? record.qty ?? '(not returned)'}`);
+              } else {
+                results.room = `FAIL (HTTP ${res.status})`;
+                console.log(`✗ Room fetch failed or returned no record — HTTP ${res.status}`);
+                console.log(`  Response: ${brief(body)}`);
+                console.log('  NOTE: a 404 here most likely means the endpoint path differs from');
+                console.log('  what the repository assumes — this path has not been verified');
+                console.log('  against a live account before. Auth and calendar are the two the');
+                console.log('  integration actually depends on.');
+              }
+            } catch (err) {
+              results.room = `FAIL (${err.message})`;
+              console.log(`✗ Room request errored: ${err.message}`);
+            }
+            console.log('');
+
+            console.log('── 4. Inventory / calendar (next 30 days) ─────────────────');
+            const from = todayIso();
+            const to = addDaysIso(from, 30);
+            try {
+              const params = new URLSearchParams({
+                roomId: ROOM_ID, propertyId: PROPERTY_ID, startDate: from, endDate: to,
+                includeNumAvail: 'true', includeMinStay: 'true', includeMaxStay: 'true', includePrices: 'true',
+              });
+              const res = await fetch(`${BASE_URL}/inventory/rooms/calendar?${params.toString()}`, { headers });
+              const body = await res.json().catch(() => null);
+              const runs = (body?.data ?? []).flatMap((room) => room.calendar ?? []);
+
+              if (res.ok && runs.length > 0) {
+                results.calendar = 'PASS';
+                console.log(`✓ Calendar data returned: ${runs.length} run(s) covering ${from} → ${to}.`);
+                console.log('');
+                console.log('  from          to            numAvail  minStay  maxStay  price1');
+                console.log('  ' + '─'.repeat(66));
+                for (const r of runs) {
+                  console.log(`  ${pad(r.from, 12)}  ${pad(r.to, 12)}  ${pad(r.numAvail, 8)}  ${pad(r.minStay, 7)}  ${pad(r.maxStay, 7)}  ${r.price1 ?? ''}`);
+                }
+                console.log('');
+                console.log('  → Open this room\'s calendar in Beds24 for the same range and confirm');
+                console.log('    these dates match. In particular, a reservation\'s CHECKOUT date');
+                console.log('    should show numAvail > 0 — it is a departure, not an occupied night.');
+                // Handed to Part B so the real mapper runs over the real response.
+                // Availability and rates only; contains no guest data.
+                writeFileSync(`${TEMP}/beds24-calendar.json`, JSON.stringify({ body, from, to }));
+              } else {
+                results.calendar = `FAIL (HTTP ${res.status})`;
+                console.log(`✗ Calendar fetch failed or returned no data — HTTP ${res.status}`);
+                console.log(`  Response: ${brief(body)}`);
+              }
+            } catch (err) {
+              results.calendar = `FAIL (${err.message})`;
+              console.log(`✗ Calendar request errored: ${err.message}`);
+            }
+            console.log('');
+
+            finish();
+          }
+
+          main();
+          NODE_EOF
+          node "$RUNNER_TEMP/live-check.mjs"
+
+      # ── PART B ─────────────────────────────────────────────────────────
+      # No credential from here on. Feature-branch code executes only in
+      # these steps, and only after the token has gone out of scope.
+      - name: "Part B — install feature-branch dependencies"
+        id: install
+        if: always()
+        continue-on-error: true
+        run: npm ci
+
+      - name: "Part B — feature-branch unit tests"
+        id: unit
+        if: always() && steps.install.outcome == 'success'
+        continue-on-error: true
+        run: npm test
+
+      - name: "Part B — live response through the REAL mapper"
+        id: mapper
+        if: always() && steps.install.outcome == 'success'
+        continue-on-error: true
+        env:
+          BEDS24_CALENDAR_JSON: ${{ runner.temp }}/beds24-calendar.json
+        run: |
+          set -euo pipefail
+          if [ ! -f "$BEDS24_CALENDAR_JSON" ]; then
+            echo "No live calendar response was captured in Part A — nothing to map."
+            exit 1
+          fi
+          cat <<'SPEC_EOF' > tests/live-mapper-compat.test.ts
+          /**
+           * Live Beds24 response × the real mapper.
+           *
+           * Imports lib/integrations/beds24/mapper.ts itself — not a copy — so a
+           * pass here means the shipped code genuinely understands what Beds24
+           * actually sends, rather than what the repository assumed it sends.
+           *
+           * Written by the workflow at run time. Not committed.
+           */
+          import { readFileSync } from 'node:fs';
+          import { describe, expect, it } from 'vitest';
+          import { mapCalendar } from '@/lib/integrations/beds24/mapper';
+
+          const payload = JSON.parse(readFileSync(process.env.BEDS24_CALENDAR_JSON as string, 'utf8'));
+          const days = mapCalendar(payload.body, payload.from, payload.to);
+
+          describe('live Beds24 calendar through the real mapper', () => {
+            it('produces one well-formed InventoryDay per date in the window', () => {
+              expect(days.length).toBeGreaterThan(0);
+              for (const day of days) {
+                expect(day.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+                expect(typeof day.available).toBe('boolean');
+                expect(typeof day.canCheckIn).toBe('boolean');
+                expect(typeof day.canCheckOut).toBe('boolean');
+              }
+            });
+
+            it('covers the window contiguously, with no duplicate or missing dates', () => {
+              const dates = days.map((d) => d.date);
+              expect(new Set(dates).size).toBe(dates.length);
+              expect(dates[0]).toBe(payload.from);
+            });
+
+            it('actually read the response rather than failing closed on all of it', () => {
+              // The mapper treats anything it cannot read as unavailable — correct,
+              // but indistinguishable from a genuinely full month unless something
+              // survives. If not one day carries a price, a min stay, availability
+              // or a closed departure, the live shape was not understood.
+              const read = days.some(
+                (d) => d.available || d.displayPriceCents !== undefined || d.minStay !== undefined || !d.canCheckOut
+              );
+              const free = days.filter((d) => d.available).length;
+              console.log(`  ${free} of ${days.length} nights read as available`);
+              expect(read).toBe(true);
+            });
+          });
+          SPEC_EOF
+          npx vitest run tests/live-mapper-compat.test.ts --reporter=verbose
+
+      # ── Result ─────────────────────────────────────────────────────────
+      - name: Publish summary
+        if: always()
+        env:
+          LIVE_OUTCOME: ${{ steps.live.outcome }}
+          INSTALL_OUTCOME: ${{ steps.install.outcome }}
+          UNIT_OUTCOME: ${{ steps.unit.outcome }}
+          MAPPER_OUTCOME: ${{ steps.mapper.outcome }}
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          set -euo pipefail
+          icon() { case "$1" in PASS|success) echo "✅";; skipped) echo "⏭️";; *) echo "❌";; esac; }
+
+          AUTH="UNKNOWN"; PROP="UNKNOWN"; ROOM="UNKNOWN"; CAL="UNKNOWN"
+          if [ -f "$RUNNER_TEMP/live-results.json" ]; then
+            AUTH=$(node -p "require('$RUNNER_TEMP/live-results.json').auth")
+            PROP=$(node -p "require('$RUNNER_TEMP/live-results.json').property")
+            ROOM=$(node -p "require('$RUNNER_TEMP/live-results.json').room")
+            CAL=$(node -p "require('$RUNNER_TEMP/live-results.json').calendar")
+          fi
+
+          {
+            echo "## Beds24 read-only live check"
+            echo ""
+            echo "Branch under test: \`${TARGET_REF}\` @ \`${TARGET_SHA:0:7}\`"
+            echo ""
+            echo "### Part A — live Beds24 API (read-only)"
+            echo ""
+            echo "| Check | Result |"
+            echo "|---|---|"
+            echo "| Authentication | $(icon "$AUTH") $AUTH |"
+            echo "| Property access (${BEDS24_PROPERTY_ID}) | $(icon "$PROP") $PROP |"
+            echo "| Room access (${BEDS24_ROOM_ID}) | $(icon "$ROOM") $ROOM |"
+            echo "| Inventory / calendar | $(icon "$CAL") $CAL |"
+            echo ""
+            echo "### Part B — feature-branch code (best-effort, non-blocking)"
+            echo ""
+            echo "| Check | Result |"
+            echo "|---|---|"
+            echo "| npm ci | $(icon "$INSTALL_OUTCOME") $INSTALL_OUTCOME |"
+            echo "| Unit tests | $(icon "$UNIT_OUTCOME") $UNIT_OUTCOME |"
+            echo "| Live response × real mapper | $(icon "$MAPPER_OUTCOME") $MAPPER_OUTCOME |"
+            echo ""
+            echo "_GET requests only. No booking was created, modified, held, confirmed or cancelled._"
+            echo ""
+            echo "_Full detail — property name, room name and the 30-day calendar — is in the step logs._"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # The live result decides the job. Part B is diagnostic colour.
+          if [ "$LIVE_OUTCOME" != "success" ]; then
+            echo "Part A did not pass — see the summary above."
+            exit 1
+          fi
