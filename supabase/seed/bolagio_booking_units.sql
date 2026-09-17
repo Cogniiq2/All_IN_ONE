@@ -46,30 +46,64 @@ on conflict (slug) do update
 
 -- ── The Beds24 mapping ─────────────────────────────────────────────────────
 --
--- Find the ids in Beds24 under Settings → Properties (property id) and
--- Settings → Rooms (room id). They are NEVER hardcoded anywhere in the
--- application — the frontend only ever knows a BoLaGio slug.
+-- CONFIRMED against the live Beds24 account on 2026-09-17 by enumerating it
+-- (`GET /properties?includeAllRooms=true`) rather than by assumption. An
+-- earlier revision of this file guessed, and guessed wrong: property 354659
+-- was assumed to be one unit and is in fact the other.
 --
--- Uncomment and fill in one block per unit, then set that unit's `is_bookable`
--- to true once `POST /api/booking/sync` has run for it without errors.
+-- These ids appear in the database and nowhere else. No component, route or
+-- content file knows a Beds24 id — the frontend only ever knows a slug, and
+-- the mapping is resolved server-side at request time. That is what makes a
+-- channel-manager change a data migration rather than a refactor.
 
--- insert into bolagio_unit_integrations
---   (unit_id, provider, external_property_id, external_room_id, enabled)
--- select id, 'beds24', '<BEDS24_PROPERTY_ID>', '<BEDS24_ROOM_ID>', true
---   from bolagio_units where slug = 'schulstrasse-i'
--- on conflict (unit_id, provider) do update
---   set external_property_id = excluded.external_property_id,
---       external_room_id     = excluded.external_room_id,
---       enabled              = excluded.enabled;
+insert into bolagio_unit_integrations
+  (unit_id, provider, external_property_id, external_room_id, enabled)
+select id, 'beds24', '354659', '731147', true
+  from bolagio_units where slug = 'schulstrasse-i'
+on conflict (unit_id, provider) do update
+  set external_property_id = excluded.external_property_id,
+      external_room_id     = excluded.external_room_id,
+      enabled              = excluded.enabled;
 
--- insert into bolagio_unit_integrations
---   (unit_id, provider, external_property_id, external_room_id, enabled)
--- select id, 'beds24', '<BEDS24_PROPERTY_ID>', '<BEDS24_ROOM_ID>', true
---   from bolagio_units where slug = 'schulstrasse-ii'
--- on conflict (unit_id, provider) do update
---   set external_property_id = excluded.external_property_id,
---       external_room_id     = excluded.external_room_id,
---       enabled              = excluded.enabled;
+insert into bolagio_unit_integrations
+  (unit_id, provider, external_property_id, external_room_id, enabled)
+select id, 'beds24', '354658', '731146', true
+  from bolagio_units where slug = 'schulstrasse-ii'
+on conflict (unit_id, provider) do update
+  set external_property_id = excluded.external_property_id,
+      external_room_id     = excluded.external_room_id,
+      enabled              = excluded.enabled;
+
+-- The three Opernstraße flats deliberately get NO mapping row. No Beds24 ids
+-- have been confirmed for them, and an invented id is worse than an absent
+-- one: a unit with no provider mapping is reported as `unsourced` and keeps
+-- the enquiry flow, whereas a unit pointed at the wrong room sells the wrong
+-- apartment and looks perfectly healthy while doing it.
+
+-- ── Booking.com property ids, for reference only ───────────────────────────
+--
+--   schulstrasse-i   → 14282341
+--   schulstrasse-ii  → 14401037
+--
+-- Recorded here as documentation and NOT modelled as an integration row, on
+-- purpose. `bolagio_unit_integrations` describes systems this application
+-- talks to, and this one never talks to Booking.com: Beds24 owns that
+-- connection, and a row here would imply a direct coupling the architecture
+-- explicitly forbids. A Booking.com reservation reaches us already
+-- translated, through the Beds24 webhook, carrying `source = booking_com`.
+--
+-- If these ids are ever genuinely needed — reconciling a Booking.com report
+-- against BoLaGio revenue, say — they belong in their own mapping table with
+-- their own purpose, not smuggled into the channel-manager one.
 
 -- ── Opening a residence for sale ───────────────────────────────────────────
+--
+-- Still deliberately commented out. The mapping above is confirmed, but
+-- nothing that WRITES to Beds24 has been exercised yet — no hold has ever
+-- been created or released against this account. Until the controlled
+-- hold/release test has passed (docs/beds24-write-test-plan.md), a guest
+-- reaching the booking flow would be the first ever write, which is not a
+-- thing to discover in production.
+--
 -- update bolagio_units set is_bookable = true where slug = 'schulstrasse-i';
+-- update bolagio_units set is_bookable = true where slug = 'schulstrasse-ii';

@@ -12,7 +12,8 @@
     "cf:preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "cf:deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:beds24-write": "vitest run --config vitest.write-test.config.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",

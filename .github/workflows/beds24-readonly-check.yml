@@ -62,12 +62,14 @@ env:
   # free-form ref plus a live credential is a combination worth not
   # offering. The resolved ref and SHA are printed in the summary.
   TARGET_REF: claude/opernstrasse-ii-iii-calendar-cta-dates
-  # The ids currently believed to be correct. This run tests that belief
-  # rather than relying on it — see the discovery step.
-  BEDS24_PROPERTY_ID: "354659"
-  BEDS24_ROOM_ID: "731147"
-  # Printed for manual cross-reference only. Never queried.
-  BOOKING_COM_PROPERTY_ID: "14282341"
+  # The CONFIRMED mapping, established by enumerating the account on
+  # 2026-09-17. Each run re-verifies that these pairs still exist rather than
+  # assuming they do — an id that silently stops existing would otherwise
+  # surface as an empty calendar, which looks like a full month.
+  # `bookingCom` is printed for cross-reference only and is never queried.
+  BEDS24_UNITS: >-
+    [{"slug":"schulstrasse-i","propertyId":"354659","roomId":"731147","bookingCom":"14282341"},
+     {"slug":"schulstrasse-ii","propertyId":"354658","roomId":"731146","bookingCom":"14401037"}]
 
 jobs:
   check:
@@ -108,9 +110,7 @@ jobs:
 
           const BASE_URL = process.env.BEDS24_API_BASE_URL?.trim() || 'https://beds24.com/api/v2';
           const REFRESH_TOKEN = process.env.BEDS24_REFRESH_TOKEN?.trim();
-          const PROPERTY_ID = process.env.BEDS24_PROPERTY_ID;
-          const ROOM_ID = process.env.BEDS24_ROOM_ID;
-          const BOOKING_COM_PROPERTY_ID = process.env.BOOKING_COM_PROPERTY_ID;
+          const UNITS = JSON.parse(process.env.BEDS24_UNITS);
           const TEMP = process.env.RUNNER_TEMP;
 
           const results = {
@@ -154,10 +154,12 @@ jobs:
             console.log('════════════════════════════════════════════════════════════');
             console.log(' BEDS24 API V2 — READ-ONLY LIVE CHECK (rev 2)');
             console.log('════════════════════════════════════════════════════════════');
-            console.log(`Base URL:                    ${BASE_URL}`);
-            console.log(`Configured property id:      ${PROPERTY_ID}`);
-            console.log(`Configured room id:          ${ROOM_ID}`);
-            console.log(`Booking.com property id:     ${BOOKING_COM_PROPERTY_ID}  (reference only, not queried)`);
+            console.log(`Base URL:  ${BASE_URL}`);
+            console.log('Configured mapping under test:');
+            for (const u of UNITS) {
+              console.log(`  ${pad(u.slug, 18)} property ${pad(u.propertyId, 8)} room ${pad(u.roomId, 8)} ` +
+                          `(Booking.com ${u.bookingCom} — reference only, not queried)`);
+            }
             console.log('');
 
             if (!REFRESH_TOKEN) {
@@ -246,65 +248,79 @@ jobs:
             console.log('');
 
             // ── 3. Do the configured ids actually exist? ───────────────
-            console.log('── 3. Are the configured ids real? ────────────────────────');
+            console.log('── 3. Does the confirmed mapping still hold? ──────────────');
             if (properties.length === 0) {
               results.configuredIds = 'FAIL (no properties to check against)';
-              console.log('✗ Nothing was discovered, so the configured ids cannot be checked.');
+              console.log('✗ Nothing was discovered, so the mapping cannot be checked.');
             } else {
-              const match = properties.find((p) => p.pid === PROPERTY_ID);
-              if (!match) {
-                results.configuredIds = 'FAIL (property id not on this account)';
-                console.log(`✗ Property ${PROPERTY_ID} is not among the properties this token can see.`);
-              } else if (!match.rooms.includes(ROOM_ID)) {
-                results.configuredIds = 'FAIL (room id not in that property)';
-                console.log(`✓ Property ${PROPERTY_ID} exists — "${match.name}"`);
-                console.log(`✗ But room ${ROOM_ID} is not one of its rooms: [${match.rooms.join(', ') || 'none returned'}]`);
-              } else {
-                results.configuredIds = 'PASS';
-                console.log(`✓ Property ${PROPERTY_ID} ("${match.name}") contains room ${ROOM_ID}.`);
-                console.log('  NOTE: this confirms the pair is REAL, not that it is the right');
-                console.log('  unit. Which BoLaGio apartment it is remains a human judgement');
-                console.log('  against the names printed above.');
+              const problems = [];
+              for (const u of UNITS) {
+                const match = properties.find((p) => p.pid === u.propertyId);
+                if (!match) {
+                  problems.push(`${u.slug}: property ${u.propertyId} not on this account`);
+                  console.log(`✗ ${u.slug}: property ${u.propertyId} is not among the visible properties.`);
+                } else if (!match.rooms.includes(u.roomId)) {
+                  problems.push(`${u.slug}: room ${u.roomId} not in property ${u.propertyId}`);
+                  console.log(`✗ ${u.slug}: property ${u.propertyId} ("${match.name}") exists, but room ` +
+                              `${u.roomId} is not one of its rooms: [${match.rooms.join(', ') || 'none returned'}]`);
+                } else {
+                  console.log(`✓ ${pad(u.slug, 18)} → property ${u.propertyId} ("${match.name}"), room ${u.roomId}`);
+                }
+              }
+              results.configuredIds = problems.length === 0 ? 'PASS' : `FAIL (${problems.join('; ')})`;
+              if (problems.length === 0) {
+                console.log('  Both pairs still exist. That they are the RIGHT units was settled');
+                console.log('  by a person against the names above; this only re-checks they are real.');
               }
             }
             console.log('');
 
             // ── 4. Inventory calendar ──────────────────────────────────
-            console.log('── 4. Inventory / calendar (next 30 days) ─────────────────');
+            console.log('── 4. Inventory / calendar, per unit (next 30 days) ───────');
             const from = todayIso();
             const to = addDaysIso(from, 30);
-            try {
-              const params = new URLSearchParams({
-                roomId: ROOM_ID, propertyId: PROPERTY_ID, startDate: from, endDate: to,
-                includeNumAvail: 'true', includeMinStay: 'true', includeMaxStay: 'true', includePrices: 'true',
-              });
-              const res = await fetch(`${BASE_URL}/inventory/rooms/calendar?${params.toString()}`, { headers });
-              const body = await res.json().catch(() => null);
-              const runs = (body?.data ?? []).flatMap((room) => room.calendar ?? []);
+            const calendarProblems = [];
 
-              if (res.ok && runs.length > 0) {
-                results.calendar = 'PASS';
-                console.log(`✓ Calendar data returned: ${runs.length} run(s) covering ${from} → ${to}.`);
-                console.log('');
-                console.log('  from          to            numAvail  minStay  maxStay  price1');
-                console.log('  ' + '─'.repeat(66));
-                for (const r of runs) {
-                  console.log(`  ${pad(r.from, 12)}  ${pad(r.to, 12)}  ${pad(r.numAvail, 8)}  ${pad(r.minStay, 7)}  ${pad(r.maxStay, 7)}  ${r.price1 ?? ''}`);
+            for (const u of UNITS) {
+              console.log('');
+              console.log(`  ${u.slug} — property ${u.propertyId}, room ${u.roomId}`);
+              try {
+                const params = new URLSearchParams({
+                  roomId: u.roomId, propertyId: u.propertyId, startDate: from, endDate: to,
+                  includeNumAvail: 'true', includeMinStay: 'true', includeMaxStay: 'true', includePrices: 'true',
+                });
+                const res = await fetch(`${BASE_URL}/inventory/rooms/calendar?${params.toString()}`, { headers });
+                const body = await res.json().catch(() => null);
+                const runs = (body?.data ?? []).flatMap((room) => room.calendar ?? []);
+
+                if (res.ok && runs.length > 0) {
+                  console.log(`  ✓ ${runs.length} run(s) covering ${from} → ${to}.`);
+                  console.log('    from          to            numAvail  minStay  maxStay  price1');
+                  console.log('    ' + '─'.repeat(66));
+                  for (const r of runs) {
+                    console.log(`    ${pad(r.from, 12)}  ${pad(r.to, 12)}  ${pad(r.numAvail, 8)}  ${pad(r.minStay, 7)}  ${pad(r.maxStay, 7)}  ${r.price1 ?? ''}`);
+                  }
+                  // The first unit's response is handed to Part B for the real
+                  // mapper. One is enough to prove the shape.
+                  if (u.slug === UNITS[0].slug) {
+                    writeFileSync(`${TEMP}/beds24-calendar.json`, JSON.stringify({ body, from, to }));
+                  }
+                } else {
+                  calendarProblems.push(`${u.slug}: HTTP ${res.status}`);
+                  console.log(`  ✗ Calendar fetch failed or returned no data — HTTP ${res.status}`);
+                  console.log(`    Response: ${brief(body)}`);
                 }
-                console.log('');
-                console.log('  → Open this room\'s calendar in Beds24 for the same range and confirm');
-                console.log('    these dates match. In particular, a reservation\'s CHECKOUT date');
-                console.log('    should show numAvail > 0 — it is a departure, not an occupied night.');
-                writeFileSync(`${TEMP}/beds24-calendar.json`, JSON.stringify({ body, from, to }));
-              } else {
-                results.calendar = `FAIL (HTTP ${res.status})`;
-                console.log(`✗ Calendar fetch failed or returned no data — HTTP ${res.status}`);
-                console.log(`  Response: ${brief(body)}`);
+              } catch (err) {
+                calendarProblems.push(`${u.slug}: ${err.message}`);
+                console.log(`  ✗ Calendar request errored: ${err.message}`);
               }
-            } catch (err) {
-              results.calendar = `FAIL (${err.message})`;
-              console.log(`✗ Calendar request errored: ${err.message}`);
             }
+
+            results.calendar = calendarProblems.length === 0 ? 'PASS' : `FAIL (${calendarProblems.join('; ')})`;
+            console.log('');
+            console.log('  → Open each room\'s calendar in Beds24 for the same range and confirm');
+            console.log('    the dates match. In particular, a reservation\'s CHECKOUT date should');
+            console.log('    show numAvail > 0 — it is a departure, not an occupied night.');
             console.log('');
 
             finish();
@@ -444,8 +460,8 @@ jobs:
             echo "|---|---|"
             echo "| Authentication | $(icon "$AUTH") $AUTH |"
             echo "| Discovery — all properties + rooms | $(icon "$DISC") $DISC |"
-            echo "| Configured ids exist (${BEDS24_PROPERTY_ID} / ${BEDS24_ROOM_ID}) | $(icon "$IDS") $IDS |"
-            echo "| Inventory / calendar | $(icon "$CAL") $CAL |"
+            echo "| Confirmed mapping still valid | $(icon "$IDS") $IDS |"
+            echo "| Inventory / calendar (both units) | $(icon "$CAL") $CAL |"
             echo ""
             echo "### Part B — feature-branch code (best-effort, non-blocking)"
             echo ""
