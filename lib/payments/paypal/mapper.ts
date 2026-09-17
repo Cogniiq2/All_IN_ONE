@@ -21,6 +21,7 @@ import type {
   PayPalCaptureStatus,
   PayPalOrder,
   PayPalOrderStatus,
+  PayPalPurchaseUnit,
   PayPalWebhookEvent,
 } from '@/lib/payments/paypal/types';
 
@@ -104,8 +105,15 @@ function firstCapture(order: PayPalOrder): PayPalCapture | undefined {
   return undefined;
 }
 
-function referenceOf(order: PayPalOrder): string | undefined {
-  for (const unit of order.purchase_units ?? []) {
+/**
+ * Our reference, from the first purchase unit that carries one.
+ *
+ * Takes the purchase units rather than a whole order, so it serves both an
+ * order response and a webhook resource — which are different shapes that
+ * happen to nest the same field.
+ */
+function referenceOf(units: PayPalPurchaseUnit[] | undefined): string | undefined {
+  for (const unit of units ?? []) {
     if (typeof unit.custom_id === 'string' && unit.custom_id) return unit.custom_id;
   }
   return undefined;
@@ -130,7 +138,7 @@ export function mapOrder(order: PayPalOrder): ProviderOrder {
     approveUrl: (order.links ?? []).find((l) => l.rel === 'approve' || l.rel === 'payer-action')?.href,
     captureId: capture?.id ? String(capture.id) : undefined,
     captured,
-    reference: capture?.custom_id ?? referenceOf(order),
+    reference: capture?.custom_id ?? referenceOf(order.purchase_units),
   };
 }
 
@@ -169,7 +177,10 @@ export function mapWebhookEvent(event: PayPalWebhookEvent): VerifiedPaymentEvent
     eventTime: typeof event.create_time === 'string' ? event.create_time : undefined,
     orderId: orderId ? String(orderId) : undefined,
     captureId,
-    reference: typeof resource.custom_id === 'string' ? resource.custom_id : referenceOf(resource),
+    reference:
+      typeof resource.custom_id === 'string'
+        ? resource.custom_id
+        : referenceOf(resource.purchase_units),
     amountCents: money?.amountCents,
     currency: money?.currency,
     state: stateFromEventType(eventType, resource.status as PayPalCaptureStatus | undefined),

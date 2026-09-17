@@ -178,7 +178,7 @@ describe('mapWebhookEvent', () => {
     resource_type: 'capture',
     resource: {
       id: 'CAP-9',
-      status: 'COMPLETED' as const,
+      status: 'COMPLETED',
       custom_id: 'BLG-DDDDDD',
       amount: { currency_code: 'EUR', value: '425.00' },
       supplementary_data: { related_ids: { order_id: 'ORDER-9' } },
@@ -201,7 +201,7 @@ describe('mapWebhookEvent', () => {
     // event name is a routing label; the status is the fact.
     const event = mapWebhookEvent({
       ...capture,
-      resource: { ...capture.resource, status: 'PENDING' as const },
+      resource: { ...capture.resource, status: 'PENDING' },
     })!;
     expect(event.state).toBe('capture_pending');
   });
@@ -237,7 +237,7 @@ describe('sanitize', () => {
     resource_type: 'capture',
     resource: {
       id: 'CAP-5',
-      status: 'COMPLETED' as const,
+      status: 'COMPLETED',
       custom_id: 'BLG-EEEEEE',
       amount: { currency_code: 'EUR', value: '425.00' },
       // Everything below must NOT survive.

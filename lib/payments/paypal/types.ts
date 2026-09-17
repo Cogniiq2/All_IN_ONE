@@ -101,16 +101,40 @@ export interface PayPalVerificationResponse {
   verification_status?: 'SUCCESS' | 'FAILURE';
 }
 
-/** The webhook envelope PayPal POSTs. */
+/**
+ * The webhook envelope PayPal POSTs.
+ *
+ * ── Why `resource` is its own loose shape ────────────────────────────────
+ * It was first modelled as `PayPalCapture & PayPalOrder & PayPalRefund`,
+ * which is wrong in a way TypeScript catches immediately: intersecting three
+ * types narrows `status` to the values all three share, so a perfectly
+ * ordinary `DECLINED` capture stops being assignable. A webhook resource is
+ * one of several kinds — which one is told by `resource_type` and the event
+ * name — so `status` is a plain string here and the mapper narrows it.
+ *
+ * That is the same rule the Beds24 types follow: loose at the wire, narrowed
+ * in exactly one place.
+ */
 export interface PayPalWebhookEvent {
   id?: string;
   event_type?: string;
   create_time?: string;
   resource_type?: string;
   summary?: string;
-  resource?: PayPalCapture & PayPalOrder & PayPalRefund & {
-    supplementary_data?: { related_ids?: { order_id?: string } };
-  };
+  resource?: PayPalWebhookResource;
+}
+
+export interface PayPalWebhookResource {
+  id?: number | string;
+  /** A capture, order or refund status, depending on the event. */
+  status?: string;
+  custom_id?: string;
+  invoice_id?: string;
+  final_capture?: boolean;
+  create_time?: string;
+  amount?: PayPalAmount;
+  purchase_units?: PayPalPurchaseUnit[];
+  supplementary_data?: { related_ids?: { order_id?: string } };
 }
 
 /** Event types this system acts on. Anything else is stored and ignored. */
