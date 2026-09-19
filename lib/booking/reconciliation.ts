@@ -212,6 +212,35 @@ async function sweep(logger: BookingLogger): Promise<number> {
   return queued;
 }
 
+/**
+ * The reconciliation job a booking in a given state would be swept into.
+ *
+ * Exported so an operator's "reconcile now" queues EXACTLY the job the sweep
+ * would have queued — one vocabulary, one set of handlers — rather than a
+ * second opinion about what is wrong. Null means the sweep would leave it
+ * alone (a state already in a human's hands, or one with nothing to do).
+ */
+export function reconciliationReasonFor(
+  status: string,
+  paymentStatus?: string
+): { code: Parameters<typeof queueReconciliation>[1]; severity: number } | null {
+  if (paymentStatus === 'unknown') return { code: 'PAYMENT_PROVIDER_UNCERTAIN', severity: 1 };
+  switch (status) {
+    case 'draft':
+    case 'quoted':
+    case 'quote_expired':
+    case 'unavailable':
+    case 'hold_failed':
+    case 'released':
+    case 'cancelled':
+    case 'confirmed':
+    case 'expired':
+      return null;
+    default:
+      return sweepReason(status);
+  }
+}
+
 function sweepReason(
   status: string
 ): { code: Parameters<typeof queueReconciliation>[1]; severity: number } | null {

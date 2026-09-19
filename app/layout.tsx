@@ -1,8 +1,6 @@
 import './globals.css';
 import type { Metadata } from 'next';
 import { Playfair_Display, Inter } from 'next/font/google';
-import { ClientLayout } from '@/components/layout/client-layout';
-import { JsonLd, organizationSchema } from '@/components/shared/json-ld';
 import { SITE_URL, brand } from '@/lib/content/brand';
 
 /**
@@ -81,6 +79,16 @@ export const metadata: Metadata = {
   },
 };
 
+/**
+ * The root layout carries only what EVERY surface shares: the document, the
+ * self-hosted fonts and the default metadata.
+ *
+ * The public website's providers, navigation, footer, modals and JSON-LD live
+ * in `app/(site)/layout.tsx`; BoLaGio Control has its own shell under
+ * `app/(admin)/admin/layout.tsx`. Neither inherits the other's chrome, so the
+ * operations interface cannot ship the marketing providers and the marketing
+ * site cannot ship the operations shell.
+ */
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
@@ -88,12 +96,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       suppressHydrationWarning
       className={`${playfair.variable} ${inter.variable}`}
     >
-      <head>
-        <JsonLd data={organizationSchema} />
-      </head>
-      <body>
-        <ClientLayout>{children}</ClientLayout>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

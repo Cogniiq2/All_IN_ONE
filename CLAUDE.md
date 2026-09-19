@@ -33,10 +33,17 @@ Next.js App Router application at the root *is* the site (Cloudflare worker `bol
 ```
 app/                      App Router routes. Each route: page.tsx (server, metadata)
                           delegating to *-client.tsx (interactive body).
-  layout.tsx              Root layout — fonts (next/font), global metadata, JSON-LD
+  layout.tsx              Root layout — document, fonts (next/font), default metadata
+  (site)/                 The public website (route group; URLs unchanged).
+    layout.tsx            Site providers, navbar, footer, modals, organisation JSON-LD
+    page.tsx, about/, apartments/, … , not-found.tsx, [...notFound]/
+  (admin)/admin/          BoLaGio Control — the internal operations interface.
+                          Own layout + scoped stylesheet; auth in (control)/layout.tsx.
+                          Never linked from the public site. See docs/admin-control.md.
   globals.css             Design tokens (HSL custom properties) + base layer
   sitemap.ts, robots.ts, icon.tsx, apple-icon.tsx, opengraph-image.tsx, not-found.tsx
   _archive/               Private folder — NOT routed, not compiled into the site
+middleware.ts             Session gate + noindex/no-store headers for /admin only
 components/
   layout/                 navbar, footer, client-layout (I18n + enquiry providers)
   home/                   homepage sections (hero, apartments, bayreuth, family, direct, closing)
@@ -46,6 +53,8 @@ components/
   ui-kit/                 section / reveal / cta primitives (BoLaGio-specific)
   ui/                     shadcn/ui primitives — generated, edit sparingly
 lib/
+  admin/                  BoLaGio Control: auth, session, permissions, DTOs, queries,
+                          presentation, attention model, server actions (see docs/admin-control.md)
   content/apartments.ts   Property data — single source of truth
   content/brand.ts        Brand, contact, SITE_URL, ENQUIRY_ENDPOINT, PAYMENT_ENABLED
   content/media.ts        Image registry (paths + alt text). Components never hardcode paths.
@@ -66,6 +75,10 @@ netlify.toml              Legacy secondary deploy target
 `/bayreuth-2026` · `/faq` · `/journal` · `/journal/[slug]` · `/impressum` · `/datenschutz` · `/agb`
 
 Legal and public routes already exist — preserve them.
+
+Internal (authenticated, noindex, not in the sitemap): `/admin` · `/admin/calendar` ·
+`/admin/bookings` · `/admin/bookings/[reference]` · `/admin/operations` · `/admin/properties` ·
+`/admin/payments` · `/admin/system` · `/admin/login`.
 
 ### Commands
 
