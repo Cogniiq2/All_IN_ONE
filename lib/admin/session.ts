@@ -39,6 +39,13 @@ export interface SessionClaims {
   iat: number;
   /** Expires at, seconds. */
   exp: number;
+  /**
+   * What this token is for. Absent on an operator session — which keeps
+   * every existing token byte-identical — and set on a preview-demo one, so
+   * the two can never be verified as each other even before their different
+   * cookies and different keys are considered.
+   */
+  aud?: string;
 }
 
 export type SessionVerdict =
@@ -80,9 +87,15 @@ export function isUsableSecret(secret: string | undefined): secret is string {
   return typeof secret === 'string' && secret.trim().length >= MIN_SECRET_LENGTH;
 }
 
-/** Mint a token. `now` is injectable for tests. */
+/**
+ * Mint a token. `now` is injectable for tests.
+ *
+ * `audience` is omitted for an operator session, so the signed payload is
+ * exactly what it has always been; a preview-demo session passes one and its
+ * token is structurally distinct.
+ */
 export async function signSession(
-  input: { sub: string; email: string },
+  input: { sub: string; email: string; audience?: string },
   secret: string,
   now: Date = new Date()
 ): Promise<string> {
@@ -94,6 +107,7 @@ export async function signSession(
     email: input.email.trim().toLowerCase(),
     iat,
     exp: iat + SESSION_TTL_SECONDS,
+    ...(input.audience ? { aud: input.audience } : {}),
   };
   const body = base64url(encoder.encode(JSON.stringify(claims)));
   const signature = await crypto.subtle.sign('HMAC', await hmacKey(secret), encoder.encode(body));
@@ -107,7 +121,8 @@ export async function signSession(
 export async function verifySession(
   token: string | undefined | null,
   secret: string | undefined,
-  now: Date = new Date()
+  now: Date = new Date(),
+  audience?: string
 ): Promise<SessionVerdict> {
   if (!isUsableSecret(secret)) return { ok: false, reason: 'unconfigured' };
   if (!token) return { ok: false, reason: 'missing' };
@@ -142,6 +157,10 @@ export async function verifySession(
   ) {
     return { ok: false, reason: 'malformed' };
   }
+  // An operator verifier passes no audience and refuses any token that
+  // carries one; a preview verifier requires its own. Neither can ever
+  // accept the other's token, whatever happens to the keys.
+  if ((claims.aud ?? undefined) !== audience) return { ok: false, reason: 'malformed' };
   if (claims.exp * 1000 <= now.getTime()) return { ok: false, reason: 'expired' };
   return { ok: true, claims };
 }

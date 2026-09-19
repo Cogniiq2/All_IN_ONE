@@ -3,6 +3,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState, type ReactNode } from 'react';
 import { SidebarNav } from '@/components/admin/shell/sidebar-nav';
+import { PreviewFlag } from '@/components/admin/shell/preview-flag';
 
 /**
  * The compact top bar for phones and tablets, with a slide-over navigation.
@@ -12,16 +13,17 @@ import { SidebarNav } from '@/components/admin/shell/sidebar-nav';
  * outside tap close it, and the page behind is inert. The drawer contains the
  * same `SidebarNav` the desktop rail uses, so there is one navigation.
  */
-export function MobileBar({ attentionCount, footer }: { attentionCount: number; footer: ReactNode }) {
+export function MobileBar({ attentionCount, footer, preview }: { attentionCount: number; footer: ReactNode; preview?: boolean }) {
   const [open, setOpen] = useState(false);
 
   return (
     <header className="bc-topbar">
-      <div className="flex items-baseline">
+      <div className="flex min-w-0 items-baseline gap-2">
         <span className="bc-brand-word">
           B<span>o</span>L<span>a</span>G<span>io</span>
         </span>
         <span className="bc-topbar-control">Control</span>
+        {preview && <PreviewFlag compact />}
       </div>
 
       <Dialog.Root open={open} onOpenChange={setOpen}>

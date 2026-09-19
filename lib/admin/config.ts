@@ -21,6 +21,7 @@ import {
   supabaseConfig,
 } from '@/lib/booking/config';
 import { isUsableSecret } from '@/lib/admin/session';
+import { appEnv, isPreviewDemoEnabled } from '@/lib/admin/preview';
 
 function env(name: string): string | undefined {
   const value = process.env[name];
@@ -61,13 +62,26 @@ export function devFixtureCredentials(): { email: string; password: string } | n
   return { email: email.toLowerCase(), password };
 }
 
-export type AdminMode = 'supabase' | 'fixture' | 'unconfigured';
+export type AdminMode = 'supabase' | 'fixture' | 'preview' | 'unconfigured';
 
-/** Where the interface reads from. */
+/**
+ * Where the interface reads from.
+ *
+ * `preview` outranks `supabase` deliberately. A deployment that has declared
+ * itself a preview AND switched the demo on serves fixtures to everyone, so
+ * there is no request path on it that can reach production booking data —
+ * not through a demo session, and not through an operator one either.
+ */
 export function adminMode(): AdminMode {
   if (devFixturesEnabled()) return 'fixture';
+  if (isPreviewDemoEnabled()) return 'preview';
   const { url, serviceRoleKey } = supabaseConfig();
   return url && serviceRoleKey ? 'supabase' : 'unconfigured';
+}
+
+/** True when the screens are showing synthetic data of either kind. */
+export function isFixtureData(mode: AdminMode = adminMode()): boolean {
+  return mode === 'fixture' || mode === 'preview';
 }
 
 export function isSecureCookieContext(): boolean {
@@ -83,6 +97,10 @@ export function isSecureCookieContext(): boolean {
  */
 export interface AdminPosture {
   mode: AdminMode;
+  /** What the deployment declares itself to be. Never inferred from NODE_ENV. */
+  appEnv: 'preview' | 'production';
+  /** True only when all four preview-demo conditions hold. */
+  previewDemo: boolean;
   directBookingEnabled: boolean;
   paypalMode: 'sandbox' | 'live' | 'unconfigured';
   paypalCredentialsConfigured: boolean;
@@ -103,6 +121,8 @@ export function adminPosture(): AdminPosture {
   const supabase = supabaseConfig();
   return {
     mode: adminMode(),
+    appEnv: appEnv(),
+    previewDemo: isPreviewDemoEnabled(),
     directBookingEnabled: directBookingEnabled(),
     paypalMode: paypalMode() ?? 'unconfigured',
     paypalCredentialsConfigured: Boolean(paypal.clientId && paypal.clientSecret),

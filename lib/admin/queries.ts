@@ -731,17 +731,42 @@ function postureSections(posture: ReturnType<typeof adminPosture>): HealthSectio
     {
       key: 'control',
       title: 'BoLaGio Control',
-      status: posture.sessionSecretConfigured && (posture.mode === 'fixture' || posture.supabaseAuthConfigured) ? 'healthy' : 'degraded',
+      status:
+        posture.mode === 'preview'
+          ? 'healthy'
+          : posture.sessionSecretConfigured && (posture.mode === 'fixture' || posture.supabaseAuthConfigured)
+            ? 'healthy'
+            : 'degraded',
       summary:
-        posture.mode === 'fixture'
-          ? 'Development fixtures. Nothing on these screens is real.'
-          : posture.sessionSecretConfigured && posture.supabaseAuthConfigured
-            ? 'Operator sessions are signed and identity is verified by Supabase Auth.'
-            : 'Sign-in is refused until the session secret and Supabase Auth are configured.',
+        posture.mode === 'preview'
+          ? 'Preview demo. Synthetic data, read-only, no production booking data and no external provider reachable from this deployment.'
+          : posture.mode === 'fixture'
+            ? 'Development fixtures. Nothing on these screens is real.'
+            : posture.sessionSecretConfigured && posture.supabaseAuthConfigured
+              ? 'Operator sessions are signed and identity is verified by Supabase Auth.'
+              : 'Sign-in is refused until the session secret and Supabase Auth are configured.',
       facts: [
-        { label: 'Data', value: posture.mode === 'fixture' ? 'Fixtures' : posture.mode === 'supabase' ? 'Supabase' : 'Unconfigured', tone: posture.mode === 'fixture' ? 'caution' : undefined },
-        { label: 'Session secret', value: posture.sessionSecretConfigured ? 'Configured' : 'Missing', tone: posture.sessionSecretConfigured ? 'positive' : 'critical' },
-        { label: 'Identity', value: posture.supabaseAuthConfigured ? 'Supabase Auth' : posture.mode === 'fixture' ? 'Fixture operator' : 'Missing', tone: posture.supabaseAuthConfigured ? 'positive' : posture.mode === 'fixture' ? 'caution' : 'critical' },
+        {
+          label: 'Data',
+          value: posture.mode === 'preview' ? 'Preview fixtures' : posture.mode === 'fixture' ? 'Fixtures' : posture.mode === 'supabase' ? 'Supabase' : 'Unconfigured',
+          tone: posture.mode === 'fixture' || posture.mode === 'preview' ? 'caution' : undefined,
+        },
+        { label: 'Deployment', value: posture.appEnv === 'preview' ? 'Preview' : 'Production', tone: posture.appEnv === 'preview' ? 'caution' : undefined },
+        posture.mode === 'preview'
+          ? { label: 'Writes', value: 'Disabled', tone: 'muted' as const }
+          : { label: 'Session secret', value: posture.sessionSecretConfigured ? 'Configured' : 'Missing', tone: posture.sessionSecretConfigured ? 'positive' : 'critical' },
+        {
+          label: 'Identity',
+          value:
+            posture.mode === 'preview'
+              ? 'Preview credentials'
+              : posture.supabaseAuthConfigured
+                ? 'Supabase Auth'
+                : posture.mode === 'fixture'
+                  ? 'Fixture operator'
+                  : 'Missing',
+          tone: posture.supabaseAuthConfigured ? 'positive' : posture.mode === 'fixture' || posture.mode === 'preview' ? 'caution' : 'critical',
+        },
       ],
     },
   ];

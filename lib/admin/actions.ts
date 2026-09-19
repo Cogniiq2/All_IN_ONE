@@ -23,7 +23,16 @@
 import { headers } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { audit, authenticate, clearSession, currentOperator, establishSession, operatorFor } from '@/lib/admin/auth';
+import {
+  audit,
+  authenticate,
+  authenticatePreview,
+  clearSession,
+  currentOperator,
+  establishPreviewSession,
+  establishSession,
+  operatorFor,
+} from '@/lib/admin/auth';
 import { adminMode } from '@/lib/admin/config';
 import { createLogger } from '@/lib/booking/logger';
 import { clientKey, rateLimit } from '@/lib/booking/http';
@@ -61,16 +70,26 @@ export async function signInAction(formData: FormData): Promise<SignInState> {
     if (cause instanceof BookingError && cause.code === 'rate_limited') return { error: SIGN_IN_MESSAGE.rate_limited };
   }
 
-  const result = await authenticate(email, password);
+  // Two sign-in paths that never meet. A preview-demo deployment runs the
+  // demo one and nothing else; every other deployment runs the operator one
+  // and nothing else. Neither can be reached from the other's environment.
+  const preview = adminMode() === 'preview';
+
+  const result = preview ? await authenticatePreview(email, password) : await authenticate(email, password);
   if (!result.ok) {
     // Refusals are audited by reason, never by password. The email is the
-    // operator's own business identity, not guest data.
+    // operator's own business identity, not guest data. (In preview the
+    // audit is a no-op: there is no database to write to.)
     await audit({ operator: null, action: 'auth.sign_in', outcome: `denied:${result.reason}`, detail: { email } });
     return { error: SIGN_IN_MESSAGE[result.reason] ?? SIGN_IN_MESSAGE.invalid_credentials };
   }
 
-  await establishSession(result.operator);
-  await audit({ operator: result.operator, action: 'auth.sign_in', outcome: 'ok' });
+  if (preview) {
+    await establishPreviewSession(result.operator);
+  } else {
+    await establishSession(result.operator);
+    await audit({ operator: result.operator, action: 'auth.sign_in', outcome: 'ok' });
+  }
   redirect(next);
 }
 
@@ -86,7 +105,7 @@ export async function signOutAction(): Promise<void> {
 export type ReconcileResult =
   | { ok: true; outcome: 'ran'; report: ReconciliationReport; before: string; after: string }
   | { ok: true; outcome: 'nothing_to_do'; status: string }
-  | { ok: false; reason: 'unauthenticated' | 'forbidden' | 'invalid_reference' | 'not_found' | 'fixture' | 'failed' };
+  | { ok: false; reason: 'unauthenticated' | 'forbidden' | 'preview' | 'invalid_reference' | 'not_found' | 'fixture' | 'failed' };
 
 /**
  * Reconcile one booking, now.
@@ -98,6 +117,8 @@ export type ReconcileResult =
  * with payment evidence. This action adds no semantics to that.
  */
 export async function reconcileBookingAction(reference: string): Promise<ReconcileResult> {
+  // A preview-demo session is refused here, before anything else: the gate
+  // returns `preview` for every capability except `view`.
   const gate = await operatorFor('reconcile_booking');
   if (!gate.ok) return { ok: false, reason: gate.reason };
   if (!isBookingReference(reference)) return { ok: false, reason: 'invalid_reference' };
@@ -146,7 +167,7 @@ export async function reconcileBookingAction(reference: string): Promise<Reconci
 
 export type PassResult =
   | { ok: true; report: ReconciliationReport }
-  | { ok: false; reason: 'unauthenticated' | 'forbidden' | 'fixture' | 'failed' };
+  | { ok: false; reason: 'unauthenticated' | 'forbidden' | 'preview' | 'fixture' | 'failed' };
 
 /** One full pass — identical to what the scheduler triggers. */
 export async function runReconciliationPassAction(): Promise<PassResult> {

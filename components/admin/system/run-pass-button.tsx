@@ -19,7 +19,7 @@ export function RunPassButton() {
         Exactly what the scheduler triggers: drain the verified payment inbox, sweep for stuck bookings, work the queue most-severe first. Bounded to 25 jobs.
       </p>
       {result && (
-        <div className="bc-notice" data-tone={result.ok ? 'positive' : result.reason === 'fixture' ? 'caution' : 'critical'} role="status" aria-live="polite">
+        <div className="bc-notice" data-tone={result.ok ? 'positive' : result.reason === 'fixture' || result.reason === 'preview' ? 'caution' : 'critical'} role="status" aria-live="polite">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="9" />
             <path d="M12 11v5M12 8h.01" />
@@ -29,11 +29,13 @@ export function RunPassButton() {
               ? `Pass complete: ${result.report.paymentEvents} payment events processed, ${result.report.queued} newly queued, ${result.report.scanned} jobs claimed — ${result.report.resolved} resolved, ${result.report.failed} to retry, ${result.report.escalated} escalated.`
               : result.reason === 'fixture'
                 ? 'Development fixtures have no reconciliation engine behind them.'
-                : result.reason === 'forbidden'
+                : result.reason === 'preview'
+                  ? 'Preview data is read-only. The reconciliation engine is not reachable from this deployment.'
+                  : result.reason === 'forbidden'
                   ? 'Your role cannot run a pass.'
-                  : result.reason === 'unauthenticated'
-                    ? 'Your session has ended. Sign in again.'
-                    : 'The pass could not complete. See the server log.'}
+                    : result.reason === 'unauthenticated'
+                      ? 'Your session has ended. Sign in again.'
+                      : 'The pass could not complete. See the server log.'}
           </div>
         </div>
       )}

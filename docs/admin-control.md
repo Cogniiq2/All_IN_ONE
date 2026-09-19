@@ -150,7 +150,76 @@ no default). Every screen labels itself "Development fixtures".
 
 ---
 
-## 6. What is measured, and what is not
+## 6. Preview demo mode
+
+For reviewing the interface on a Cloudflare preview without applying the
+booking migrations or pointing anything at production Supabase.
+
+### The guard
+
+A Cloudflare preview **is a production build** — `NODE_ENV` is `production`
+there — so `NODE_ENV` proves nothing and is not consulted. What is required
+instead is that the deployment says what it is, and that the demo is
+switched on deliberately:
+
+| Variable | Required value | Why |
+|---|---|---|
+| `APP_ENV` | exactly `preview` | The deployment declares itself. Unset, empty, mis-cased or any other word reads as **production**. |
+| `ADMIN_PREVIEW_DEMO` | exactly `true` | The deliberate switch. |
+| `ADMIN_PREVIEW_EMAIL` | any address | No default. |
+| `ADMIN_PREVIEW_PASSWORD` | ≥ 16 characters | No default. Also the session key material. |
+
+**All four, or the demo does not exist** — no branch runs, no cookie
+verifies, no credential is accepted. `ADMIN_PREVIEW_DEMO=true` left on a
+worker whose `APP_ENV` is `production` (or unset) does nothing at all, and
+the demo password cannot even be probed there: `previewCredentialsMatch`
+returns `false` before looking at its arguments.
+
+The single gate is `isPreviewDemoEnabled()` in `lib/admin/preview.ts`; every
+preview code path in the application asks that one function.
+
+### What the demo is, and is not
+
+- Serves the same synthetic rows as the development fixtures
+  (`lib/admin/dev/fixtures.ts`). It never constructs a Supabase client, so
+  it needs **no `SUPABASE_SERVICE_ROLE_KEY`**, **no `SUPABASE_URL`**, **no
+  `ADMIN_SESSION_SECRET`** and **no `bolagio_*` tables**.
+- Never reads or writes production booking data, never calls Beds24, never
+  calls PayPal, never calls the reconciliation engine.
+- The session is a **separate cookie** (`bolagio_control_preview`), signed
+  with a key **derived from the demo credentials** (SHA-256 over a
+  domain-separated string) and carrying an explicit `aud: preview-demo`
+  claim. An operator verifier refuses any token with an audience and a
+  preview verifier refuses any token without one, so neither session can
+  ever be accepted as the other even if the keys coincided.
+- The viewer is hard-coded to the `viewer` role, and **every** capability
+  except `view` is refused a second time by `previewAllows()` — so widening
+  `viewer` later still cannot open a write path in the demo.
+- `Reconcile now` and `Run one reconciliation pass` are not rendered, and
+  are refused server-side with `reason: 'preview'` if called anyway.
+- `Preview data` is shown persistently — sidebar footer on desktop, top bar
+  on a phone, the login screen, the overview chips and the System page.
+- `/admin` keeps `noindex, nofollow, noarchive` and `no-store` exactly as
+  on any other deployment.
+
+### Precedence
+
+`preview` outranks `supabase` in `adminMode()` deliberately: a deployment
+that has declared itself a preview and switched the demo on serves fixtures
+to **every** request, so there is no path on it that reaches production
+booking data — not through a demo session and not through an operator one.
+The consequence is worth knowing: setting these variables on a worker that
+does have production Supabase configured turns that worker into a demo. The
+failure direction is safe (no data exposed), but it is a real switch.
+
+Production operator authentication is untouched — same code, same cookie,
+same Supabase path — and is simply not reachable on a preview-demo
+deployment: `authenticate()` returns `unconfigured` there rather than
+sending demo credentials to Supabase.
+
+---
+
+## 7. What is measured, and what is not
 
 The System page reports only what can be measured from BoLaGio's own data:
 
@@ -169,7 +238,7 @@ date changes are not built.
 
 ---
 
-## 7. Relationship to the public site
+## 8. Relationship to the public site
 
 Routes were moved into `app/(site)/` (URLs unchanged) so the public layout
 — providers, navigation, footer, modals, JSON-LD — wraps the site only. The

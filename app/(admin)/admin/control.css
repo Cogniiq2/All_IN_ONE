@@ -393,6 +393,50 @@
   background: hsl(6 62% 62%);
 }
 
+/* ── Preview-demo marker ─────────────────────────────────────────────
+   Persistent on every route of a preview deployment. Quiet enough to
+   ignore while working, present enough that no figure on these screens
+   is ever taken for a live one. */
+.bc-preview-flag {
+  display: inline-flex;
+  align-items: center;
+  /* The login panel is a flex column; without this the pill stretches. */
+  align-self: flex-start;
+  gap: 7px;
+  padding: 3px 9px 3px 8px;
+  border-radius: var(--radius-xs);
+  border: 1px solid hsl(var(--bc-accent-soft) / 0.5);
+  background: hsl(var(--bc-accent-soft) / 0.12);
+  color: hsl(var(--on-dark-gold));
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.bc-preview-flag i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: hsl(var(--on-dark-gold));
+  flex: 0 0 auto;
+}
+
+/* On the bone ground of the mobile top bar rather than the graphite rail. */
+.bc-preview-flag[data-compact='true'] {
+  color: hsl(var(--bc-accent));
+  border-color: hsl(var(--bc-accent) / 0.4);
+  background: hsl(var(--bc-accent-soft) / 0.18);
+  font-size: 9.5px;
+  padding: 2px 7px 2px 6px;
+}
+
+.bc-preview-flag[data-compact='true'] i {
+  background: hsl(var(--bc-accent));
+}
+
 .bc-operator {
   margin-top: 12px;
   display: flex;

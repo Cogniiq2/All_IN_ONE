@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { adminPosture } from '@/lib/admin/config';
 import { LoginForm } from '@/components/admin/auth/login-form';
+import { PreviewFlag } from '@/components/admin/shell/preview-flag';
 
 export const metadata: Metadata = { title: 'Sign in' };
 
@@ -20,7 +21,10 @@ const REASON_TEXT: Record<string, string> = {
  */
 export default function LoginPage({ searchParams }: { searchParams: Record<string, string | string[] | undefined> }) {
   const posture = adminPosture();
-  const configured = posture.sessionSecretConfigured && (posture.mode === 'fixture' || posture.supabaseAuthConfigured);
+  const preview = posture.mode === 'preview';
+  // A preview-demo deployment is configured by its own four variables and
+  // needs neither the operator session secret nor Supabase Auth.
+  const configured = preview || (posture.sessionSecretConfigured && (posture.mode === 'fixture' || posture.supabaseAuthConfigured));
   const nextRaw = typeof searchParams.next === 'string' ? searchParams.next : '';
   const next = nextRaw.startsWith('/admin') && !nextRaw.startsWith('//') ? nextRaw : '/admin';
   const reason = typeof searchParams.reason === 'string' ? REASON_TEXT[searchParams.reason] ?? null : null;
@@ -43,10 +47,14 @@ export default function LoginPage({ searchParams }: { searchParams: Record<strin
             The operating layer behind BoLaGio&rsquo;s residences in Bayreuth. Read from the booking core; nothing here guesses.
           </p>
         </div>
-        <div className="bc-env" data-tone={posture.mode === 'fixture' ? 'caution' : configured ? 'positive' : 'critical'}>
-          <i />
-          {posture.mode === 'fixture' ? 'Development fixtures' : configured ? 'Internal · Bayreuth' : 'Not configured'}
-        </div>
+        {preview ? (
+          <PreviewFlag />
+        ) : (
+          <div className="bc-env" data-tone={posture.mode === 'fixture' ? 'caution' : configured ? 'positive' : 'critical'}>
+            <i />
+            {posture.mode === 'fixture' ? 'Development fixtures' : configured ? 'Internal · Bayreuth' : 'Not configured'}
+          </div>
+        )}
       </aside>
 
       <section className="bc-login-form">
@@ -56,13 +64,18 @@ export default function LoginPage({ searchParams }: { searchParams: Record<strin
             Welcome back.
           </h1>
           <p className="bc-prose" style={{ marginTop: 10, fontSize: 13.5 }}>
-            {reason ?? 'Sign in with the email address and password on your operator account.'}
+            {reason ??
+              (preview
+                ? 'Sign in with the preview credentials to look around. The screens behind this are synthetic.'
+                : 'Sign in with the email address and password on your operator account.')}
           </p>
           <div style={{ marginTop: 28 }}>
-            <LoginForm next={next} configured={configured} fixture={posture.mode === 'fixture'} />
+            <LoginForm next={next} configured={configured} fixture={posture.mode === 'fixture'} preview={preview} />
           </div>
           <p className="bc-meta" style={{ marginTop: 28, fontSize: 12 }}>
-            Access is restricted to listed operators of BoLaGio GmbH. Sign-ins are recorded.
+            {preview
+              ? 'Preview deployment. No production booking data, no channel manager and no payment provider is reachable from here, and every write is disabled.'
+              : 'Access is restricted to listed operators of BoLaGio GmbH. Sign-ins are recorded.'}
           </p>
         </div>
       </section>

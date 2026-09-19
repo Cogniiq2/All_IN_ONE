@@ -42,13 +42,14 @@ function Outcome({ result }: { result: ReconcileResult }) {
     const text: Record<string, string> = {
       unauthenticated: 'Your session has ended. Sign in again.',
       forbidden: 'Your role cannot run reconciliation.',
+      preview: 'Preview data is read-only. The reconciliation engine is not reachable from this deployment.',
       invalid_reference: 'That is not a booking reference.',
       not_found: 'This booking no longer exists.',
       fixture: 'Development fixtures have no reconciliation engine behind them.',
       failed: 'The pass could not complete. The error is in the server log under this correlation.',
     };
     return (
-      <div className="bc-notice" data-tone={result.reason === 'fixture' ? 'caution' : 'critical'} role="alert" aria-live="polite">
+      <div className="bc-notice" data-tone={result.reason === 'fixture' || result.reason === 'preview' ? 'caution' : 'critical'} role="alert" aria-live="polite">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <circle cx="12" cy="12" r="9" />
           <path d="M12 8v4M12 16h.01" />

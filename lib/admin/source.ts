@@ -4,8 +4,10 @@ import 'server-only';
  * Which row source answers.
  *
  * `fixture` is reachable only under `next dev` with `ADMIN_DEV_FIXTURES=true`
- * (see `devFixturesEnabled`). In a production build that branch is dead code;
- * the interface reads Supabase or reports itself unconfigured.
+ * (see `devFixturesEnabled`). `preview` is reachable only on a deployment
+ * that declares `APP_ENV=preview` and switches on `ADMIN_PREVIEW_DEMO=true`
+ * (see `lib/admin/preview.ts`). Otherwise the interface reads Supabase or
+ * reports itself unconfigured.
  */
 
 import { adminMode } from '@/lib/admin/config';
@@ -21,7 +23,10 @@ export class AdminUnconfiguredError extends Error {
 
 export async function rowSource(): Promise<RowSource> {
   const mode = adminMode();
-  if (mode === 'fixture') {
+  // Development fixtures and the preview demo read the same synthetic rows.
+  // Neither constructs a Supabase client, so neither needs the service role
+  // key or the `bolagio_*` tables to exist.
+  if (mode === 'fixture' || mode === 'preview') {
     const { fixtureRowSource } = await import('@/lib/admin/dev/fixtures');
     return fixtureRowSource();
   }

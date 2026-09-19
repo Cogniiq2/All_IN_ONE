@@ -34,6 +34,7 @@ export default async function OverviewPage() {
   const loadedAt = board.loadedAt;
 
   const chips: { label: string; tone: string }[] = [];
+  if (posture.mode === 'preview') chips.push({ label: 'Preview data', tone: 'caution' });
   if (posture.mode === 'fixture') chips.push({ label: 'Development fixtures', tone: 'caution' });
   chips.push({ label: posture.directBookingEnabled ? 'Direct booking enabled' : 'Direct booking disabled', tone: posture.directBookingEnabled ? 'positive' : 'neutral' });
   if (posture.paypalMode !== 'live') chips.push({ label: posture.paypalMode === 'sandbox' ? 'PayPal sandbox' : 'PayPal unconfigured', tone: posture.paypalMode === 'sandbox' ? 'caution' : 'critical' });

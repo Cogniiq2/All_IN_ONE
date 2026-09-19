@@ -63,7 +63,10 @@ export default async function BookingDetailPage({ params }: { params: { referenc
   const facts = bookingFacts(b.status, b.paymentStatus);
   const attention = assessBooking(b);
   const relation = relationOn(b, today);
-  const mayReconcile = can(operator?.role, 'reconcile_booking');
+  // A preview viewer never sees the control at all: the write is refused
+  // server-side regardless, and offering a button that cannot work is worse
+  // than not offering one.
+  const mayReconcile = can(operator?.role, 'reconcile_booking') && !operator?.preview;
   const guestName = b.guest ? `${b.guest.firstName} ${b.guest.lastName}`.trim() : null;
 
   return (
@@ -148,7 +151,11 @@ export default async function BookingDetailPage({ params }: { params: { referenc
               {mayReconcile ? (
                 <ReconcileButton reference={b.reference} />
               ) : (
-                <p className="bc-meta">Your role can read this booking; reconciliation is run by operators.</p>
+                <p className="bc-meta">
+                  {operator?.preview
+                    ? 'Preview data is read-only. Reconciliation runs against the live booking core, which this deployment cannot reach.'
+                    : 'Your role can read this booking; reconciliation is run by operators.'}
+                </p>
               )}
             </div>
           </Section>

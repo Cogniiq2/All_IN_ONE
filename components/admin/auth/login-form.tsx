@@ -8,7 +8,7 @@ import { signInAction } from '@/lib/admin/actions';
  * server, and the browser never sees a Supabase client or a key. The
  * server's verdict is shown inline; on success the action redirects.
  */
-export function LoginForm({ next, configured, fixture }: { next: string; configured: boolean; fixture: boolean }) {
+export function LoginForm({ next, configured, fixture, preview }: { next: string; configured: boolean; fixture: boolean; preview?: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
@@ -40,6 +40,17 @@ export function LoginForm({ next, configured, fixture }: { next: string; configu
           </svg>
           <div>
             <strong>Sign-in is disabled.</strong> The session secret or the identity service is missing on this deployment. See <code className="bc-mono">docs/admin-control.md</code>.
+          </div>
+        </div>
+      )}
+
+      {preview && (
+        <div className="bc-notice" data-tone="caution" role="status">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
+          </svg>
+          <div>
+            <strong>Preview data.</strong> Everything behind this sign-in is synthetic and read-only.
           </div>
         </div>
       )}

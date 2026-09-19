@@ -32,7 +32,7 @@ export default async function SystemPage() {
     loadAudit(20),
     currentOperator(),
   ]);
-  const mayRun = can(operator?.role, 'run_reconciliation_pass');
+  const mayRun = can(operator?.role, 'run_reconciliation_pass') && !operator?.preview;
 
   return (
     <>
@@ -75,7 +75,15 @@ export default async function SystemPage() {
       <div className="grid gap-x-10 lg:grid-cols-2">
         <Section title="Reconciliation" id="reconcile">
           <div className="pt-3 grid gap-4">
-            {mayRun ? <RunPassButton /> : <p className="bc-meta">A pass is run by operators; your role can read the result.</p>}
+            {mayRun ? (
+              <RunPassButton />
+            ) : (
+              <p className="bc-meta">
+                {operator?.preview
+                  ? 'Preview data is read-only. The reconciliation engine is not reachable from this deployment.'
+                  : 'A pass is run by operators; your role can read the result.'}
+              </p>
+            )}
             {!jobs.ok ? (
               <ErrorNotice title="Jobs could not be loaded." tone="caution">
                 {jobs.error}

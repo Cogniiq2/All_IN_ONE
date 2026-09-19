@@ -42,7 +42,7 @@ export function AdminShell({
       </aside>
 
       <div className="min-w-0">
-        <MobileBar attentionCount={attentionCount} footer={footer} />
+        <MobileBar attentionCount={attentionCount} footer={footer} preview={posture.previewDemo} />
         <main id="control-main" className="bc-main">
           <div className="bc-page">{children}</div>
         </main>

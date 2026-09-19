@@ -1,6 +1,7 @@
 import { signOutAction } from '@/lib/admin/actions';
 import { ROLE_LABEL, type OperatorRole } from '@/lib/admin/permissions';
 import type { AdminPosture } from '@/lib/admin/config';
+import { PreviewFlag } from '@/components/admin/shell/preview-flag';
 
 /**
  * Who is signed in, where this is running, and the way out. Sign-out is a
@@ -13,10 +14,14 @@ export function OperatorCard({ operator, posture }: { operator: { displayName: s
 
   return (
     <div>
-      <div className="bc-env" data-tone={env.tone}>
-        <i aria-hidden="true" />
-        <span>{env.label}</span>
-      </div>
+      {posture.previewDemo ? (
+        <PreviewFlag />
+      ) : (
+        <div className="bc-env" data-tone={env.tone}>
+          <i aria-hidden="true" />
+          <span>{env.label}</span>
+        </div>
+      )}
       <div className="bc-operator">
         <span className="bc-operator-initial" aria-hidden="true">
           {initial}
@@ -40,6 +45,7 @@ export function OperatorCard({ operator, posture }: { operator: { displayName: s
 }
 
 function environmentLine(p: AdminPosture): { label: string; tone: 'neutral' | 'positive' | 'caution' | 'critical' } {
+  if (p.mode === 'preview') return { label: 'Preview data', tone: 'caution' };
   if (p.mode === 'fixture') return { label: 'Development fixtures', tone: 'caution' };
   if (p.mode === 'unconfigured') return { label: 'Backend not configured', tone: 'critical' };
   if (p.paypalMode === 'sandbox') return { label: 'PayPal sandbox · booking off', tone: 'caution' };

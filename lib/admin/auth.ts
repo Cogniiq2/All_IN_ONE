@@ -40,6 +40,16 @@ import {
   verifySession,
   type SessionClaims,
 } from '@/lib/admin/session';
+import {
+  PREVIEW_AUDIENCE,
+  PREVIEW_ROLE,
+  PREVIEW_SESSION_COOKIE,
+  isPreviewDemoEnabled,
+  previewAllows,
+  previewCredentials,
+  previewCredentialsMatch,
+  previewSessionSecret,
+} from '@/lib/admin/preview';
 
 export interface Operator {
   id: string;
@@ -47,6 +57,13 @@ export interface Operator {
   email: string;
   displayName: string;
   role: OperatorRole;
+  /**
+   * True only for a preview-demo session. Carried on the operator so that
+   * every consumer — a page deciding whether to render a control, an action
+   * deciding whether to run — can see it without asking the environment
+   * again. An operator session is always `false`.
+   */
+  preview: boolean;
 }
 
 export type SignInResult =
@@ -102,6 +119,7 @@ function toOperator(row: OperatorRow, authUserId: string): Operator | null {
     email: row.email,
     displayName: row.display_name || row.email,
     role: row.role,
+    preview: false,
   };
 }
 
@@ -118,7 +136,54 @@ function fixtureOperator(): Operator | null {
     email: creds.email,
     displayName: 'Fixture operator',
     role: 'operator',
+    preview: false,
   };
+}
+
+/* ── Preview demo identity ─────────────────────────────────────────────── */
+
+const PREVIEW_SUBJECT = 'preview-demo-viewer';
+
+function previewOperator(): Operator | null {
+  const creds = previewCredentials();
+  if (!creds) return null;
+  return {
+    id: 'preview-demo',
+    authUserId: PREVIEW_SUBJECT,
+    email: creds.email,
+    displayName: 'Preview viewer',
+    // Hard-coded, never read from a table. `viewer` grants `view` and
+    // nothing else, and `previewAllows` refuses everything else again.
+    role: PREVIEW_ROLE,
+    preview: true,
+  };
+}
+
+/**
+ * Verify the demo credential pair.
+ *
+ * Shares nothing with `authenticate()`: no Supabase client is constructed,
+ * no allowlist is read, no service role is needed, and the gate is checked
+ * again here so this function is inert on any deployment that is not a
+ * declared preview with the demo switched on.
+ */
+export async function authenticatePreview(email: string, password: string): Promise<SignInResult> {
+  if (!isPreviewDemoEnabled()) return { ok: false, reason: 'unconfigured' };
+  if (!email || !password) return { ok: false, reason: 'invalid_credentials' };
+  if (!previewCredentialsMatch(email, password)) return { ok: false, reason: 'invalid_credentials' };
+  const operator = previewOperator();
+  if (!operator) return { ok: false, reason: 'unconfigured' };
+  return { ok: true, operator };
+}
+
+export async function establishPreviewSession(operator: Operator): Promise<void> {
+  const secret = await previewSessionSecret();
+  if (!secret) throw new Error('Preview demo is not configured');
+  const token = await signSession(
+    { sub: operator.authUserId, email: operator.email, audience: PREVIEW_AUDIENCE },
+    secret
+  );
+  cookies().set(PREVIEW_SESSION_COOKIE, token, sessionCookieOptions(isSecureCookieContext()));
 }
 
 /* ── Sign in / out ─────────────────────────────────────────────────────── */
@@ -133,6 +198,11 @@ export async function authenticate(email: string, password: string): Promise<Sig
 
   const mode = adminMode();
   if (mode === 'unconfigured') return { ok: false, reason: 'unconfigured' };
+
+  // A preview-demo deployment has no operator authentication at all. The
+  // demo has its own function, its own cookie and its own key; this one
+  // stops here rather than reaching Supabase with demo credentials.
+  if (mode === 'preview') return { ok: false, reason: 'unconfigured' };
 
   if (mode === 'fixture') {
     const creds = devFixtureCredentials();
@@ -204,8 +274,11 @@ export async function establishSession(operator: Operator): Promise<void> {
   cookies().set(SESSION_COOKIE, token, sessionCookieOptions(isSecureCookieContext()));
 }
 
+/** Ends whichever kind of session is present. Both, always, unconditionally. */
 export function clearSession(): void {
-  cookies().set(SESSION_COOKIE, '', { ...sessionCookieOptions(isSecureCookieContext()), maxAge: 0 });
+  const options = { ...sessionCookieOptions(isSecureCookieContext()), maxAge: 0 };
+  cookies().set(SESSION_COOKIE, '', options);
+  cookies().set(PREVIEW_SESSION_COOKIE, '', options);
 }
 
 /* ── Per-request resolution ────────────────────────────────────────────── */
@@ -216,6 +289,12 @@ async function readClaims(): Promise<SessionClaims | null> {
   return verdict.ok ? verdict.claims : null;
 }
 
+async function readPreviewClaims(): Promise<SessionClaims | null> {
+  const token = cookies().get(PREVIEW_SESSION_COOKIE)?.value;
+  const verdict = await verifySession(token, await previewSessionSecret(), new Date(), PREVIEW_AUDIENCE);
+  return verdict.ok ? verdict.claims : null;
+}
+
 /**
  * The signed-in operator, or null.
  *
@@ -223,11 +302,23 @@ async function readClaims(): Promise<SessionClaims | null> {
  * server action in the same request share one allowlist read.
  */
 export const currentOperator = cache(async (): Promise<Operator | null> => {
-  const claims = await readClaims();
-  if (!claims) return null;
-
   const mode = adminMode();
   if (mode === 'unconfigured') return null;
+
+  // Preview demo: its own cookie, its own derived key, its own audience.
+  // Nothing below this branch runs, so no Supabase client is constructed
+  // and the `bolagio_operators` table is never consulted.
+  if (mode === 'preview') {
+    const previewClaims = await readPreviewClaims();
+    if (!previewClaims) return null;
+    const operator = previewOperator();
+    return operator && previewClaims.sub === PREVIEW_SUBJECT && previewClaims.email === operator.email
+      ? operator
+      : null;
+  }
+
+  const claims = await readClaims();
+  if (!claims) return null;
 
   if (mode === 'fixture') {
     const operator = fixtureOperator();
@@ -260,16 +351,30 @@ export async function requireOperator(capability: Capability = 'view', nextPath?
     const target = nextPath && nextPath.startsWith('/admin') ? `/admin/login?next=${encodeURIComponent(nextPath)}` : '/admin/login';
     redirect(target);
   }
-  if (!can(operator.role, capability)) throw new AdminAuthError('forbidden');
+  if (!grants(operator, capability)) throw new AdminAuthError('forbidden');
   return operator;
+}
+
+/**
+ * Both locks on one capability.
+ *
+ * The role decides, as it always has. A preview-demo session is then held to
+ * `previewAllows` as well, so a capability added to `viewer` in the future
+ * cannot quietly become reachable from the demo.
+ */
+function grants(operator: Operator, capability: Capability): boolean {
+  if (!can(operator.role, capability)) return false;
+  if (operator.preview && !previewAllows(capability)) return false;
+  return true;
 }
 
 /** For actions: the operator or a structured refusal, never a redirect mid-POST. */
 export async function operatorFor(capability: Capability): Promise<
-  { ok: true; operator: Operator } | { ok: false; reason: 'unauthenticated' | 'forbidden' }
+  { ok: true; operator: Operator } | { ok: false; reason: 'unauthenticated' | 'forbidden' | 'preview' }
 > {
   const operator = await currentOperator();
   if (!operator) return { ok: false, reason: 'unauthenticated' };
+  if (operator.preview && !previewAllows(capability)) return { ok: false, reason: 'preview' };
   if (!can(operator.role, capability)) return { ok: false, reason: 'forbidden' };
   return { ok: true, operator };
 }
