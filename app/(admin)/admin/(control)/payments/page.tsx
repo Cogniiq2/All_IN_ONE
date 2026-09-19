@@ -60,7 +60,15 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Rec
       />
 
       <form action="/admin/payments" className="mb-5 flex flex-wrap items-center gap-2" role="search">
-        <input type="search" name="q" defaultValue={q} className="bc-input" style={{ maxWidth: 380 }} placeholder="Reference, surname, order or capture id" aria-label="Search payments" />
+        <input
+          type="search"
+          name="q"
+          defaultValue={q}
+          className="bc-input"
+          style={{ maxWidth: 380 }}
+          placeholder="Reference, surname, order or capture id"
+          aria-label="Search payments"
+        />
         <button type="submit" className="bc-btn sm">
           Search
         </button>
@@ -75,104 +83,118 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Rec
         <ErrorNotice title="Payments could not be loaded.">{result.error}</ErrorNotice>
       ) : result.data.bookings.length === 0 ? (
         <div className="bc-panel">
-          <EmptyState title={q ? 'No payments match.' : 'No payment activity yet.'}>{q ? 'Try the booking reference or the PayPal order id.' : 'A booking appears here once a payment order exists for it.'}</EmptyState>
+          <EmptyState title={q ? 'No payments match.' : 'No payment activity yet.'}>
+            {q ? 'Try the booking reference or the PayPal order id.' : 'A booking appears here once a payment order exists for it.'}
+          </EmptyState>
         </div>
       ) : (
         <>
-          <div className="hidden md:block bc-table-wrap">
-            <table className="bc-table">
-              <thead>
-                <tr>
-                  <th scope="col">Reference</th>
-                  <th scope="col">Guest · property</th>
-                  <th scope="col">Stay</th>
-                  <th scope="col" className="num">
-                    Quoted
-                  </th>
-                  <th scope="col" className="num">
-                    Captured
-                  </th>
-                  <th scope="col">Payment</th>
-                  <th scope="col">Booking</th>
-                  <th scope="col">Order</th>
-                  <th scope="col">Paid at</th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.data.bookings.map((b) => {
-                  const settled = isPaymentState(b.paymentStatus) && isPaymentSettled(b.paymentStatus);
-                  const unfinalized = settled && b.status !== 'confirmed';
-                  return (
-                    <tr key={b.reference} data-href={`/admin/bookings/${b.reference}`} style={unfinalized ? { background: 'hsl(var(--bc-critical-soft) / 0.45)' } : undefined}>
-                      <td className="bc-cover">
-                        <Link href={`/admin/bookings/${b.reference}`} className="bc-ref">
-                          {b.reference}
-                        </Link>
-                      </td>
-                      <td>
-                        <div style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.guestLabel ?? '—'}</div>
-                        <div className="bc-meta">{b.unitName}</div>
-                      </td>
-                      <td className="bc-num dim">{formatStay(b.checkIn, b.checkOut)}</td>
-                      <td className="num">{formatMoney(b.quotedTotalCents, b.currency)}</td>
-                      <td className="num" style={b.paidAmountCents !== null && b.paidAmountCents !== b.quotedTotalCents ? { color: 'hsl(var(--bc-critical))', fontWeight: 600 } : undefined}>
-                        {formatMoney(b.paidAmountCents, b.currency)}
-                      </td>
-                      <td>
-                        <PaymentStateBadge state={b.paymentStatus} />
-                      </td>
-                      <td>
-                        <span className="inline-flex items-center gap-2">
-                          <BookingStateBadge state={b.status} />
-                          {unfinalized && (
-                            <span className="bc-label" style={{ color: 'hsl(var(--bc-critical))', letterSpacing: '0.08em' }}>
-                              paid · not finalized
-                            </span>
-                          )}
-                        </span>
-                      </td>
-                      <td className="relative" style={{ zIndex: 1 }}>
-                        {b.hasExternalBooking || b.paymentStatus !== 'not_created' ? <OrderCell reference={b.reference} /> : '—'}
-                      </td>
-                      <td className="dim">
-                        <When value={b.paidAt} />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="hidden md:block">
+            <div className="bc-table-wrap">
+              <table className="bc-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Reference</th>
+                    <th scope="col">Guest · property</th>
+                    <th scope="col">Stay</th>
+                    <th scope="col" className="num">
+                      Quoted
+                    </th>
+                    <th scope="col" className="num">
+                      Captured
+                    </th>
+                    <th scope="col">Payment</th>
+                    <th scope="col">Booking</th>
+                    <th scope="col">Order</th>
+                    <th scope="col">Paid at</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.data.bookings.map((b) => {
+                    const settled = isPaymentState(b.paymentStatus) && isPaymentSettled(b.paymentStatus);
+                    const unfinalized = settled && b.status !== 'confirmed';
+                    return (
+                      <tr key={b.reference} data-href={`/admin/bookings/${b.reference}`} style={unfinalized ? { background: 'hsl(var(--bc-critical-soft) / 0.45)' } : undefined}>
+                        <td className="bc-cover">
+                          <Link href={`/admin/bookings/${b.reference}`} className="bc-ref">
+                            {b.reference}
+                          </Link>
+                        </td>
+                        <td>
+                          <div style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.guestLabel ?? '—'}</div>
+                          <div className="bc-meta">{b.unitName}</div>
+                        </td>
+                        <td className="bc-num dim">{formatStay(b.checkIn, b.checkOut)}</td>
+                        <td className="num">{formatMoney(b.quotedTotalCents, b.currency)}</td>
+                        <td
+                          className="num"
+                          style={b.paidAmountCents !== null && b.paidAmountCents !== b.quotedTotalCents ? { color: 'hsl(var(--bc-critical))', fontWeight: 600 } : undefined}
+                        >
+                          {formatMoney(b.paidAmountCents, b.currency)}
+                        </td>
+                        <td>
+                          <PaymentStateBadge state={b.paymentStatus} />
+                        </td>
+                        <td>
+                          <span className="inline-flex items-center gap-2">
+                            <BookingStateBadge state={b.status} />
+                            {unfinalized && (
+                              <span className="bc-label" style={{ color: 'hsl(var(--bc-critical))', letterSpacing: '0.08em' }}>
+                                paid · not finalized
+                              </span>
+                            )}
+                          </span>
+                        </td>
+                        <td className="relative" style={{ zIndex: 1 }}>
+                          {b.hasExternalBooking || b.paymentStatus !== 'not_created' ? <OrderCell reference={b.reference} /> : '—'}
+                        </td>
+                        <td className="dim">
+                          <When value={b.paidAt} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
 
-          <div className="md:hidden bc-cards">
-            {result.data.bookings.map((b) => {
-              const settled = isPaymentState(b.paymentStatus) && isPaymentSettled(b.paymentStatus);
-              const unfinalized = settled && b.status !== 'confirmed';
-              return (
-                <Link key={b.reference} href={`/admin/bookings/${b.reference}`} className="bc-card" style={unfinalized ? { borderColor: 'hsl(var(--bc-critical) / 0.5)' } : undefined}>
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="bc-ref">{b.reference}</span>
-                    <PaymentStateBadge state={b.paymentStatus} />
-                  </div>
-                  <div className="mt-2 truncate" style={{ fontWeight: 500 }}>
-                    {b.guestLabel ?? '—'} · {b.unitName}
-                  </div>
-                  <div className="bc-meta mt-1">{formatStay(b.checkIn, b.checkOut)}</div>
-                  <div className="mt-3 flex items-center justify-between gap-3">
-                    <BookingStateBadge state={b.status} />
-                    <span className="bc-num">
-                      {formatMoney(b.paidAmountCents ?? b.quotedTotalCents, b.currency)}
-                      {b.paidAmountCents === null && <span className="bc-meta"> quoted</span>}
-                    </span>
-                  </div>
-                  {unfinalized && (
-                    <p className="mt-2" style={{ fontSize: 12, color: 'hsl(var(--bc-critical))', fontWeight: 600 }}>
-                      Paid — channel manager not finalized
-                    </p>
-                  )}
-                </Link>
-              );
-            })}
+          <div className="md:hidden">
+            <div className="bc-cards">
+              {result.data.bookings.map((b) => {
+                const settled = isPaymentState(b.paymentStatus) && isPaymentSettled(b.paymentStatus);
+                const unfinalized = settled && b.status !== 'confirmed';
+                return (
+                  <Link
+                    key={b.reference}
+                    href={`/admin/bookings/${b.reference}`}
+                    className="bc-card"
+                    style={unfinalized ? { borderColor: 'hsl(var(--bc-critical) / 0.5)' } : undefined}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="bc-ref">{b.reference}</span>
+                      <PaymentStateBadge state={b.paymentStatus} />
+                    </div>
+                    <div className="mt-2 truncate" style={{ fontWeight: 500 }}>
+                      {b.guestLabel ?? '—'} · {b.unitName}
+                    </div>
+                    <div className="bc-meta mt-1">{formatStay(b.checkIn, b.checkOut)}</div>
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <BookingStateBadge state={b.status} />
+                      <span className="bc-num">
+                        {formatMoney(b.paidAmountCents ?? b.quotedTotalCents, b.currency)}
+                        {b.paidAmountCents === null && <span className="bc-meta"> quoted</span>}
+                      </span>
+                    </div>
+                    {unfinalized && (
+                      <p className="mt-2" style={{ fontSize: 12, color: 'hsl(var(--bc-critical))', fontWeight: 600 }}>
+                        Paid — channel manager not finalized
+                      </p>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
           </div>
 
           <Pagination page={page} pageSize={PAGE_SIZE} total={result.data.total} hrefFor={hrefFor} />
@@ -194,7 +216,18 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Rec
                       <span className="bc-mono" style={{ fontWeight: 500 }}>
                         {ev.eventType}
                       </span>
-                      <Badge p={ev.verification === 'verified' ? { label: 'Verified', tone: 'positive', glyph: 'check', summary: 'Signature verified.' } : { label: `Verification ${ev.verification}`, tone: ev.verification === 'failed' ? 'critical' : 'neutral', glyph: 'alert', summary: 'Stored, not processed.' }} />
+                      <Badge
+                        p={
+                          ev.verification === 'verified'
+                            ? { label: 'Verified', tone: 'positive', glyph: 'check', summary: 'Signature verified.' }
+                            : {
+                                label: `Verification ${ev.verification}`,
+                                tone: ev.verification === 'failed' ? 'critical' : 'neutral',
+                                glyph: 'alert',
+                                summary: 'Stored, not processed.',
+                              }
+                        }
+                      />
                       <JobBadge status={ev.status} />
                       {ev.reference && (
                         <Link href={`/admin/bookings/${ev.reference}`} className="bc-ref">

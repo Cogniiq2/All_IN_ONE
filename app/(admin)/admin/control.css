@@ -13,7 +13,8 @@
  * ══════════════════════════════════════════════════════════════════════════
  */
 
-.bc {
+.bc,
+.bc-layer {
   /* ── Ground ─────────────────────────────────────────────────────── */
   --bc-bg: 40 20% 96.5%;
   --bc-surface: 40 24% 98.6%;
@@ -66,7 +67,20 @@
   --bc-sidebar: 248px;
   --bc-topbar: 56px;
   --bc-gutter: clamp(16px, 3vw, 40px);
+}
 
+/* `.bc-layer` is the same token scope on a portaled surface (dialogs, the
+   command palette) that React renders outside the shell's DOM. */
+.bc-layer {
+  font-family: var(--font-sans), 'Inter', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  letter-spacing: -0.006em;
+  color: hsl(var(--bc-text));
+  -webkit-font-smoothing: antialiased;
+}
+
+.bc {
   min-height: 100dvh;
   background: hsl(var(--bc-bg));
   color: hsl(var(--bc-text));
@@ -553,6 +567,13 @@
   margin: 0 auto;
 }
 
+/* Grid and flex children may shrink below their content: a nowrap badge or
+   a wide control must scroll or truncate, never push the page sideways. */
+.bc-page > *,
+.bc-page .grid > * {
+  min-width: 0;
+}
+
 .bc-page-head {
   display: flex;
   flex-wrap: wrap;
@@ -588,16 +609,29 @@
 
 .bc-section-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 16px;
+  gap: 6px 16px;
   padding-bottom: 12px;
   margin-bottom: 4px;
   border-bottom: 1px solid hsl(var(--bc-line));
 }
 
+.bc-section-head > h2 {
+  flex: 0 0 auto;
+}
+
 .bc-section-head .bc-meta {
-  white-space: nowrap;
+  flex: 1 1 auto;
+  text-align: right;
+}
+
+@media (max-width: 639px) {
+  .bc-section-head .bc-meta {
+    flex-basis: 100%;
+    text-align: left;
+  }
 }
 
 .bc-panel {
@@ -747,14 +781,23 @@
   position: relative;
   display: inline-flex;
   align-items: center;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
   padding: 3px;
   border-radius: var(--radius-sm);
   background: hsl(var(--bc-surface-2));
   border: 1px solid hsl(var(--bc-line));
 }
 
+.bc-seg::-webkit-scrollbar {
+  display: none;
+}
+
 .bc-seg a,
 .bc-seg button {
+  flex: 0 0 auto;
   position: relative;
   z-index: 1;
   display: inline-flex;
@@ -1772,6 +1815,21 @@
 
 .bc-agenda-day[data-today='true'] .bc-agenda-date b {
   color: hsl(var(--bc-accent));
+}
+
+.bc-agenda-line {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.bc-agenda-line .bc-label {
+  letter-spacing: 0.08em;
+}
+
+.bc-agenda-line > .min-w-0 > span {
+  display: block;
 }
 
 /* ── Skeletons ───────────────────────────────────────────────────── */

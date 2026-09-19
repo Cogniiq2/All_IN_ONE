@@ -79,78 +79,80 @@ export function CommandPalette({ properties }: { properties: PropertyEntry[] }) 
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Portal>
-        <Dialog.Overlay className="bc-cmd-overlay" />
-        <Dialog.Content className="bc-cmd" aria-describedby={undefined}>
-          <Dialog.Title className="sr-only">Command palette</Dialog.Title>
-          <Command label="Command palette" shouldFilter={!query.trim() || !looksLikeReference} loop>
-            <Command.Input value={query} onValueChange={setQuery} placeholder="Go to, or find a booking by reference or surname…" autoFocus />
-            <Command.List>
-              <Command.Empty>{searching ? 'Searching…' : 'Nothing matches.'}</Command.Empty>
+        <div className="bc-layer">
+          <Dialog.Overlay className="bc-cmd-overlay" />
+          <Dialog.Content className="bc-cmd" aria-describedby={undefined}>
+            <Dialog.Title className="sr-only">Command palette</Dialog.Title>
+            <Command label="Command palette" shouldFilter={!query.trim() || !looksLikeReference} loop>
+              <Command.Input value={query} onValueChange={setQuery} placeholder="Go to, or find a booking by reference or surname…" autoFocus />
+              <Command.List>
+                <Command.Empty>{searching ? 'Searching…' : 'Nothing matches.'}</Command.Empty>
 
-              {(results.length > 0 || looksLikeReference) && (
-                <Command.Group heading="Bookings">
-                  {looksLikeReference && results.length === 0 && (
-                    <Command.Item value={`open ${query}`} onSelect={() => go(`/admin/bookings/${query.trim().toUpperCase()}`)}>
-                      <Icon name="bookings" />
-                      <span>
-                        Open <span className="bc-ref">{query.trim().toUpperCase()}</span>
-                      </span>
-                      <span className="bc-cmd-hint">Enter</span>
-                    </Command.Item>
-                  )}
-                  {results.map((b) => (
-                    <Command.Item key={b.reference} value={`${b.reference} ${b.guestLabel ?? ''} ${b.unitName}`} onSelect={() => go(`/admin/bookings/${b.reference}`)}>
-                      <Icon name="bookings" />
-                      <span className="bc-ref">{b.reference}</span>
-                      <span className="truncate">
-                        {b.guestLabel ?? '—'} · {b.unitName}
-                      </span>
-                      <span className="bc-cmd-hint">
-                        {formatStay(b.checkIn, b.checkOut)} · {bookingStatePresentation(b.status).label}
-                      </span>
+                {(results.length > 0 || looksLikeReference) && (
+                  <Command.Group heading="Bookings">
+                    {looksLikeReference && results.length === 0 && (
+                      <Command.Item value={`open ${query}`} onSelect={() => go(`/admin/bookings/${query.trim().toUpperCase()}`)}>
+                        <Icon name="bookings" />
+                        <span>
+                          Open <span className="bc-ref">{query.trim().toUpperCase()}</span>
+                        </span>
+                        <span className="bc-cmd-hint">Enter</span>
+                      </Command.Item>
+                    )}
+                    {results.map((b) => (
+                      <Command.Item key={b.reference} value={`${b.reference} ${b.guestLabel ?? ''} ${b.unitName}`} onSelect={() => go(`/admin/bookings/${b.reference}`)}>
+                        <Icon name="bookings" />
+                        <span className="bc-ref">{b.reference}</span>
+                        <span className="truncate">
+                          {b.guestLabel ?? '—'} · {b.unitName}
+                        </span>
+                        <span className="bc-cmd-hint">
+                          {formatStay(b.checkIn, b.checkOut)} · {bookingStatePresentation(b.status).label}
+                        </span>
+                      </Command.Item>
+                    ))}
+                  </Command.Group>
+                )}
+
+                <Command.Group heading="Go to">
+                  {ALL_NAV_ITEMS.map((item) => (
+                    <Command.Item key={item.href} value={`go ${item.label}`} onSelect={() => go(item.href)}>
+                      <Icon name={item.icon} />
+                      <span>{item.label}</span>
                     </Command.Item>
                   ))}
-                </Command.Group>
-              )}
-
-              <Command.Group heading="Go to">
-                {ALL_NAV_ITEMS.map((item) => (
-                  <Command.Item key={item.href} value={`go ${item.label}`} onSelect={() => go(item.href)}>
-                    <Icon name={item.icon} />
-                    <span>{item.label}</span>
+                  <Command.Item value="go to today calendar" onSelect={() => go('/admin/calendar')}>
+                    <Icon name="calendar" />
+                    <span>Calendar — today</span>
                   </Command.Item>
-                ))}
-                <Command.Item value="go to today calendar" onSelect={() => go('/admin/calendar')}>
-                  <Icon name="calendar" />
-                  <span>Calendar — today</span>
-                </Command.Item>
-              </Command.Group>
-
-              {properties.length > 0 && (
-                <Command.Group heading="Properties">
-                  {properties.map((p) => (
-                    <Command.Item key={p.slug} value={`property ${p.name}`} onSelect={() => go(`/admin/bookings?unit=${encodeURIComponent(p.slug)}`)}>
-                      <Icon name="properties" />
-                      <span>{p.name}</span>
-                      <span className="bc-cmd-hint">bookings</span>
-                    </Command.Item>
-                  ))}
                 </Command.Group>
-              )}
-            </Command.List>
-          </Command>
-          <div className="bc-cmd-foot" aria-hidden="true">
-            <span>
-              <kbd className="bc-kbd">↑↓</kbd> move
-            </span>
-            <span>
-              <kbd className="bc-kbd">↵</kbd> open
-            </span>
-            <span>
-              <kbd className="bc-kbd">esc</kbd> close
-            </span>
-          </div>
-        </Dialog.Content>
+
+                {properties.length > 0 && (
+                  <Command.Group heading="Properties">
+                    {properties.map((p) => (
+                      <Command.Item key={p.slug} value={`property ${p.name}`} onSelect={() => go(`/admin/bookings?unit=${encodeURIComponent(p.slug)}`)}>
+                        <Icon name="properties" />
+                        <span>{p.name}</span>
+                        <span className="bc-cmd-hint">bookings</span>
+                      </Command.Item>
+                    ))}
+                  </Command.Group>
+                )}
+              </Command.List>
+            </Command>
+            <div className="bc-cmd-foot" aria-hidden="true">
+              <span>
+                <kbd className="bc-kbd">↑↓</kbd> move
+              </span>
+              <span>
+                <kbd className="bc-kbd">↵</kbd> open
+              </span>
+              <span>
+                <kbd className="bc-kbd">esc</kbd> close
+              </span>
+            </div>
+          </Dialog.Content>
+        </div>
       </Dialog.Portal>
     </Dialog.Root>
   );

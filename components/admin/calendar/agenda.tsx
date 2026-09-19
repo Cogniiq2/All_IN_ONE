@@ -54,17 +54,15 @@ export function Agenda({ data, days, unitFilter }: { data: CalendarDto; days: nu
 
 function Line({ label, r, unit }: { label: string; r: CalendarDto['reservations'][number]; unit: string }) {
   return (
-    <Link href={`/admin/bookings/${encodeURIComponent(r.reference)}`} className="flex items-center gap-3 min-w-0">
-      <span className="bc-label" style={{ width: 64, flex: '0 0 auto', letterSpacing: '0.08em' }}>
-        {label}
+    <Link href={`/admin/bookings/${encodeURIComponent(r.reference)}`} className="bc-agenda-line">
+      <span className="bc-label">{label}</span>
+      <span className="min-w-0">
+        <span className="truncate" style={{ fontWeight: 500 }}>
+          {r.guestLabel ?? r.reference}
+        </span>
+        <span className="bc-meta truncate">{unit}</span>
       </span>
-      <span className="truncate" style={{ fontWeight: 500 }}>
-        {r.guestLabel ?? r.reference}
-      </span>
-      <span className="bc-meta truncate">{unit}</span>
-      <span className="ml-auto flex-none">
-        <BookingStateBadge state={r.status} />
-      </span>
+      <BookingStateBadge state={r.status} />
     </Link>
   );
 }

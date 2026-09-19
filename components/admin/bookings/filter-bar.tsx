@@ -119,7 +119,7 @@ export function FilterBar({ filter, units }: { filter: BookingListFilter; units:
             </option>
           ))}
         </select>
-        <label className="bc-meta inline-flex items-center gap-2">
+        <label className="bc-meta inline-flex flex-wrap items-center gap-2">
           <span>Arrival from</span>
           <input type="date" className="bc-input" style={{ width: 'auto', height: 32, fontSize: 12.5 }} value={filter.from ?? ''} onChange={(e) => apply({ from: e.target.value || null })} aria-label="Arrival from" />
         </label>

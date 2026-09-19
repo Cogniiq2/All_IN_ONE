@@ -224,7 +224,7 @@ export default async function OverviewPage() {
 
 function Column({ title, items, empty }: { title: string; items: import('@/lib/admin/dto').BookingSummaryDto[]; empty: string }) {
   return (
-    <div>
+    <div className="min-w-0">
       <p className="bc-label" style={{ padding: '14px 0 6px' }}>
         {title} <span className="bc-num" style={{ marginLeft: 6, color: 'hsl(var(--bc-text))' }}>{items.length}</span>
       </p>

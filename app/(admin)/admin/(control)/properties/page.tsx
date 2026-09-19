@@ -67,7 +67,7 @@ export default async function PropertiesPage() {
                     {issues.length > 0 && (
                       <Link href={`/admin/bookings?unit=${u.slug}&attention=1`} className="bc-badge" data-tone="caution">
                         <i className="bc-glyph" data-glyph="alert" aria-hidden="true" />
-                        {issues.length} {issues.length === 1 ? 'item' : 'items'} need attention
+                        {issues.length} {issues.length === 1 ? 'item needs' : 'items need'} attention
                       </Link>
                     )}
                   </div>

@@ -33,27 +33,29 @@ export function MobileBar({ attentionCount, footer }: { attentionCount: number; 
           </button>
         </Dialog.Trigger>
         <Dialog.Portal>
-          <Dialog.Overlay className="bc-overlay" />
-          <Dialog.Content className="bc-drawer" aria-describedby={undefined}>
-            <Dialog.Title className="sr-only">Navigation</Dialog.Title>
-            <div className="bc-sidebar-brand flex items-start justify-between">
-              <div>
-                <div className="bc-brand-word">
-                  B<span>o</span>L<span>a</span>G<span>io</span>
+          <div className="bc-layer">
+            <Dialog.Overlay className="bc-overlay" />
+            <Dialog.Content className="bc-drawer" aria-describedby={undefined}>
+              <Dialog.Title className="sr-only">Navigation</Dialog.Title>
+              <div className="bc-sidebar-brand flex items-start justify-between">
+                <div>
+                  <div className="bc-brand-word">
+                    B<span>o</span>L<span>a</span>G<span>io</span>
+                  </div>
+                  <div className="bc-brand-control">Control</div>
                 </div>
-                <div className="bc-brand-control">Control</div>
+                <Dialog.Close asChild>
+                  <button type="button" className="bc-icon-btn" aria-label="Close navigation" style={{ width: 40, height: 40, marginTop: -4, marginRight: -8 }}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" aria-hidden="true">
+                      <path d="M6 6l12 12M18 6 6 18" />
+                    </svg>
+                  </button>
+                </Dialog.Close>
               </div>
-              <Dialog.Close asChild>
-                <button type="button" className="bc-icon-btn" aria-label="Close navigation" style={{ width: 40, height: 40, marginTop: -4, marginRight: -8 }}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" aria-hidden="true">
-                    <path d="M6 6l12 12M18 6 6 18" />
-                  </svg>
-                </button>
-              </Dialog.Close>
-            </div>
-            <SidebarNav attentionCount={attentionCount} onNavigate={() => setOpen(false)} />
-            <div className="bc-sidebar-foot">{footer}</div>
-          </Dialog.Content>
+              <SidebarNav attentionCount={attentionCount} onNavigate={() => setOpen(false)} />
+              <div className="bc-sidebar-foot">{footer}</div>
+            </Dialog.Content>
+          </div>
         </Dialog.Portal>
       </Dialog.Root>
     </header>
