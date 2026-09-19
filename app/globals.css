@@ -73,6 +73,35 @@
     --radius-lg: 1rem;
     --radius-xl: 1.5rem;
     --radius: var(--radius-md);
+
+    /* ── Motion ─────────────────────────────────────────────────
+       One vocabulary for every transition on the site. Durations
+       are chosen by what the movement has to communicate, not by
+       taste:
+
+       press   90ms  below the ~100ms threshold at which a response
+                     stops feeling attached to your finger. Every
+                     interactive surface acknowledges a press inside
+                     this window.
+       fast   180ms  hover and small state changes — quick enough to
+                     feel alive, slow enough not to flicker.
+       base   320ms  the default for anything the eye should follow.
+       slow   520ms  entrances: scroll reveals, route changes.
+       slower 900ms  ambient, image-scale only. Never blocks input.
+
+       Two curves, and only two. `out` is the brand curve: a fast
+       start settling gently, which is what makes a surface feel
+       weighted rather than snapped. `press` is symmetric and tight,
+       because a button going down and coming back up should not
+       glide. */
+    --dur-press: 90ms;
+    --dur-fast: 180ms;
+    --dur-base: 320ms;
+    --dur-slow: 520ms;
+    --dur-slower: 900ms;
+
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-press: cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   * {
@@ -122,6 +151,27 @@
     outline: 2px solid hsl(var(--gold));
     outline-offset: 3px;
     border-radius: var(--radius-xs);
+  }
+
+  /*
+   * The grey flash iOS paints over a tapped element. It arrives before our
+   * own press state and in a colour that belongs to no palette here.
+   */
+  a, button, [role='button'], summary, label {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /*
+   * The header is fixed, so an anchor jump would otherwise park the target
+   * heading underneath it. Matches the header height at both breakpoints.
+   */
+  :target,
+  [id] {
+    scroll-margin-top: 88px;
+  }
+  @media (min-width: 1024px) {
+    :target,
+    [id] { scroll-margin-top: 104px; }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -253,14 +303,26 @@
     letter-spacing: 0.02em;
     border-radius: var(--radius-md);
     border: 1px solid hsl(var(--foreground));
-    transition: background 0.3s ease, transform 0.3s cubic-bezier(0.22,1,0.36,1), box-shadow 0.3s ease;
+    /* One curve for every property, so the button moves as one object
+       rather than as three properties finishing at different moments. */
+    transition: background var(--dur-fast) var(--ease-out),
+                transform var(--dur-fast) var(--ease-out),
+                box-shadow var(--dur-fast) var(--ease-out);
   }
   .cta-primary:hover {
     background: hsl(var(--ink-light));
     transform: translateY(-2px);
     box-shadow: 0 10px 30px -12px hsl(var(--ink) / 0.5);
   }
-  .cta-primary:active { transform: translateY(0); }
+  /* The press. A touch has to be answered inside 90ms or the surface
+     feels like a picture of a button. The scale is small enough to read
+     as compression rather than as the button changing size. */
+  .cta-primary:active {
+    transform: translateY(0) scale(0.985);
+    box-shadow: 0 2px 8px -4px hsl(var(--ink) / 0.4);
+    transition-duration: var(--dur-press);
+    transition-timing-function: var(--ease-press);
+  }
 
   .cta-secondary {
     display: inline-flex;
@@ -277,14 +339,21 @@
     letter-spacing: 0.02em;
     border: 1px solid hsl(var(--foreground) / 0.24);
     border-radius: var(--radius-md);
-    transition: border-color 0.3s ease, background 0.3s ease, transform 0.3s cubic-bezier(0.22,1,0.36,1);
+    transition: border-color var(--dur-fast) var(--ease-out),
+                background var(--dur-fast) var(--ease-out),
+                transform var(--dur-fast) var(--ease-out);
   }
   .cta-secondary:hover {
     border-color: hsl(var(--foreground) / 0.5);
     background: hsl(var(--foreground) / 0.035);
     transform: translateY(-2px);
   }
-  .cta-secondary:active { transform: translateY(0); }
+  .cta-secondary:active {
+    transform: translateY(0) scale(0.985);
+    background: hsl(var(--foreground) / 0.06);
+    transition-duration: var(--dur-press);
+    transition-timing-function: var(--ease-press);
+  }
 
   /* On dark photography */
   .cta-primary-invert {
@@ -306,19 +375,32 @@
     background: hsl(var(--on-dark) / 0.08);
   }
 
+  /* The underline is painted, not bordered, so it can be drawn from the
+     left on hover rather than merely changing colour. A line that grows
+     reads as a response; a line that recolours reads as a stylesheet. */
   .link-quiet {
+    position: relative;
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
     font-size: 13px;
     font-weight: 600;
     color: hsl(var(--foreground));
-    border-bottom: 1px solid hsl(var(--champagne-dark) / 0.45);
-    padding-bottom: 1px;
-    transition: border-color 0.25s ease, color 0.25s ease;
+    padding-bottom: 2px;
+    background-image: linear-gradient(hsl(var(--champagne-dark)), hsl(var(--champagne-dark))),
+                      linear-gradient(hsl(var(--champagne-dark) / 0.4), hsl(var(--champagne-dark) / 0.4));
+    background-size: 0% 1px, 100% 1px;
+    background-position: 0 100%, 0 100%;
+    background-repeat: no-repeat;
+    transition: background-size var(--dur-base) var(--ease-out),
+                color var(--dur-fast) var(--ease-out);
   }
   .link-quiet:hover {
-    border-bottom-color: hsl(var(--champagne-dark));
+    background-size: 100% 1px, 100% 1px;
+  }
+  .link-quiet:active {
+    color: hsl(var(--champagne-dark));
+    transition-duration: var(--dur-press);
   }
 
   /* ── Surfaces ────────────────────────────────────────────────── */
@@ -327,14 +409,21 @@
     background: hsl(var(--card));
     border: 1px solid hsl(var(--border) / 0.85);
     border-radius: var(--radius-lg);
-    transition: box-shadow 0.45s cubic-bezier(0.22,1,0.36,1),
-                border-color 0.35s ease,
-                transform 0.45s cubic-bezier(0.22,1,0.36,1);
+    transition: box-shadow var(--dur-slow) var(--ease-out),
+                border-color var(--dur-base) var(--ease-out),
+                transform var(--dur-slow) var(--ease-out);
   }
   .card-surface:hover {
     border-color: hsl(var(--champagne) / 0.6);
     box-shadow: 0 24px 60px -32px hsl(var(--ink) / 0.4);
     transform: translateY(-3px);
+  }
+  /* A card is a large surface, so it compresses less than a button —
+     enough to confirm the tap, not enough to look elastic. */
+  .card-surface:active {
+    transform: translateY(-1px) scale(0.994);
+    transition-duration: var(--dur-press);
+    transition-timing-function: var(--ease-press);
   }
 
   .rule-hair {
@@ -372,6 +461,46 @@
     border-bottom: 1px solid hsl(var(--border) / 0.7);
   }
 
+  /*
+   * Photography settling into its frame rather than appearing in it.
+   * Scale and opacity only — both composited, so this cannot shift layout.
+   * The hover zoom lives on the same element and composes with it, which is
+   * why the resolved state ends at scale(1) and hands over cleanly.
+   */
+  .img-resolve {
+    opacity: 0;
+    transform: scale(1.015);
+    transition: opacity 700ms var(--ease-out), transform var(--dur-slower) var(--ease-out);
+  }
+  .img-resolve[data-loaded='true'] {
+    opacity: 1;
+    transform: scale(1);
+  }
+  .group:hover .img-resolve[data-loaded='true'] {
+    transform: scale(1.04);
+  }
+  /* If JavaScript never runs, the photograph must still be visible. */
+  @media (prefers-reduced-motion: reduce) {
+    .img-resolve { opacity: 1; transform: none; transition: none; }
+  }
+
+  /* Navigation rule: drawn on hover, already drawn on the current page. */
+  .nav-item {
+    transition: color var(--dur-fast) var(--ease-out);
+  }
+  .nav-rule {
+    transform: scaleX(0);
+    transition: transform var(--dur-base) var(--ease-out);
+  }
+  .nav-item:hover .nav-rule,
+  .nav-rule[data-active='true'] {
+    transform: scaleX(1);
+  }
+  .nav-item:active {
+    opacity: 0.7;
+    transition-duration: var(--dur-press);
+  }
+
   /* Subtle film grain, used once on the hero only. */
   .grain::after {
     content: '';
@@ -405,6 +534,32 @@
 
   .animate-fade-up {
     animation: fade-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  /*
+   * Touch devices.
+   *
+   * This block sits at the end of @layer components on purpose. In @layer base
+   * it lost every time: base is evaluated before components, so
+   * `.card-surface:hover` simply won and the lift stayed latched after a tap.
+   *
+   * A phone has no hover, but the browser fakes one: tap a card and the
+   * hover state latches until you tap elsewhere, leaving a lifted, shadowed
+   * card sitting there. It reads as a bug. On pointers that cannot hover,
+   * the lift is removed entirely and the press does all the work — which is
+   * the correct feedback for a finger anyway.
+   */
+  @media (hover: none) {
+    .cta-primary:hover,
+    .cta-secondary:hover,
+    .card-surface:hover {
+      transform: none;
+      box-shadow: none;
+    }
+    .card-surface:hover { border-color: hsl(var(--border) / 0.85); }
+    .cta-primary:hover { background: hsl(var(--foreground)); }
+    .cta-secondary:hover { background: transparent; border-color: hsl(var(--foreground) / 0.24); }
+    .link-quiet:hover { background-size: 0% 1px, 100% 1px; }
   }
 
   /* Skip-to-content, visible on focus only. */

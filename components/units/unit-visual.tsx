@@ -17,6 +17,7 @@
  * so a card without a photograph still holds its place in the grid.
  */
 
+import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useI18n } from '@/lib/i18n';
 import { REFERENCE_IMAGE_LABEL, type TempImage } from '@/lib/content/media';
@@ -37,18 +38,44 @@ export function UnitVisual({
   className?: string;
 }) {
   const { locale } = useI18n();
+  const imgRef = useRef<HTMLImageElement>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  /*
+   * A cached image can finish loading before React attaches its onLoad
+   * handler during hydration, in which case the event never fires and the
+   * photograph would stay invisible. Checking `complete` on mount closes that
+   * race, which is the difference between a nice touch and a broken page on a
+   * repeat visit.
+   */
+  useEffect(() => {
+    if (imgRef.current?.complete) setLoaded(true);
+  }, []);
 
   if (image) {
     return (
       <div className={`relative overflow-hidden bg-secondary ${className}`}>
+        {/*
+          A photograph that snaps in at full opacity the instant it decodes is
+          the cheapest-looking moment on any site. It now resolves out of the
+          warm card ground over 700ms, and lifts the last 1.5% of scale as it
+          does, so the image looks like it settles into the frame.
+
+          `onLoad` fires for cached images too, so a repeat visit is not left
+          permanently transparent. `priority` images are still fetched first —
+          this only governs how they appear, never when they load, so LCP is
+          untouched.
+        */}
         <Image
           src={image.src}
           alt={image.alt[locale]}
           fill
           priority={priority}
           sizes={sizes}
-          className="object-cover transition-transform duration-[900ms] ease-[cubic-bezier(0.22,1,0.36,1)]
-                     group-hover:scale-[1.04]"
+          ref={imgRef}
+          onLoad={() => setLoaded(true)}
+          className="img-resolve object-cover"
+          data-loaded={loaded ? 'true' : undefined}
         />
         <span className="ref-badge absolute bottom-3 right-3">
           {REFERENCE_IMAGE_LABEL[locale]}

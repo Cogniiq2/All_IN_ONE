@@ -90,7 +90,7 @@ export function Navbar() {
                   key={item.href}
                   href={item.href}
                   aria-current={active ? 'page' : undefined}
-                  className="relative px-3.5 py-2 text-[13px] font-medium transition-colors duration-300"
+                  className="nav-item relative px-3.5 py-2 text-[13px] font-medium"
                   style={{
                     color: transparent
                       ? active
@@ -102,14 +102,21 @@ export function Navbar() {
                   }}
                 >
                   {item[locale]}
+                  {/*
+                    The rule was drawn only for the current page, so hovering a
+                    nav item changed nothing but its colour. It now draws from
+                    the left on hover too — the active page simply starts drawn.
+                    `data-active` drives it from CSS so hover and active share
+                    one transition instead of fighting over the transform.
+                  */}
                   <span
                     aria-hidden="true"
-                    className="absolute left-3.5 right-3.5 bottom-0.5 h-px origin-left transition-transform duration-300"
+                    data-active={active ? 'true' : undefined}
+                    className="nav-rule absolute left-3.5 right-3.5 bottom-0.5 h-px origin-left"
                     style={{
                       background: transparent
                         ? 'hsl(var(--on-dark-gold))'
                         : 'hsl(var(--champagne-dark))',
-                      transform: active ? 'scaleX(1)' : 'scaleX(0)',
                     }}
                   />
                 </Link>

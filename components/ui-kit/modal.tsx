@@ -92,11 +92,19 @@ export function LargeModal({
   open,
   onOpenChange,
   labelledBy,
+  title,
   children,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   labelledBy?: string;
+  /**
+   * Announced to screen readers when the overlay opens. The visible heading
+   * inside `children` stays where it is — this is the accessible name Radix
+   * requires, and without it every open logged a console error and the dialog
+   * announced itself as unnamed.
+   */
+  title?: string;
   children: ReactNode;
 }) {
   const reduce = useReducedMotion();
@@ -123,6 +131,9 @@ export function LargeModal({
                 border: '1px solid hsl(var(--border))',
               }}
             >
+              {title && (
+                <Dialog.Title className="sr-only">{title}</Dialog.Title>
+              )}
               {children}
             </motion.div>
           </div>

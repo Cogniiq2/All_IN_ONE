@@ -60,7 +60,12 @@ export function UnitDetailModal() {
   ].filter(Boolean) as { icon: typeof MapPin; text: string }[];
 
   return (
-    <LargeModal open={open} onOpenChange={(next) => !next && close()} labelledBy={titleId}>
+    <LargeModal
+      open={open}
+      onOpenChange={(next) => !next && close()}
+      labelledBy={titleId}
+      title={unit.name[locale]}
+    >
       <LargeModalClose />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
