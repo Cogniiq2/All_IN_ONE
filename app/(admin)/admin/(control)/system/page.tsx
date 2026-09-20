@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { currentOperator } from '@/lib/admin/auth';
 import { can } from '@/lib/admin/permissions';
-import { loadAudit, loadQueues, loadRecentJobs, loadRecentOperations, loadRecentOutbox, loadSystemHealth } from '@/lib/admin/queries';
-import { codeTitle, jobStatusPresentation, operationOutcomePresentation } from '@/lib/admin/presentation';
+import { loadAlerts, loadAudit, loadQueues, loadRecentJobs, loadRecentOperations, loadRecentOutbox, loadSystemHealth } from '@/lib/admin/queries';
+import { codeTitle } from '@/lib/admin/presentation';
 import { PageHeader, Section, HealthBadge, ErrorNotice, JobBadge, OperationBadge, When, Notice } from '@/components/admin/primitives';
 import { RefreshControl } from '@/components/admin/shell/refresh-control';
 import { RunPassButton } from '@/components/admin/system/run-pass-button';
@@ -23,7 +23,7 @@ const QUEUE_LABEL: Record<string, string> = {
  * green. Configuration appears as states, never as values.
  */
 export default async function SystemPage() {
-  const [health, queues, jobs, outbox, operations, audit, operator] = await Promise.all([
+  const [health, queues, jobs, outbox, operations, audit, operator, alerts] = await Promise.all([
     loadSystemHealth(),
     loadQueues(),
     loadRecentJobs(12),
@@ -31,12 +31,47 @@ export default async function SystemPage() {
     loadRecentOperations(12),
     loadAudit(20),
     currentOperator(),
+    loadAlerts(),
   ]);
   const mayRun = can(operator?.role, 'run_reconciliation_pass') && !operator?.preview;
 
   return (
     <>
       <PageHeader eyebrow="Operations" title="System" description="What is measured, what is configured, and what nothing measures yet." actions={<RefreshControl loadedAt={health.loadedAt} every={120} />} />
+
+      <Section title="Alerts" meta={<span>the same list the internal health endpoint serves</span>} id="alerts">
+        {!alerts.ok ? (
+          <div className="pt-3">
+            <ErrorNotice title="Alerts could not be derived." tone="caution">{alerts.error}</ErrorNotice>
+          </div>
+        ) : alerts.data.alerts.length === 0 ? (
+          <div className="pt-3">
+            <Notice tone="positive" icon="check">Nothing is alerting. {alerts.data.notInstrumented.length > 0 ? `Not measured: ${alerts.data.notInstrumented.join(', ')}.` : ''}</Notice>
+          </div>
+        ) : (
+          <div className="bc-rows">
+            {alerts.data.alerts.map((a) => (
+              <div key={`${a.level}-${a.code}`} className="bc-row" style={{ gridTemplateColumns: 'minmax(0,1fr) auto', padding: '10px 0' }}>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="bc-badge" data-tone={a.level === 'CRITICAL' ? 'critical' : a.level === 'HIGH' ? 'caution' : 'neutral'}>{a.level}</span>
+                    <span style={{ fontWeight: 500 }}>{a.title}</span>
+                    {a.count !== undefined && <span className="bc-meta">× {a.count}</span>}
+                    {a.references?.slice(0, 4).map((r) => (
+                      <Link key={r} href={`/admin/bookings/${r}`} className="bc-ref">{r}</Link>
+                    ))}
+                  </div>
+                  <div className="bc-meta mt-0.5">{a.detail}</div>
+                </div>
+                <span className="bc-mono bc-meta whitespace-nowrap">{a.code}</span>
+              </div>
+            ))}
+            {alerts.data.notInstrumented.length > 0 && (
+              <p className="bc-meta mt-3" style={{ fontSize: 12 }}>Not measured: {alerts.data.notInstrumented.join(', ')}.</p>
+            )}
+          </div>
+        )}
+      </Section>
 
       {!health.ok ? (
         <ErrorNotice title="System health could not be loaded.">{health.error}</ErrorNotice>
@@ -276,8 +311,7 @@ export default async function SystemPage() {
       </Section>
 
       <p className="bc-meta mt-10" style={{ fontSize: 12 }}>
-        Not instrumented in this version: whether the reconciliation and inventory-sync schedules are firing (a pass leaves no heartbeat), channel-manager and payment-provider reachability (no live call is made from here), and automation-platform health beyond what the outbox shows.{' '}
-        {jobStatusPresentation('pending').label && operationOutcomePresentation('in_flight').label ? '' : ''}
+        Not instrumented in this version: channel-manager and payment-provider reachability (no live call is made from here), and automation-platform health beyond what the outbox and its claim timestamps show.
       </p>
     </>
   );

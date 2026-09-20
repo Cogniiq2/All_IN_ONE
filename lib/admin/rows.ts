@@ -170,6 +170,16 @@ export interface InventoryMetaRow {
   oldest_sync: string | null;
 }
 
+export interface SchedulerStatusRow {
+  job: 'reconcile' | 'inventory_sync' | 'operations';
+  started_at: string;
+  finished_at: string;
+  ok: boolean;
+  report: Record<string, unknown> | null;
+  error: string | null;
+  worker: string | null;
+}
+
 export interface AuditRow {
   id: string;
   operator_email: string | null;
@@ -220,6 +230,8 @@ export interface RowSource {
   inventoryClosed(from: string, to: string): Promise<InventoryClosedRow[]>;
   inventoryMeta(): Promise<InventoryMetaRow[]>;
   audit(limit: number): Promise<AuditRow[]>;
+  /** The last run per scheduled job, from the heartbeat table. Empty when nothing has ever run. */
+  schedulerStatus(): Promise<SchedulerStatusRow[]>;
 }
 
 /** The statuses `bolagio_ops_attention` lists, mirrored for the list filter. */

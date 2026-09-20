@@ -361,5 +361,15 @@ export function fixtureRowSource(): RowSource {
     async audit(limit) {
       return AUDIT.slice(0, limit);
     },
+    async schedulerStatus() {
+      // Synthetic heartbeats: a healthy reconcile a minute ago, an inventory
+      // sync that last ran within its interval, and an operations pass.
+      const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
+      return [
+        { job: 'reconcile', started_at: minutesAgo(1.2), finished_at: minutesAgo(1), ok: true, report: { scanned: 2, resolved: 1, failed: 0, escalated: 1, paymentEvents: 0, queued: 0 }, error: null, worker: 'fixture' },
+        { job: 'operations', started_at: minutesAgo(1), finished_at: minutesAgo(1), ok: true, report: { created: 0, updated: 0, voided: 0 }, error: null, worker: 'fixture' },
+        { job: 'inventory_sync', started_at: minutesAgo(22), finished_at: minutesAgo(21), ok: true, report: { units: 2, days: 1096, failed: 0, holdsReleased: 0, heldForPayment: 0 }, error: null, worker: 'fixture' },
+      ];
+    },
   };
 }

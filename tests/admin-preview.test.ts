@@ -250,9 +250,17 @@ describe('4 — the demo needs no Supabase, no service role, no bolagio_ tables'
     expect(serialised).not.toContain('super-secret-service-role');
     expect(serialised).not.toContain(PASSWORD);
     expect(serialised).not.toContain(EMAIL);
-    // Every value is a boolean or a small enum.
-    for (const value of Object.values(adminPosture())) {
-      expect(['boolean', 'string']).toContain(typeof value);
+    // Every value is a boolean, a small enum, or the configuration findings —
+    // which name variables and never carry a value.
+    for (const [key, value] of Object.entries(adminPosture())) {
+      if (key === 'configFindings') {
+        for (const finding of value as Array<{ code: string; severity: string; message: string }>) {
+          expect(finding.message).not.toContain('super-secret-service-role');
+          expect(finding.message).not.toContain(PASSWORD);
+        }
+        continue;
+      }
+      expect(['boolean', 'string'], key).toContain(typeof value);
     }
   });
 });

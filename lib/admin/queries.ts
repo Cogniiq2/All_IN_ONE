@@ -35,11 +35,12 @@ import {
   type UnitDto,
 } from '@/lib/admin/dto';
 import { collectAttention, OUTBOX_BACKLOG_MS, PAYMENT_EVENT_STUCK_MS } from '@/lib/admin/attention';
+import { deriveAlerts, SCHEDULER_INTERVAL_MS, type AlertReport } from '@/lib/ops/alerts';
 import { closedRanges, nightsCovered } from '@/lib/admin/calendar';
 import { ageMs, guestListLabel } from '@/lib/admin/format';
 import { PAGE_SIZE, statesFor, type BookingListFilter } from '@/lib/admin/filters';
 import { AdminUnconfiguredError, rowSource } from '@/lib/admin/source';
-import type { IntentRow, JobRow, OperationRow, OutboxRow, PaymentEventRow, UnitRow } from '@/lib/admin/rows';
+import type { IntentRow, JobRow, OperationRow, OutboxRow, PaymentEventRow, SchedulerStatusRow, UnitRow } from '@/lib/admin/rows';
 import { reservesInventory } from '@/lib/booking/states';
 import { isBookingState } from '@/lib/admin/presentation';
 
@@ -573,14 +574,56 @@ export async function loadSystemHealth(now: Date = new Date()): Promise<QueryRes
       throw cause;
     }
 
-    const [reachable, queues, meta, units] = await Promise.all([
+    const [reachable, queues, meta, units, schedulers] = await Promise.all([
       source.ping().catch(() => false),
       source.queues().catch(() => null),
       source.inventoryMeta().catch(() => null),
       source.units().catch(() => null),
+      source.schedulerStatus().catch(() => null),
     ]);
 
     const sections: HealthSectionDto[] = [];
+
+    // Schedulers: measured from the heartbeat each scheduled route writes.
+    // A job that has never run is "not instrumented", never healthy.
+    {
+      const facts: HealthSectionDto['facts'] = [];
+      let status: HealthSectionDto['status'] = 'healthy';
+      let overdue = 0;
+      let never = 0;
+      for (const job of ['reconcile', 'inventory_sync', 'operations'] as const) {
+        const last = schedulers?.find((r) => r.job === job);
+        if (!last) {
+          never += 1;
+          facts.push({ label: job.replace('_', ' '), value: 'never run', tone: 'caution' });
+          continue;
+        }
+        const late = ageMs(last.finished_at, now) > SCHEDULER_INTERVAL_MS[job];
+        if (late) overdue += 1;
+        facts.push({
+          label: job.replace('_', ' '),
+          value: `${last.ok ? 'ok' : 'failed'} · ${Math.round(ageMs(last.finished_at, now) / 60_000)} min ago`,
+          tone: late ? 'critical' : last.ok ? 'positive' : 'caution',
+        });
+      }
+      let summary: string;
+      if (schedulers === null) {
+        status = 'unavailable';
+        summary = 'The heartbeat table could not be read. The production-hardening migration may not be applied.';
+      } else if (never === 3) {
+        status = 'not_instrumented';
+        summary = 'No scheduled run has been recorded. Either no schedule is configured yet, or nothing has fired since the heartbeat was introduced.';
+      } else if (overdue > 0) {
+        status = 'attention';
+        summary = `${overdue} job${overdue === 1 ? '' : 's'} overdue. The scheduler is not firing at its expected interval.`;
+      } else if (never > 0) {
+        status = 'attention';
+        summary = `${never} job${never === 1 ? '' : 's'} never recorded a run.`;
+      } else {
+        summary = 'Every scheduled job has run within its expected interval.';
+      }
+      sections.push({ key: 'schedulers', title: 'Schedulers', status, summary, facts });
+    }
 
     sections.push(
       reachable
@@ -708,8 +751,8 @@ export async function loadSystemHealth(now: Date = new Date()): Promise<QueryRes
             : unknownOps > 0
               ? `${unknownOps} external operation${unknownOps === 1 ? '' : 's'} with an unknown outcome await a read of the provider.`
               : openJobs > 0
-                ? `${openJobs} job${openJobs === 1 ? '' : 's'} open. Whether the schedule is running is not measured here.`
-                : 'No open jobs. Whether the schedule is running is not measured here — a pass leaves no heartbeat.',
+                ? `${openJobs} job${openJobs === 1 ? '' : 's'} open. Whether the schedule is firing is under Schedulers.`
+                : 'No open jobs. Whether the schedule is firing is under Schedulers.',
         facts: [
           { label: 'Open jobs', value: String(openJobs) },
           { label: 'Exhausted', value: String(exhaustedJobs), tone: exhaustedJobs > 0 ? 'critical' : undefined },
@@ -803,4 +846,35 @@ function postureSections(posture: ReturnType<typeof adminPosture>): HealthSectio
       ],
     },
   ];
+}
+
+
+/* ── Alerts ────────────────────────────────────────────────────────────── */
+
+/**
+ * The alert list: the same derivation the signed health endpoint serves, so
+ * the System page and an external monitor cannot disagree.
+ */
+export async function loadAlerts(now: Date = new Date()): Promise<QueryResult<AlertReport>> {
+  const posture = adminPosture();
+  return guard(async () => {
+    const source = await rowSource();
+    const [reachable, queues, schedulers, meta, units, attention] = await Promise.all([
+      source.ping().catch(() => false),
+      source.queues().catch(() => null),
+      source.schedulerStatus().catch(() => [] as SchedulerStatusRow[]),
+      source.inventoryMeta().catch(() => []),
+      source.units().catch(() => []),
+      loadAttention(now),
+    ]);
+    return deriveAlerts({
+      now,
+      queues,
+      databaseReachable: reachable,
+      schedulers,
+      attention: attention.ok ? attention.data.items : [],
+      configFindings: posture.configFindings,
+      inventory: meta.map((m) => ({ unitSlug: units.find((u) => u.id === m.unit_id)?.slug ?? m.unit_id, oldestSync: m.oldest_sync })),
+    });
+  });
 }

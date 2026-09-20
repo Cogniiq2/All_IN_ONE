@@ -23,6 +23,7 @@ import type {
   PaymentEventRow,
   QueueRow,
   RowSource,
+  SchedulerStatusRow,
   UnitRow,
 } from '@/lib/admin/rows';
 import { ATTENTION_STATUSES } from '@/lib/admin/rows';
@@ -244,6 +245,14 @@ export function supabaseRowSource(): RowSource {
         byUnit.set(row.unit_id, entry);
       }
       return Array.from(byUnit.values());
+    },
+
+    async schedulerStatus() {
+      const { data, error } = await supabaseAdmin()
+        .from('bolagio_scheduler_status')
+        .select('job, started_at, finished_at, ok, report, error, worker');
+      if (error) throw error;
+      return (data ?? []) as unknown as SchedulerStatusRow[];
     },
 
     async audit(limit) {
