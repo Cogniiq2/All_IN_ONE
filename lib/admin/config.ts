@@ -22,6 +22,7 @@ import {
 } from '@/lib/booking/config';
 import { isUsableSecret } from '@/lib/admin/session';
 import { appEnv, isPreviewDemoEnabled } from '@/lib/admin/preview';
+import { appEnvironment, validateEnvironment, type AppEnvironment, type EnvironmentFinding } from '@/lib/config/environment';
 
 function env(name: string): string | undefined {
   const value = process.env[name];
@@ -99,9 +100,16 @@ export interface AdminPosture {
   mode: AdminMode;
   /** What the deployment declares itself to be. Never inferred from NODE_ENV. */
   appEnv: 'preview' | 'production';
+  /** The four-way declaration behind `appEnv`. */
+  environment: AppEnvironment;
   /** True only when all four preview-demo conditions hold. */
   previewDemo: boolean;
+  /** The flag as set. */
   directBookingEnabled: boolean;
+  /** The flag AND a non-contradictory environment. What the routes obey. */
+  directBookingPermitted: boolean;
+  /** Configuration findings: codes and sentences naming variables, never values. */
+  configFindings: EnvironmentFinding[];
   paypalMode: 'sandbox' | 'live' | 'unconfigured';
   paypalCredentialsConfigured: boolean;
   paypalWebhookConfigured: boolean;
@@ -119,11 +127,15 @@ export function adminPosture(): AdminPosture {
   const paypal = paypalConfig();
   const beds24 = beds24Config();
   const supabase = supabaseConfig();
+  const report = validateEnvironment();
   return {
     mode: adminMode(),
     appEnv: appEnv(),
+    environment: appEnvironment(),
     previewDemo: isPreviewDemoEnabled(),
     directBookingEnabled: directBookingEnabled(),
+    directBookingPermitted: report.directBookingPermitted,
+    configFindings: report.findings,
     paypalMode: paypalMode() ?? 'unconfigured',
     paypalCredentialsConfigured: Boolean(paypal.clientId && paypal.clientSecret),
     paypalWebhookConfigured: Boolean(paypal.webhookId),

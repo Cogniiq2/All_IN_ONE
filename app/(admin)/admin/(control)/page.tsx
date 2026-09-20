@@ -36,7 +36,12 @@ export default async function OverviewPage() {
   const chips: { label: string; tone: string }[] = [];
   if (posture.mode === 'preview') chips.push({ label: 'Preview data', tone: 'caution' });
   if (posture.mode === 'fixture') chips.push({ label: 'Development fixtures', tone: 'caution' });
-  chips.push({ label: posture.directBookingEnabled ? 'Direct booking enabled' : 'Direct booking disabled', tone: posture.directBookingEnabled ? 'positive' : 'neutral' });
+  chips.push(
+    posture.directBookingEnabled && !posture.directBookingPermitted
+      ? { label: 'Direct booking refused by configuration', tone: 'critical' }
+      : { label: posture.directBookingPermitted ? 'Direct booking enabled' : 'Direct booking disabled', tone: posture.directBookingPermitted ? 'positive' : 'neutral' }
+  );
+  if (posture.environment !== 'production') chips.push({ label: `Environment: ${posture.environment}`, tone: 'caution' });
   if (posture.paypalMode !== 'live') chips.push({ label: posture.paypalMode === 'sandbox' ? 'PayPal sandbox' : 'PayPal unconfigured', tone: posture.paypalMode === 'sandbox' ? 'caution' : 'critical' });
   if (posture.beds24Mode !== 'live') chips.push({ label: 'Beds24 mock', tone: 'caution' });
 

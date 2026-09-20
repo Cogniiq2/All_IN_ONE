@@ -23,7 +23,7 @@
 import type { NextRequest } from 'next/server';
 import { createLogger } from '@/lib/booking/logger';
 import { bookingErrorResponse, bookingJson, clientKey, rateLimit } from '@/lib/booking/http';
-import { directBookingEnabled, paypalConfig } from '@/lib/booking/config';
+import { directBookingPermitted, paypalConfig } from '@/lib/booking/config';
 import { BookingError } from '@/lib/booking/service';
 
 export const dynamic = 'force-dynamic';
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
   try {
     rateLimit(clientKey(request, 'payment-config'), 60, 60_000);
 
-    if (!directBookingEnabled()) throw new BookingError('booking_disabled');
+    if (!directBookingPermitted().permitted) throw new BookingError('booking_disabled');
 
     const { mode, clientId } = paypalConfig();
     // Fail closed. An unset or unrecognised PAYPAL_MODE means no payment UI,

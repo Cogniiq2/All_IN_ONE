@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { refusals, validateEnvironment } from '@/lib/config/environment';
+
 /**
  * ══════════════════════════════════════════════════════════════════════════
  * SERVER CONFIGURATION — the only place booking secrets are read.
@@ -98,6 +100,24 @@ export function supabaseConfig() {
  */
 export function directBookingEnabled(): boolean {
   return env('DIRECT_BOOKING_ENABLED') === 'true';
+}
+
+/**
+ * Whether direct booking is ACTUALLY open: the flag is on AND the
+ * environment does not contradict itself.
+ *
+ * `validateEnvironment()` is the second lock on the launch gate. A flag set
+ * to true on a deployment whose PayPal mode is sandbox in production, whose
+ * Beds24 is mock, whose webhook id is missing, or which is a preview, is a
+ * flag that means nothing — the gate stays shut and the refusals are logged
+ * under `config.validation` and shown on the System page. See
+ * lib/config/environment.ts for the rules and docs/environments.md for the
+ * matrix.
+ */
+export function directBookingPermitted(): { permitted: boolean; refusals: string[] } {
+  if (!directBookingEnabled()) return { permitted: false, refusals: [] };
+  const report = validateEnvironment();
+  return { permitted: report.directBookingPermitted, refusals: refusals(report).map((f) => f.code) };
 }
 
 /* ── PayPal ────────────────────────────────────────────────────────────── */

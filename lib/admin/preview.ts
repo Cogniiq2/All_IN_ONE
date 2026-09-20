@@ -41,6 +41,7 @@
  */
 
 import { timingSafeEqual } from '@/lib/booking/reference';
+import { appEnvironment } from '@/lib/config/environment';
 import type { Capability, OperatorRole } from '@/lib/admin/permissions';
 
 /** The cookie the demo session lives in. Deliberately NOT the operator cookie. */
@@ -72,7 +73,9 @@ function env(name: string): string | undefined {
  * exists to remove.
  */
 export function appEnv(): 'preview' | 'production' {
-  return env('APP_ENV') === 'preview' ? 'preview' : 'production';
+  // `local` and `staging` are not previews: the demo exists on a preview and
+  // nowhere else. Both read as "not preview" here, which is the safe side.
+  return appEnvironment() === 'preview' ? 'preview' : 'production';
 }
 
 export function isProductionEnv(): boolean {

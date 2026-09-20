@@ -26,7 +26,7 @@ import 'server-only';
  * ══════════════════════════════════════════════════════════════════════════
  */
 
-import { directBookingEnabled, inventoryMonths, quoteMinutes } from '@/lib/booking/config';
+import { directBookingPermitted, inventoryMonths, quoteMinutes } from '@/lib/booking/config';
 import { transitionIntent } from '@/lib/booking/commands';
 import { acquireHold, HoldError } from '@/lib/booking/hold';
 import { evaluateLease } from '@/lib/booking/lease';
@@ -497,8 +497,19 @@ export async function syncInventory(
  * command endpoints runs into it, and the per-unit `is_bookable` flag in the
  * database is the second, independent one.
  */
-export function requireDirectBooking(): void {
-  if (!directBookingEnabled()) throw new BookingError('booking_disabled');
+export function requireDirectBooking(logger: BookingLogger = createLogger()): void {
+  const gate = directBookingPermitted();
+  if (gate.permitted) return;
+  if (gate.refusals.length > 0) {
+    // The flag says yes and the environment says no. That is a configuration
+    // incident, logged as one, and the guest sees the ordinary "not open".
+    logger.error('config.validation', undefined, {
+      errorCode: 'DIRECT_BOOKING_DISABLED',
+      outcome: 'refused_by_environment',
+      reason: gate.refusals.join(','),
+    });
+  }
+  throw new BookingError('booking_disabled');
 }
 
 async function requireBookableUnit(slug: string): Promise<BookableUnit> {

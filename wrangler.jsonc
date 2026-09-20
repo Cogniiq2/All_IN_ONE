@@ -1,5 +1,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
+  // The default target is the PREVIEW worker. Deploying with no `--env`
+  // therefore cannot reach production: `npm run cf:deploy` updates
+  // `bolagio-preview`, and production is a deliberate `--env production`.
   "name": "bolagio-preview",
   "main": ".open-next/worker.js",
   "compatibility_date": "2024-09-23",
@@ -7,5 +10,31 @@
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
+  },
+  // Plain (non-secret) variables. Every secret is set with
+  // `wrangler secret put <NAME> --env <env>` and never appears here. The
+  // application reads APP_ENV through lib/config/environment.ts and refuses
+  // contradictory combinations (see docs/environments.md).
+  "vars": {
+    "APP_ENV": "preview",
+    "BEDS24_MODE": "mock",
+    "DIRECT_BOOKING_ENABLED": "false"
+  },
+  "env": {
+    "preview": {
+      "name": "bolagio-preview",
+      "vars": { "APP_ENV": "preview", "BEDS24_MODE": "mock", "DIRECT_BOOKING_ENABLED": "false" }
+    },
+    "staging": {
+      "name": "bolagio-staging",
+      // Live Beds24 reads against the real account, PayPal SANDBOX, its own
+      // Supabase project. Direct booking may be switched on here for the
+      // sandbox end-to-end run and nowhere else before production.
+      "vars": { "APP_ENV": "staging", "BEDS24_MODE": "live", "DIRECT_BOOKING_ENABLED": "false" }
+    },
+    "production": {
+      "name": "bolagio",
+      "vars": { "APP_ENV": "production", "BEDS24_MODE": "live", "DIRECT_BOOKING_ENABLED": "false" }
+    }
   }
 }

@@ -18,12 +18,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const rpcCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
 let rpcFails = false;
+/** What `bolagio_begin_external_operation` hands back, per test. */
+let beginResult: unknown = null;
+let beginError: { code: string; message: string } | null = null;
 
 vi.mock('@/lib/supabase/server', () => ({
   supabaseAdmin: () => ({
     rpc: async (name: string, args: Record<string, unknown>) => {
       rpcCalls.push({ name, args });
       if (rpcFails) return { data: null, error: { code: 'XX000', message: 'db down' } };
+      if (name === 'bolagio_begin_external_operation') {
+        if (beginError) return { data: null, error: beginError };
+        return { data: beginResult, error: null };
+      }
       return { data: null, error: null };
     },
     from: () => ({
@@ -39,6 +46,7 @@ import {
   operationKey,
   trackedCall,
   UncertainOperationError,
+  UnresolvedOperationError,
 } from '@/lib/ops/external-operations';
 import { createLogger } from '@/lib/booking/logger';
 
@@ -64,6 +72,8 @@ function outcomes(): string[] {
 beforeEach(() => {
   rpcCalls.length = 0;
   rpcFails = false;
+  beginResult = null;
+  beginError = null;
 });
 
 describe('a call that succeeds', () => {
@@ -220,5 +230,50 @@ describe('operation keys', () => {
     // Beds24 booking — which is what makes "retry against the same id" true.
     expect(operationKey.beds24Finalize('9001')).toContain('9001');
     expect(operationKey.beds24Release('9001')).toContain('9001');
+  });
+});
+
+describe('a call whose earlier attempt is unresolved', () => {
+  it('is refused by the application when the database hands back an unknown outcome', async () => {
+    /*
+     * Belt to the database's braces. The SQL guard raises BLG01; this is the
+     * same refusal decided from the returned row, for a database that
+     * predates the guard.
+     */
+    beginResult = { outcome: 'outcome_unknown' };
+    let called = false;
+    const thrown = await trackedCall(base(), async () => {
+      called = true;
+      return null;
+    }).catch((e) => e);
+    expect(called, 'the blind retry was sent').toBe(false);
+    expect(thrown).toBeInstanceOf(UnresolvedOperationError);
+    expect(thrown).toBeInstanceOf(UncertainOperationError);
+    // Nothing was completed: the unknown verdict stands.
+    expect(outcomes()).toEqual([]);
+  });
+
+  it('is refused when the database raises its own guard', async () => {
+    beginError = { code: 'BLG01', message: 'bolagio: operation x has an unresolved unknown outcome' };
+    let called = false;
+    const thrown = await trackedCall(base(), async () => {
+      called = true;
+      return null;
+    }).catch((e) => e);
+    expect(called).toBe(false);
+    expect(thrown).toBeInstanceOf(UnresolvedOperationError);
+  });
+
+  it('proceeds when the caller declares the operation idempotent', async () => {
+    beginResult = { outcome: 'outcome_unknown' };
+    const result = await trackedCall(base({ retryAfterUnknown: true }), async () => 'done');
+    expect(result).toBe('done');
+    expect(rpcCalls[0].args.p_allow_retry_after_unknown).toBe(true);
+    expect(outcomes()).toEqual(['succeeded']);
+  });
+
+  it('sends the retry flag as false by default', async () => {
+    await trackedCall(base(), async () => null);
+    expect(rpcCalls[0].args.p_allow_retry_after_unknown).toBe(false);
   });
 });

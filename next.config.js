@@ -79,6 +79,33 @@ const nextConfig = {
       },
     ];
   },
+  /**
+   * Security headers for the public site.
+   *
+   * Deliberately no Content-Security-Policy here yet: the booking flow loads
+   * the PayPal JS SDK, which in turn loads from several PayPal origins, and a
+   * wrong policy breaks payment silently for some guests. A CSP for the
+   * public site is a follow-up with a report-only phase first. The admin has
+   * its own strict policy in the middleware.
+   */
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+        ],
+      },
+      {
+        // Booking and internal answers are per-guest and per-moment.
+        source: '/api/:path*',
+        headers: [{ key: 'Cache-Control', value: 'no-store, max-age=0' }],
+      },
+    ];
+  },
   images: {
     // NOTE: left unchanged deliberately. Enabling Next.js image optimization
     // needs to be verified against the live Netlify deployment first, and

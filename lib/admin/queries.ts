@@ -593,7 +593,7 @@ export async function loadSystemHealth(now: Date = new Date()): Promise<QueryRes
     // migration is not applied.
     sections.push(
       queues
-        ? { key: 'booking_core', title: 'Booking core', status: 'healthy', summary: 'Transactional core present: state machine, outbox, payment inbox and reconciliation queue are all readable.', facts: [{ label: 'Direct booking', value: posture.directBookingEnabled ? 'Enabled' : 'Disabled', tone: posture.directBookingEnabled ? 'caution' : 'muted' }] }
+        ? { key: 'booking_core', title: 'Booking core', status: 'healthy', summary: 'Transactional core present: state machine, outbox, payment inbox and reconciliation queue are all readable.', facts: [gateFact(posture)] }
         : { key: 'booking_core', title: 'Booking core', status: 'degraded', summary: 'The operations views could not be read. The booking-core migrations may not be applied.', facts: [] }
     );
 
@@ -726,8 +726,41 @@ export async function loadSystemHealth(now: Date = new Date()): Promise<QueryRes
   });
 }
 
+function gateFact(posture: ReturnType<typeof adminPosture>): HealthSectionDto['facts'][number] {
+  if (!posture.directBookingEnabled) return { label: 'Direct booking', value: 'Disabled', tone: 'muted' };
+  if (posture.directBookingPermitted) return { label: 'Direct booking', value: 'Enabled', tone: 'caution' };
+  return { label: 'Direct booking', value: 'Flag on, refused by configuration', tone: 'critical' };
+}
+
+/**
+ * The environment verdict, as a health section. A `refuse` finding is a
+ * configuration incident: the launch gate is shut whatever the flag says.
+ */
+function configurationSection(posture: ReturnType<typeof adminPosture>): HealthSectionDto {
+  const refused = posture.configFindings.filter((f) => f.severity === 'refuse');
+  const warned = posture.configFindings.filter((f) => f.severity === 'warn');
+  const status: HealthSectionDto['status'] = refused.length > 0 ? 'degraded' : warned.length > 0 ? 'attention' : 'healthy';
+  return {
+    key: 'configuration',
+    title: 'Configuration',
+    status,
+    summary:
+      refused.length > 0
+        ? `${refused.length} contradiction${refused.length === 1 ? '' : 's'}. Direct booking is refused until the environment is corrected: ${refused.map((f) => f.code).join(', ')}.`
+        : warned.length > 0
+          ? `${warned.length} warning${warned.length === 1 ? '' : 's'}: ${warned.map((f) => f.code).join(', ')}.`
+          : `Declared ${posture.environment}; no contradictions.`,
+    facts: [
+      { label: 'Declared as', value: posture.environment, tone: posture.environment === 'production' ? 'neutral' : 'caution' },
+      { label: 'Contradictions', value: String(refused.length), tone: refused.length > 0 ? 'critical' : 'positive' },
+      { label: 'Warnings', value: String(warned.length), tone: warned.length > 0 ? 'caution' : undefined },
+    ],
+  };
+}
+
 function postureSections(posture: ReturnType<typeof adminPosture>): HealthSectionDto[] {
   return [
+    configurationSection(posture),
     {
       key: 'control',
       title: 'BoLaGio Control',
