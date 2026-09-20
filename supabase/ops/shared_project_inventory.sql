@@ -265,7 +265,7 @@ findings as (
   -- CRITICAL: no RLS + browser grant (unrelated tables)
   select 'CRITICAL' as severity, 'public.' || relname as object,
          'RLS disabled and ' || browser_grantees || ' hold table privileges — the public anon key reads/writes every row' as finding,
-         'enable row level security + revoke all from anon, authenticated (supabase/ops/proposed_unrelated_hardening.sql)' as recommended_action
+         'see supabase/ops/shared_project_hardening.sql — it names this table and says which of the three treatments it gets' as recommended_action
   from tbl where not rls and browser_grantees is not null and not is_bolagio
   union all
   -- CRITICAL: bolagio_ table with browser grant
@@ -373,6 +373,6 @@ from (
 ) s
 group by 1, 2 order by 1;
 \echo '(no CRITICAL/HIGH rows in the summary = nothing to fix before applying the BoLaGio migrations;'
-\echo ' a CRITICAL or HIGH row on an unrelated table is the input to supabase/ops/proposed_unrelated_hardening.sql)'
+\echo ' a CRITICAL or HIGH row on an unrelated table should already be named in supabase/ops/shared_project_hardening.sql; one that is not is NEW)'
 \echo ''
 \echo '════════ inventory complete (read-only) ════════'

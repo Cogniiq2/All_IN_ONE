@@ -86,6 +86,8 @@ jobs:
         run: ./scripts/db-test.sh
       - name: db-ops-check.sh (preflight → migrate → verify → rollback → re-apply)
         run: ./scripts/db-ops-check.sh
+      - name: shared-project-check.sh (Cogniiq exposure closed, Cogniiq still works, BoLaGio applies on top)
+        run: ./scripts/shared-project-check.sh
 
   integration:
     name: Integration — real code against the local stack

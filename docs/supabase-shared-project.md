@@ -61,7 +61,7 @@ No BoLaGio migration, script or workflow creates, alters, drops, grants or
 revokes anything that is not `bolagio_*` — with one exception that is not
 Cogniiq's: `create extension if not exists btree_gist` in the foundation
 migration (an extension, in `public`, used by the no-overlap constraint).
-`supabase/ops/proposed_unrelated_hardening.sql` (§3) is a *proposal* that
+`supabase/ops/shared_project_hardening.sql` (§3) is a *named, per-object script* that
 the owner of the unrelated tables may apply; no BoLaGio runbook depends on
 it or runs it.
 
@@ -151,7 +151,7 @@ Reading it:
 * **A CRITICAL/HIGH row on a `bolagio_*` object** — a BoLaGio bug or a
   manual change; fix it before going further (the action column says how).
 * **A CRITICAL/HIGH row on an unrelated table** — Cogniiq's exposure, not
-  BoLaGio's. It is the input to `proposed_unrelated_hardening.sql` (next
+  BoLaGio's. It is the input to `shared_project_hardening.sql` (next
   section) and does **not** block the BoLaGio migrations, which neither
   widen nor narrow it.
 
@@ -160,7 +160,7 @@ Run it with `-v format=unaligned` when the output is meant for `diff`.
 
 ### The hardening proposal
 
-`supabase/ops/proposed_unrelated_hardening.sql` is a **proposal for the owner
+`supabase/ops/shared_project_hardening.sql` is a **named, per-object script for the owner
 of the unrelated tables**. For each table the operator lists, and only those,
 it runs `alter table … enable row level security` and `revoke all on table …
 from anon, authenticated`. It drops no policy, alters no column, leaves
@@ -352,6 +352,6 @@ the application already uses.
 - [ ] seed applied; every unit still `is_bookable = false`
 - [ ] verify passed (step 5), output kept
 - [ ] `inventory-after.txt` and the diff kept; every changed line names a `bolagio_*` object or `btree_gist`
-- [ ] the risk report's CRITICAL/HIGH rows on unrelated tables handed to the Cogniiq owner with `proposed_unrelated_hardening.sql`
+- [ ] the risk report's CRITICAL/HIGH rows closed with `shared_project_hardening.sql`, verified, per `docs/security/2026-09-20-shared-project-hardening.md` — **before** the BoLaGio chain
 - [ ] optional: `bolagio_app_role.sql` applied, JWT minted and set, health check 200, verify passed with "bolagio_app is installed"
 - [ ] records-of-processing entry for the shared project (flagged in §1) written or scheduled

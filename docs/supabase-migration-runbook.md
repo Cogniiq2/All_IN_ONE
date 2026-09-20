@@ -158,6 +158,9 @@ pair remains for the local throwaway clusters (`scripts/db-ops-check.sh`).
 
 The CRITICAL/HIGH rows the inventory prints for **unrelated** tables are
 Cogniiq's; hand them to that table owner with
-`supabase/ops/proposed_unrelated_hardening.sql`. No BoLaGio runbook runs it.
+`supabase/ops/shared_project_hardening.sql`, and it is now a **prerequisite**: the
+live inventory of 2026-09-20 found 16 CRITICAL and 9 HIGH exposures on non-BoLaGio
+tables, and they are closed *before* the BoLaGio chain is applied. Follow
+`docs/security/2026-09-20-shared-project-hardening.md` first, then return here.
 `20260815120000_lockdown_revoke_anon_access.sql` remains the older one-shot
 for the same clean-up and is likewise not part of the BoLaGio sequence.

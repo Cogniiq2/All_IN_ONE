@@ -9,7 +9,8 @@
  * by `npm test` before it reaches any database:
  *
  *   • the inventory and the verify script are read-only
- *   • the unrelated-hardening proposal cannot run without the confirmation
+ *   • the shared-project hardening is a named, per-object script (its own
+ *     invariants are in tests/shared-project-hardening.test.ts)
  *   • the bolagio_app role never grants to a browser role
  *   • no BoLaGio migration creates, alters or drops anything that is not
  *     bolagio_* — "BoLaGio migrations never mutate Cogniiq tables"
@@ -100,38 +101,13 @@ describe('shared_project_inventory.sql and shared_project_verify.sql are read-on
   });
 });
 
-/* ── 2. the hardening proposal is gated ────────────────────────────────── */
-
-describe('proposed_unrelated_hardening.sql', function () {
-  const sql = read(path.join(OPS, 'proposed_unrelated_hardening.sql'));
-  const body = stripLineComments(sql).replace(/^\s+/, '');
-
-  it('begins (after comments) with the confirmation guard', function () {
-    // The first statement is a DO block that raises unless the session
-    // carries bolagio.hardening_confirmed = 'I have read the inventory'.
-    expect(body.slice(0, 2).toLowerCase()).toBe('do');
-    const firstBlock = body.slice(0, body.indexOf('end $$;') + 7);
-    expect(firstBlock).toMatch(/current_setting\('bolagio\.hardening_confirmed',\s*true\)/);
-    expect(firstBlock).toMatch(/'I have read the inventory'/);
-    expect(firstBlock).toMatch(/raise\s+exception/i);
-    // and nothing executes before it: no \set, no select, no DDL ahead of the guard
-    expect(body.indexOf('\\set')).toBeGreaterThan(body.indexOf('end $$;'));
-  });
-
-  it('refuses bolagio_ tables and requires an explicit list and apply=yes', function () {
-    expect(sql).toMatch(/like 'bolagio\\_%'/);
-    expect(sql).toMatch(/REFUSED: no table listed/);
-    expect(sql).toMatch(/current_setting\('bolagio\.hardening_apply',\s*true\)\s*=\s*'yes'/);
-  });
-
-  it('names no Cogniiq table outside its own comments', function () {
-    const code = blankStrings(stripLineComments(sql));
-    const unrelated = ['invoices', 'emails', 'email_attachments', 'properties', 'property_units'];
-    for (let i = 0; i < unrelated.length; i++) {
-      expect(new RegExp('\\b' + unrelated[i] + '\\b').test(code)).toBe(false);
-    }
-  });
-});
+/* ── 2. the hardening proposal is retired ──────────────────────────────── */
+// `proposed_unrelated_hardening.sql` took a table list from the operator and
+// applied one blunt treatment to all of it. The live inventory of 2026-09-20
+// found three different problems needing three different answers — and one
+// Cogniiq table that treatment would have BROKEN. It was replaced by the
+// named, per-object supabase/ops/shared_project_hardening.sql, whose own
+// invariants live in tests/shared-project-hardening.test.ts.
 
 /* ── 3. bolagio_app never grants to a browser role ─────────────────────── */
 

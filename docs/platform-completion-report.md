@@ -42,7 +42,7 @@ Playwright and unit tests.
 | Integration suite | Real route handlers over HTTP against the stack and simulators | `tests/integration/*` (77 tests) |
 | Playwright suite | Built site, real Chromium, fake PayPal SDK, database assertions | `e2e/*` (21 guest cases, the mobile repeat, 8 admin cases) |
 | n8n | Six importable workflows generated from one source, credential matrix, test mode, runbooks, validation test | `n8n/*`, `tests/n8n-workflows.test.ts` |
-| Shared Supabase | Inventory / preflight / verify SQL, hardening proposal (guarded), narrower `bolagio_app` role, decision doc | `supabase/ops/shared_project_*.sql`, `supabase/ops/{proposed_unrelated_hardening,bolagio_app_role}.sql`, `docs/supabase-shared-project.md` |
+| Shared Supabase | Inventory / preflight / verify SQL, hardening proposal (guarded), narrower `bolagio_app` role, decision doc | `supabase/ops/shared_project_*.sql`, `supabase/ops/bolagio_app_role.sql` (the hardening proposal named here was later replaced by `supabase/ops/shared_project_hardening.sql`), `docs/supabase-shared-project.md` |
 | Staging | Migrate / rollback / cron / smoke / health / config validation, secrets checklist, Edge Function deploy, teardown | `ops/staging/*` |
 | CI | Quality, real-Postgres, integration, e2e, build/OpenNext jobs; no credential | `.github/workflows/ci.yml` |
 | Invoicing | Draft contract that refuses without tax facts; gapless numbering; no document | `lib/invoicing/*`, `docs/invoicing.md` |

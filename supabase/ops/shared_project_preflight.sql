@@ -309,7 +309,8 @@ end $$;
 \echo '── 9. Blast-radius record: unrelated tables (RLS state PRINTED, not changed)'
 -- The tables docs/security/2026-08-15-admin-exposure.md names, then every
 -- other non-bolagio table. Nothing here is asserted; it is the evidence to
--- keep with the change record and the input to proposed_unrelated_hardening.sql.
+-- keep with the change record; the hardening it feeds is
+-- supabase/ops/shared_project_hardening.sql.
 select t.table_name as named_in_security_doc,
        case when to_regclass('public.' || t.table_name) is null then 'absent' else 'present' end as presence,
        (select c.relrowsecurity from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relname = t.table_name) as rls_enabled,
