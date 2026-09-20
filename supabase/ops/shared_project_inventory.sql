@@ -1,3 +1,8 @@
+-- BoLaGio — SHARED-PROJECT INVENTORY
+-- Supabase SQL Editor compatible version.
+-- Read-only: catalog inspection only; no intended DDL/DML.
+-- Converted from the psql version by removing psql meta-commands (\set, \if, \pset, \echo, etc.).
+
 -- ════════════════════════════════════════════════════════════════════════════
 -- BoLaGio — SHARED-PROJECT INVENTORY. Read-only. Changes nothing.
 --
@@ -22,24 +27,10 @@
 --   * prints no secret and no row data — catalog metadata only
 -- ════════════════════════════════════════════════════════════════════════════
 
-\set ON_ERROR_STOP on
 -- -v format=unaligned gives a diff-stable layout (no column re-padding); default is aligned
-\if :{?format}
-\else
-  \set format aligned
-\endif
-\pset format :format
-\pset pager off
-\pset null '∅'
 
-\echo ''
-\echo '════════════════════════════════════════════════════════════════════════'
-\echo ' BoLaGio shared-project inventory'
-\echo '════════════════════════════════════════════════════════════════════════'
 select now() as generated_at, current_database() as database, current_user as run_as, version() as server;
 
-\echo ''
-\echo '── 1. Schemas ──────────────────────────────────────────────────────────'
 select n.nspname as schema, pg_get_userbyid(n.nspowner) as owner,
        (select count(*) from pg_class c where c.relnamespace = n.oid and c.relkind in ('r','p')) as tables,
        (select count(*) from pg_class c where c.relnamespace = n.oid and c.relkind in ('v','m')) as views,
@@ -48,8 +39,6 @@ from pg_namespace n
 where n.nspname not like 'pg\_%' and n.nspname <> 'information_schema'
 order by 1;
 
-\echo ''
-\echo '── 2a. BoLaGio tables (public.bolagio_*) ───────────────────────────────'
 select n.nspname as schema, c.relname as table_name, pg_get_userbyid(c.relowner) as owner,
        c.relrowsecurity as rls_enabled, c.relforcerowsecurity as rls_forced,
        (select count(*) from pg_policy p where p.polrelid = c.oid) as policies,
@@ -59,10 +48,7 @@ select n.nspname as schema, c.relname as table_name, pg_get_userbyid(c.relowner)
 from pg_class c join pg_namespace n on n.oid = c.relnamespace
 where c.relkind in ('r','p') and n.nspname = 'public' and c.relname like 'bolagio\_%'
 order by 2;
-\echo '(a fresh project prints zero rows here — the migrations have not been applied yet)'
 
-\echo ''
-\echo '── 2b. UNRELATED tables (everything else, all non-system schemas) ──────'
 select n.nspname as schema, c.relname as table_name, pg_get_userbyid(c.relowner) as owner,
        c.relrowsecurity as rls_enabled, c.relforcerowsecurity as rls_forced,
        (select count(*) from pg_policy p where p.polrelid = c.oid) as policies,
@@ -75,18 +61,13 @@ where c.relkind in ('r','p')
   and n.nspname not like 'pg\_%'
   and not (n.nspname = 'public' and c.relname like 'bolagio\_%')
 order by 1, 2;
-\echo '(every row here is a table BoLaGio does not own but shares a database with)'
 
-\echo ''
-\echo '── 3. Policies (all schemas) ───────────────────────────────────────────'
 select schemaname as schema, tablename as table_name, policyname as policy, roles, cmd, permissive,
        qual as using_expr, with_check as with_check_expr
 from pg_policies
 where schemaname not in ('pg_catalog','information_schema')
 order by 1, 2, 3;
 
-\echo ''
-\echo '── 4a. Table grants to anon / authenticated (all non-system schemas) ───'
 select table_schema as schema, table_name, grantee, string_agg(privilege_type, ',' order by privilege_type) as privileges
 from information_schema.role_table_grants
 where grantee in ('anon','authenticated')
@@ -94,8 +75,6 @@ where grantee in ('anon','authenticated')
 group by 1, 2, 3
 order by 1, 2, 3;
 
-\echo ''
-\echo '── 4b. Sequence grants to anon / authenticated ─────────────────────────'
 select n.nspname as schema, c.relname as sequence_name, r.rolname as grantee,
        string_agg(priv, ',' order by priv) as privileges
 from pg_class c
@@ -109,8 +88,6 @@ where c.relkind = 'S'
 group by 1, 2, 3
 order by 1, 2, 3;
 
-\echo ''
-\echo '── 4c. Function EXECUTE held by anon / authenticated (non-system schemas)'
 select n.nspname as schema, p.oid::regprocedure as function, r.rolname as grantee,
        p.provolatile as volatility, p.prosecdef as security_definer,
        (p.prorettype = 'trigger'::regtype) as trigger_function
@@ -123,10 +100,7 @@ where n.nspname not in ('pg_catalog','information_schema')
   and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')
   and has_function_privilege(r.rolname, p.oid, 'execute')
 order by 1, 2, 3;
-\echo '(Postgres grants EXECUTE to PUBLIC by default; a row here can come from that default, not from an explicit grant)'
 
-\echo ''
-\echo '── 4d. Default privileges (what NEW objects get automatically) ─────────'
 select pg_get_userbyid(d.defaclrole) as for_objects_created_by,
        coalesce(nsp.nspname, '<all schemas>') as in_schema,
        case d.defaclobjtype when 'r' then 'tables' when 'S' then 'sequences' when 'f' then 'functions' when 'T' then 'types' when 'n' then 'schemas' else d.defaclobjtype::text end as object_type,
@@ -134,8 +108,6 @@ select pg_get_userbyid(d.defaclrole) as for_objects_created_by,
 from pg_default_acl d left join pg_namespace nsp on nsp.oid = d.defaclnamespace
 order by 1, 2, 3;
 
-\echo ''
-\echo '── 5. Functions in non-system schemas (SECURITY DEFINER and search_path)'
 select n.nspname as schema, p.oid::regprocedure as function, pg_get_userbyid(p.proowner) as owner,
        p.prosecdef as security_definer, p.provolatile as volatility,
        l.lanname as language,
@@ -150,8 +122,6 @@ where n.nspname not in ('pg_catalog','information_schema')
   and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e') -- not an extension member
 order by (n.nspname = 'public' and p.proname like 'bolagio\_%') desc, 1, 2;
 
-\echo ''
-\echo '── 6. Views and their security_invoker option ─────────────────────────'
 select n.nspname as schema, c.relname as view_name, pg_get_userbyid(c.relowner) as owner,
        coalesce((select (regexp_match(opt, 'security_invoker=(\w+)'))[1] from unnest(c.reloptions) opt where opt like 'security_invoker=%'), 'false (default: runs as owner)') as security_invoker,
        (select count(*) from information_schema.role_table_grants g
@@ -162,8 +132,6 @@ where c.relkind in ('v','m')
   and n.nspname not like 'pg\_%'
 order by 1, 2;
 
-\echo ''
-\echo '── 7. Storage (buckets and storage.objects policies) ──────────────────'
 do $$
 declare r record; n int := 0;
 begin
@@ -179,10 +147,7 @@ begin
 end $$;
 select schemaname as schema, tablename as table_name, policyname as policy, roles, cmd, permissive, qual as using_expr, with_check as with_check_expr
 from pg_policies where schemaname = 'storage' order by 2, 3;
-\echo '(zero rows above means no storage policy, or no storage schema)'
 
-\echo ''
-\echo '── 8. Auth dependencies in public objects (auth.uid / auth.jwt / auth.users)'
 select 'function' as kind, p.oid::regprocedure::text as object,
        string_agg(distinct m[1], ', ') as references
 from pg_proc p join pg_namespace n on n.oid = p.pronamespace,
@@ -204,16 +169,11 @@ from pg_class c join pg_namespace n on n.oid = c.relnamespace,
 where c.relkind = 'v' and n.nspname = 'public'
 group by 1, 2
 order by 1, 2;
-\echo '(zero rows = nothing in public depends on Supabase Auth; the BoLaGio objects never do)'
 
-\echo ''
-\echo '── 9. Extensions ──────────────────────────────────────────────────────'
 select e.extname as extension, e.extversion as version, n.nspname as schema
 from pg_extension e join pg_namespace n on n.oid = e.extnamespace
 order by 1;
 
-\echo ''
-\echo '── 10. pg_cron jobs ───────────────────────────────────────────────────'
 do $$
 declare r record; n int := 0;
 begin
@@ -228,29 +188,12 @@ begin
   if n = 0 then raise notice 'pg_cron installed, no jobs'; end if;
 end $$;
 
-\echo ''
-\echo '── 11. Roles the application depends on ───────────────────────────────'
 select r.rolname as role, r.rolcanlogin as can_login, r.rolbypassrls as bypass_rls, r.rolsuper as superuser,
        array(select b.rolname from pg_auth_members m join pg_roles b on b.oid = m.roleid where m.member = r.oid order by 1) as member_of
 from pg_roles r
 where r.rolname in ('anon','authenticated','service_role','authenticator','bolagio_app','postgres','supabase_admin')
 order by 1;
 
-\echo ''
-\echo '════════════════════════════════════════════════════════════════════════'
-\echo ' RISK REPORT — one row per finding (schema public; storage policies)'
-\echo '════════════════════════════════════════════════════════════════════════'
-\echo 'Rules:'
-\echo '  CRITICAL  table without RLS that anon/authenticated hold any privilege on'
-\echo '  CRITICAL  bolagio_* table with any anon/authenticated grant, or with RLS off'
-\echo '  HIGH      RLS on but a permissive policy grants anon (or PUBLIC)'
-\echo '  HIGH      SECURITY DEFINER function without a fixed search_path'
-\echo '  HIGH      anon can EXECUTE a function that mutates (name insert%|update%|delete%|set%|create%, or VOLATILE)'
-\echo '  MEDIUM    RLS on, no policy, but anon/authenticated still hold table grants (harmless today; one policy away from exposure)'
-\echo '  INFO      anon can EXECUTE a trigger function or an IMMUTABLE/STABLE helper (no data access, cannot be called by PostgREST if trigger)'
-\echo '  (functions that belong to an extension, e.g. btree_gist, are excluded from the function rules)'
-\echo '  INFO      storage.objects policy for anon/authenticated; unrelated table with browser policy on RLS'
-\echo ''
 with
 tbl as (
   select c.oid, c.relname, c.relrowsecurity as rls,
@@ -348,7 +291,6 @@ select severity, object, finding, recommended_action
 from findings
 order by case severity when 'CRITICAL' then 0 when 'HIGH' then 1 when 'MEDIUM' then 2 else 3 end, object;
 
-\echo ''
 select case severity when 'CRITICAL' then 0 when 'HIGH' then 1 when 'MEDIUM' then 2 else 3 end as rank, severity, count(*) as findings
 from (
   select 'CRITICAL' as severity from pg_class c join pg_namespace n on n.oid = c.relnamespace
@@ -372,7 +314,3 @@ from (
       and (p.provolatile = 'v' or p.proname ~ '^(insert|update|delete|set|create)')
 ) s
 group by 1, 2 order by 1;
-\echo '(no CRITICAL/HIGH rows in the summary = nothing to fix before applying the BoLaGio migrations;'
-\echo ' a CRITICAL or HIGH row on an unrelated table is the input to supabase/ops/proposed_unrelated_hardening.sql)'
-\echo ''
-\echo '════════ inventory complete (read-only) ════════'
