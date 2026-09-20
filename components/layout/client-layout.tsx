@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { I18nProvider } from '@/lib/i18n';
 import { Navbar } from '@/components/layout/navbar';
 import { Footer } from '@/components/layout/footer';
@@ -24,32 +24,31 @@ import { AppointmentModal } from '@/components/rental/appointment-modal';
  * on the homepage, on /apartments and on /mieten all open the same instance and
  * the flow survives navigation.
  *
- * StayProvider reads useSearchParams, which Next requires to sit inside a
- * Suspense boundary — without one, every page using it opts out of static
- * rendering.
+ * StayProvider reads the URL inside its OWN Suspense boundary around a leaf
+ * that renders nothing. It used to be read at the provider level behind a
+ * boundary around everything below, and the prerendered HTML of every public
+ * page was that boundary's fallback: null. See lib/booking/stay-context.tsx.
  */
 export function ClientLayout({ children }: { children: ReactNode }) {
   return (
     <I18nProvider>
       <EnquiryStateProvider>
-        <Suspense fallback={null}>
-          <StayProvider>
-            <UnitFlowProvider>
-              <a href="#main" className="skip-link">
-                Zum Inhalt springen
-              </a>
-              <Navbar />
-              {/* Every page clears the fixed header here. The homepage hero opts
-                  out with a matching negative margin so it can run full-bleed. */}
-              <main id="main" className="pt-[70px] lg:pt-[84px]">{children}</main>
-              <Footer />
-              <EnquiryDialog />
-              <UnitDetailModal />
-              <BookingModal />
-              <AppointmentModal />
-            </UnitFlowProvider>
-          </StayProvider>
-        </Suspense>
+        <StayProvider>
+          <UnitFlowProvider>
+            <a href="#main" className="skip-link">
+              Zum Inhalt springen
+            </a>
+            <Navbar />
+            {/* Every page clears the fixed header here. The homepage hero opts
+                out with a matching negative margin so it can run full-bleed. */}
+            <main id="main" className="pt-[70px] lg:pt-[84px]">{children}</main>
+            <Footer />
+            <EnquiryDialog />
+            <UnitDetailModal />
+            <BookingModal />
+            <AppointmentModal />
+          </UnitFlowProvider>
+        </StayProvider>
       </EnquiryStateProvider>
     </I18nProvider>
   );

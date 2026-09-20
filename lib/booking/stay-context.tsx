@@ -21,6 +21,7 @@
 
 import {
   createContext,
+  Suspense,
   useCallback,
   useContext,
   useEffect,
@@ -61,9 +62,20 @@ function parseGuests(raw: string | null): number | undefined {
   return Math.floor(n);
 }
 
-export function StayProvider({ children }: { children: ReactNode }) {
+/**
+ * The one component that reads the URL.
+ *
+ * ── Why it is a child and not the provider ───────────────────────────────
+ * `useSearchParams` forces the nearest Suspense boundary to render its
+ * fallback during static prerendering. When the PROVIDER read it, that
+ * boundary was the one around the whole site layout in
+ * `components/layout/client-layout.tsx`, and every public page was prerendered
+ * as the fallback — `null`. Crawlers received a 14 KB shell with no heading,
+ * no copy and no navigation. Reading the URL here, in a leaf that renders
+ * nothing, keeps the fallback empty and the page full.
+ */
+function StayFromUrl({ onAdopt }: { onAdopt: (next: StayQuery) => void }) {
   const params = useSearchParams();
-  const [stay, setStayState] = useState<StayQuery>({});
 
   /**
    * Adopt values from the URL. Runs on mount and whenever the query changes, so
@@ -77,10 +89,18 @@ export function StayProvider({ children }: { children: ReactNode }) {
       departure: toIsoDate(params.get(STAY_PARAMS.departure)),
       guests: parseGuests(params.get(STAY_PARAMS.guests)),
     };
-    if (fromUrl.arrival || fromUrl.departure || fromUrl.guests) {
-      setStayState((current) => ({ ...current, ...fromUrl }));
-    }
-  }, [params]);
+    if (fromUrl.arrival || fromUrl.departure || fromUrl.guests) onAdopt(fromUrl);
+  }, [params, onAdopt]);
+
+  return null;
+}
+
+export function StayProvider({ children }: { children: ReactNode }) {
+  const [stay, setStayState] = useState<StayQuery>({});
+
+  const adopt = useCallback((fromUrl: StayQuery) => {
+    setStayState((current) => ({ ...current, ...fromUrl }));
+  }, []);
 
   const setStay = useCallback((next: StayQuery) => {
     // The last gate before the value reaches every surface downstream.
@@ -110,7 +130,14 @@ export function StayProvider({ children }: { children: ReactNode }) {
     [stay, setStay, toQueryString]
   );
 
-  return <StayContext.Provider value={value}>{children}</StayContext.Provider>;
+  return (
+    <StayContext.Provider value={value}>
+      <Suspense fallback={null}>
+        <StayFromUrl onAdopt={adopt} />
+      </Suspense>
+      {children}
+    </StayContext.Provider>
+  );
 }
 
 export function useStay() {
