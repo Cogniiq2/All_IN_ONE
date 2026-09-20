@@ -25,9 +25,15 @@ to Beds24 or PayPal from a browser.
 | `/admin/payments` | Local payment records beside their bookings; recent webhook events. |
 | `/admin/system` | Measured health, queues, recent jobs/operations/outbox, operator audit. |
 
-Every `/admin` response carries `X-Robots-Tag: noindex, nofollow, noarchive`
-and `Cache-Control: no-store`. The admin is absent from `app/sitemap.ts` and
-linked from nowhere on the public site.
+Every `/admin` response carries `X-Robots-Tag: noindex, nofollow, noarchive`,
+`Cache-Control: no-store`, a strict `Content-Security-Policy`
+(`frame-ancestors 'none'`, `connect-src 'self'`, `form-action 'self'`),
+`X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` and a
+`Permissions-Policy` (`lib/admin/headers.ts`, applied by the middleware and
+asserted by `tests/admin-middleware.test.ts`). The CSP allows inline scripts
+for the App Router's hydration payload; a nonce-based policy is a later
+refinement. The admin is absent from `app/sitemap.ts` and linked from nowhere
+on the public site.
 
 ---
 
@@ -219,6 +225,21 @@ sending demo credentials to Supabase.
 
 ---
 
+## 6a. Security review findings (2026-09-20)
+
+Reviewed against the code: session signing, expiry and audience separation;
+allowlist re-read per request; `sessions_invalidated_before`; CSRF (server
+actions, Lax cookie); open redirect on `next` (prefix-checked); enumeration
+(one message for every refusal); rate limit (per isolate, documented; WAF rule
+required); PII (lists carry surname + initial only; detail carries contact
+data; nothing in URLs beyond the reference); query abuse (search reduced to a
+safe character set; page size capped at 200); error leakage (Postgres codes
+mapped to sentences). Fixed: a redirect loop on a preview deployment that
+carried an operator cookie; missing CSP / frame / nosniff / permissions
+headers. Remaining: the in-isolate login rate limit is not global (Cloudflare
+WAF rule on `/admin/login`); no MFA beyond what Supabase Auth offers; the CSP
+permits inline scripts.
+
 ## 7. What is measured, and what is not
 
 The System page reports only what can be measured from BoLaGio's own data:
@@ -229,7 +250,10 @@ The System page reports only what can be measured from BoLaGio's own data:
 | Booking core | Operations views readable (migrations applied) | — |
 | Channel manager | Mapping present, cache age per unit, config posture | Live reachability (no call from the admin) |
 | Payments | Config posture (mode, credentials, webhook id) | Settlement — proven by verified inbox events, not by config |
-| Payment inbox / outbox / reconciliation | Queue counts and ages | Whether the schedule fires (a pass leaves no heartbeat) |
+| Payment inbox / outbox / reconciliation | Queue counts and ages | — |
+| Schedulers | Last run per job from the heartbeat, age, overdue | A job that never ran (reported as not instrumented) |
+| Configuration | Environment declaration and contradiction findings | — |
+| Alerts | The CRITICAL / HIGH / MEDIUM list, same as `/api/internal/health` | Provider reachability |
 
 Reserved event names (`guest.prearrival_ready`, `guest.checkin_ready`,
 `cleaning.required`, `review.requested`) are not emitted and are not shown

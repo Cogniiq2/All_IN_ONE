@@ -92,7 +92,16 @@ Finds problems nobody queued: a process that died before it could queue
 anything, a row left reserving by a worker that was killed mid-transition.
 
 Any booking in a reserving state and untouched for `BOOKING_STALE_HOLD_MINUTES`
-(default 180) gets a job.
+(default 180) gets a job. Since 2026-09-20 that includes `payment_failed`,
+`payment_cancelled` and `expired` — a declined card or a release saga that died
+after the `expired` transition previously left its Beds24 hold blocking every
+channel indefinitely.
+
+### Phase 4 — operations
+
+After the queue: `bolagio_sync_turnovers()` and `bolagio_emit_guest_events()`
+(`lib/booking/operations.ts`), each idempotent. See `docs/guest-operations.md`.
+Every phase writes a heartbeat row (`docs/schedulers.md`).
 
 ### Phase 3 — the queue
 
@@ -109,9 +118,9 @@ booking is worked before a stale hold whatever order they arrived in.
 | `PAID_BOOKING_UNFINALIZED` | 1 | retry `finalizeBooking` against the **same** booking id. Never a second booking, never a refund |
 | `BEDS24_FINALIZATION_FAILED` / `_UNVERIFIED` | 1 | as above |
 | `BEDS24_RELEASE_FAILED` / `_UNVERIFIED` | 2 | re-run the release saga. `released` only when the nights are provably open |
-| `PAYMENT_PROVIDER_UNCERTAIN` | 1 | **read** the PayPal order. Captured → apply through the same validation as a webhook. Not captured → record the real state |
+| `PAYMENT_PROVIDER_UNCERTAIN` | 1 | **read** the PayPal order. Captured → apply through the same validation as a webhook. Not captured → record the real state and mark the uncertain capture operation `failed`, so a later capture is no longer refused as a blind retry |
 | `BOOKING_LOCK_LEASE_EXPIRED` | 4 | free a `locking` row. Safe only because `locking` is before any successful external call |
-| `BOOKING_HOLD_STALE` | 3 | through `evaluateLease`, which refuses while any payment evidence exists |
+| `BOOKING_HOLD_STALE` | 3 (2 for `expired`) | through `evaluateLease`, which refuses while any payment evidence exists and waits a grace period after the lease |
 | `PAYMENT_AMOUNT_MISMATCH` and every other financial ambiguity | 1 | **escalate.** Deliberately not automated |
 
 ### The important one

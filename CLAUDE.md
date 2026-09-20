@@ -55,6 +55,9 @@ components/
 lib/
   admin/                  BoLaGio Control: auth, session, permissions, DTOs, queries,
                           presentation, attention model, server actions (see docs/admin-control.md)
+  config/environment.ts   local|preview|staging|production, fail-closed contradiction checks
+  booking/                the booking core (see docs/architecture.md)
+  ops/                    external-operation ledger, alert derivation
   content/apartments.ts   Property data — single source of truth
   content/brand.ts        Brand, contact, SITE_URL, ENQUIRY_ENDPOINT, PAYMENT_ENABLED
   content/media.ts        Image registry (paths + alt text). Components never hardcode paths.
@@ -89,7 +92,10 @@ npm run typecheck   # tsc --noEmit
 npm run lint        # next lint
 npm run cf:build    # opennextjs-cloudflare build
 npm run cf:preview  # build + local worker preview
-npm run cf:deploy   # build + deploy to Cloudflare
+npm run cf:deploy   # build + deploy to Cloudflare (the PREVIEW worker; production is --env production)
+npm test            # vitest
+./scripts/db-test.sh      # real Postgres: constraints, triggers, SKIP LOCKED, the race
+./scripts/db-ops-check.sh # preflight → migrate → verify → rollback → re-apply
 ```
 
 Note: `next.config.js` sets `eslint.ignoreDuringBuilds: true`, so a green `build` does **not**

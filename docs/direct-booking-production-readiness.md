@@ -1,5 +1,9 @@
 # Direct booking — production readiness
 
+> **Superseded by `docs/production-readiness.md` (2026-09-20)**, which carries
+> the go/no-go matrix and the ordered manual steps. The Beds24, PayPal and
+> legal checklists below are still valid and are referenced from there.
+
 **Direct booking is OFF.** `DIRECT_BOOKING_ENABLED` is unset (fail-closed) and
 `bolagio_units.is_bookable` is `false`. Both must be on; neither was changed by
 this work.

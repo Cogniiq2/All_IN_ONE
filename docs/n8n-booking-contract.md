@@ -275,13 +275,32 @@ the reservation.** Alert a person immediately, by whatever channel actually
 wakes someone up. Do not email the guest — the system is already retrying
 against the same Beds24 booking id, and it usually succeeds within minutes.
 
-### Reserved, not yet emitted
+### Emitted by the operations pass (2026-09-20)
 
-`guest.prearrival_ready`, `guest.checkin_ready`, `cleaning.required`,
-`review.requested`. Build the workflows behind an IF node when they appear; do
-not synthesise them from other events.
+| Type | When | Payload |
+|---|---|---|
+| `cleaning.required` | a turnover is created for a confirmed departure | `reference, unitSlug, departure, nextArrival, sameDay` |
+| `guest.prearrival_ready` | check-in ≤ 3 days away, once | `reference, unitSlug, checkIn, checkOut, daysUntilArrival` |
+| `guest.checkin_ready` | check-in day (property calendar), once | `reference, unitSlug, checkIn, checkOut` |
+| `review.requested` | 1 day after check-out, within 14 days, once | `reference, unitSlug, checkIn, checkOut` |
+
+Only for **confirmed** stays; each at most once per booking; a stay that
+leaves `confirmed` first never gets them. Timing and the rules:
+`docs/guest-operations.md`. The booking context now carries `houseRules`
+(`timezone`, `checkInTime`, `checkOutTime`).
 
 ---
+
+## 4a. Health
+
+```
+GET https://<site>/api/internal/health
+```
+
+Signed the same way, over the empty string. Returns the alert list
+(`CRITICAL` / `HIGH` / `MEDIUM`), `counts`, scheduler heartbeats with their
+age, queue counts and configuration findings. Poll every 5 minutes; page a
+person on `counts.CRITICAL > 0`; warn on `HIGH`. No guest data, no secret.
 
 ## 6. Workflows to build
 
@@ -294,9 +313,9 @@ Roughly in the order they earn their keep.
 3. **Operational alerts** — on `booking.paid_unfinalized`,
    `booking.manual_review_required`, `booking.release_failed`: message a person.
    Include `reference` and `code`.
-4. **Queue health** — Schedule (15 min) → read `bolagio_ops_queues` → alert on
-   `exhausted` rows or a backlog older than an hour. This is what tells you the
-   pump itself has stopped.
+4. **Health** — Schedule (5 min) → `GET /api/internal/health` → alert on
+   `counts.CRITICAL`, warn on `counts.HIGH`. This is what tells you the pump,
+   the scheduler or a payment has stopped.
 5. **Invoice** — on `booking.confirmed`, fetch context, generate, store, send.
 6. **Pre-arrival / check-in** — scheduled off `checkIn`, not event-driven.
 7. **Review request** — scheduled off `checkOut`.

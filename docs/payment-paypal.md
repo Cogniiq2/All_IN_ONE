@@ -103,9 +103,22 @@ the old amount.
 
 Two further defences on the guest double-clicking Pay:
 
-* an existing order is **read from PayPal** and reused if still payable;
+* an existing order is **read from PayPal** and reused if still payable
+  (including a `denied` one — the restart flow re-approves the same order);
 * if it turns out already captured, the capture is applied rather than a second
   order being opened.
+
+### Guards (2026-09-20)
+
+| Call | Refused when |
+|---|---|
+| create order | state not payable; `hold_expires_at` passed; quote expired; payment `paid`; payment `unknown` or `capture_pending` (money may be in motion) |
+| capture | payment `unknown` (a previous capture's outcome is unresolved — the database also refuses the re-send); state not payable or lease passed; already paid-side → idempotent answer |
+
+A capture rejected with `ORDER_NOT_APPROVED` (or any non-decline 4xx) is
+**not** recorded as a declined payment; `INSTRUMENT_DECLINED` and the other
+decline issues are. `denied → paid` is legal, so the retry on the same order
+completes.
 
 ---
 
@@ -200,6 +213,11 @@ genuine event whose signature we mishandled must not retry forever.
 ---
 
 ## 8. What a sandbox run must confirm
+
+The scripted run is `docs/paypal-sandbox-e2e.md`. **Official PayPal
+documentation could not be reached from the environment this pass was written
+in**, so nothing below was re-checked against the current reference; the
+shapes remain the earlier documentation pass's model.
 
 None of this is proven. Each line is a real way the integration could be wrong.
 

@@ -147,8 +147,8 @@ not_created ─► order_created ─► approved ─► capture_pending ─► p
 | `approved` | approved at the provider, **not captured** |
 | `capture_pending` | capture requested, provider says PENDING |
 | `paid` | capture COMPLETED. **The only state that means money** |
-| `denied` | the provider refused the capture |
-| `cancelled` | the guest abandoned at the provider |
+| `denied` | the provider refused the capture. May still become `approved`, `capture_pending` or `paid` **against the same order** (PayPal's restart flow) |
+| `cancelled` | the guest abandoned at the provider. Same re-entry edges as `denied` |
 | `refunded` / `partially_refunded` / `disputed` | after the fact |
 | `unknown` | we could not determine what the provider did |
 
@@ -159,6 +159,13 @@ reconciliation and a **hard block on releasing inventory**. Any state may fall
 into it: discovering a second capture genuinely destroys what we thought we
 knew, and refusing that edge would force the code to keep asserting `paid`
 while holding evidence that contradicts it.
+
+### `denied → paid` and `cancelled → paid` are legal (2026-09-20)
+
+A declined instrument is retried by PayPal against the **same order**, and the
+next capture may complete. Before this edge existed the trigger refused a
+capture PayPal had already executed: money taken, row saying declined, the
+webhook retrying into the same wall until it dead-lettered.
 
 ### `not_created → paid` is legal
 
@@ -174,6 +181,17 @@ is no path from there to `confirmed` that does not go through a later
 COMPLETED.
 
 ---
+
+## 4a. Payable states and the lease
+
+`isPayable()` in `lib/booking/states.ts` names the states a guest may still
+pay from: `hold_created`, `payment_session_created`, `awaiting_payment`,
+`payment_pending`, `payment_failed`, `payment_cancelled`. Order creation and
+capture are refused from any other state and after `hold_expires_at`. The
+sweep releases only `BOOKING_LEASE_GRACE_SECONDS` after that instant, so the
+guest-facing gate and the release cannot cross. All six payable states are
+swept; `expired` is swept too, because a release saga that died after the
+transition leaves the Beds24 hold in place.
 
 ## 5. How a transition happens
 

@@ -175,6 +175,9 @@ const UNIT: BookableUnit = {
   minNights: null,
   currency: 'EUR',
   isBookable: true,
+  timezone: 'Europe/Berlin',
+  checkInTime: '14:00',
+  checkOutTime: '11:00',
   providerRef: { provider: 'beds24', externalPropertyId: '354659', externalRoomId: '731147' },
 };
 

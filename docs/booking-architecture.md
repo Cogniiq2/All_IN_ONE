@@ -1,5 +1,10 @@
 # Booking core architecture
 
+> The system-wide map, including the environment model, observability,
+> schedulers and guest operations added on 2026-09-20, is
+> `docs/architecture.md`. This file remains the detailed account of the
+> booking core itself.
+
 ---
 
 ## 1. Authority boundaries

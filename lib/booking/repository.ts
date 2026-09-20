@@ -26,6 +26,7 @@ import type {
   QuoteComponent,
 } from '@/lib/booking/types';
 import type { ProviderUnitRef } from '@/lib/integrations/provider';
+import { HOUSE_RULES, PROPERTY_TIMEZONE } from '@/lib/booking/property-config';
 
 /* ── Units and provider mapping ─────────────────────────────────────────── */
 
@@ -37,6 +38,10 @@ export interface UnitRecord {
   minNights: number | null;
   currency: string;
   isBookable: boolean;
+  /** The unit's operational clock. From the row; defaults are the house rules. */
+  timezone: string;
+  checkInTime: string;
+  checkOutTime: string;
 }
 
 export interface BookableUnit extends UnitRecord {
@@ -55,7 +60,7 @@ export async function findUnitBySlug(slug: string): Promise<BookableUnit | null>
   const { data, error } = await supabaseAdmin()
     .from('bolagio_units')
     .select(
-      'id, slug, display_name, max_guests, min_nights, currency, is_bookable,' +
+      'id, slug, display_name, max_guests, min_nights, currency, is_bookable, timezone, check_in_time, check_out_time,' +
         ' bolagio_unit_integrations(provider, external_property_id, external_room_id, enabled)'
     )
     .eq('slug', slug)
@@ -70,7 +75,7 @@ export async function listBookableUnits(): Promise<BookableUnit[]> {
   const { data, error } = await supabaseAdmin()
     .from('bolagio_units')
     .select(
-      'id, slug, display_name, max_guests, min_nights, currency, is_bookable,' +
+      'id, slug, display_name, max_guests, min_nights, currency, is_bookable, timezone, check_in_time, check_out_time,' +
         ' bolagio_unit_integrations(provider, external_property_id, external_room_id, enabled)'
     )
     .eq('is_bookable', true);
@@ -87,6 +92,9 @@ interface UnitRow {
   min_nights: number | null;
   currency: string;
   is_bookable: boolean;
+  timezone?: string | null;
+  check_in_time?: string | null;
+  check_out_time?: string | null;
   bolagio_unit_integrations?: Array<{
     provider: 'beds24';
     external_property_id: string;
@@ -105,6 +113,9 @@ function toBookableUnit(row: UnitRow): BookableUnit {
     minNights: row.min_nights,
     currency: row.currency,
     isBookable: row.is_bookable,
+    timezone: row.timezone || PROPERTY_TIMEZONE,
+    checkInTime: (row.check_in_time || HOUSE_RULES.checkInTime).slice(0, 5),
+    checkOutTime: (row.check_out_time || HOUSE_RULES.checkOutTime).slice(0, 5),
     providerRef: mapping
       ? {
           provider: mapping.provider,

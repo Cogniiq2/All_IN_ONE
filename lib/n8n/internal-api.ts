@@ -44,8 +44,9 @@ import {
   type OutboxEventRow,
 } from '@/lib/booking/commands';
 import type { BookingLogger } from '@/lib/booking/logger';
-import { findIntentByReference } from '@/lib/booking/repository';
+import { findIntentByReference, findUnitBySlug } from '@/lib/booking/repository';
 import { nightsBetween } from '@/lib/booking/stay-rules';
+import { HOUSE_RULES, PROPERTY_TIMEZONE } from '@/lib/booking/property-config';
 
 export interface ClaimedEvent {
   id: string;
@@ -134,6 +135,8 @@ export interface BookingContext {
   totalCents: number | null;
   paidAmountCents: number | null;
   confirmedAt: string | null;
+  /** The unit's house rules, so a pre-arrival message has one source of truth. */
+  houseRules: { timezone: string; checkInTime: string; checkOutTime: string };
   guest: {
     firstName: string;
     lastName: string;
@@ -156,6 +159,7 @@ export interface BookingContext {
 export async function bookingContext(reference: string): Promise<BookingContext | null> {
   const intent = await findIntentByReference(reference);
   if (!intent) return null;
+  const unit = await findUnitBySlug(intent.unitSlug);
 
   return {
     reference: intent.reference,
@@ -171,6 +175,11 @@ export async function bookingContext(reference: string): Promise<BookingContext 
     totalCents: intent.quotedTotalCents,
     paidAmountCents: intent.paidAmountCents,
     confirmedAt: intent.confirmedAt,
+    houseRules: {
+      timezone: unit?.timezone ?? PROPERTY_TIMEZONE,
+      checkInTime: unit?.checkInTime ?? HOUSE_RULES.checkInTime,
+      checkOutTime: unit?.checkOutTime ?? HOUSE_RULES.checkOutTime,
+    },
     guest: intent.guest
       ? {
           firstName: intent.guest.firstName,
