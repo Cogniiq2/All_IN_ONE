@@ -1,3 +1,8 @@
+-- BoLaGio — SHARED-PROJECT PREFLIGHT
+-- Supabase SQL Editor compatible version.
+-- Read-only: no intended DDL/DML.
+-- Converted from the psql version by removing psql meta-commands only.
+
 -- ════════════════════════════════════════════════════════════════════════════
 -- BoLaGio — SHARED-PROJECT PREFLIGHT. Read-only. Run BEFORE applying the
 -- BoLaGio migrations to the Supabase project BoLaGio shares with Cogniiq.
@@ -31,13 +36,7 @@
 -- applied passes (their objects are the expected ones).
 -- ════════════════════════════════════════════════════════════════════════════
 
-\set ON_ERROR_STOP on
-\pset format aligned
-\pset pager off
-\pset null '∅'
 
-\echo ''
-\echo '── 1. Server and extensions ────────────────────────────────────────────'
 select 'postgres_version' as check_name, version() as actual, '14 or newer' as expected;
 select 'btree_gist' as check_name,
        coalesce((select extversion from pg_extension where extname='btree_gist'), 'ABSENT (foundation creates it)') as actual,
@@ -51,8 +50,6 @@ do $$ begin
   end if;
 end $$;
 
-\echo ''
-\echo '── 2. Roles the migrations grant to ────────────────────────────────────'
 select r.rolname as check_name, 'present' as actual, 'present' as expected
 from pg_roles r where r.rolname in ('anon','authenticated','service_role')
 union all
@@ -67,8 +64,6 @@ do $$ declare missing text; begin
   end if;
 end $$;
 
-\echo ''
-\echo '── 3. Which BoLaGio migrations are already applied ─────────────────────'
 select 'booking_foundation (20260916120000)' as migration,
        case when to_regclass('public.bolagio_booking_intents') is not null then 'applied' else 'not applied' end as actual
 union all
@@ -103,8 +98,6 @@ begin
   end if;
 end $$;
 
-\echo ''
-\echo '── 4. Existing BoLaGio data that the migrations must not disturb ───────'
 do $$
 declare v bigint; t text;
 begin
@@ -125,8 +118,6 @@ begin
   end if;
 end $$;
 
-\echo ''
-\echo '── 5. NAME COLLISIONS — bolagio_* objects the migrations did not create ─'
 -- Every relation, type and function the six migrations create, by name. A
 -- bolagio_* object that is NOT in these lists exists for another reason and
 -- would collide. The three "intermediate" signatures are legitimate between
@@ -239,8 +230,6 @@ begin
   raise notice 'no collision: % bolagio_* object(s) found, all of them expected', n_found;
 end $$;
 
-\echo ''
-\echo '── 6. Tables the six migration files touch (hardcoded; compare to what exists)'
 -- Each name must start with bolagio_ (tests/shared-project-sql.test.ts asserts the
 -- same over the migration sources). "applied" means the table exists already.
 select t.table_name, t.created_by,
@@ -268,8 +257,6 @@ do $$ begin
   raise notice 'every table the migrations touch is prefixed bolagio_ (19 tables); no unrelated table is referenced';
 end $$;
 
-\echo ''
-\echo '── 7. Default privileges for anon/authenticated in schema public ──────'
 -- Supabase grants anon/authenticated privileges on NEW tables in public by
 -- default. The BoLaGio migrations REVOKE them on every bolagio_ table. If the
 -- defaults are absent, the revokes are harmless no-ops — both cases are fine,
@@ -290,8 +277,6 @@ do $$ begin
   end if;
 end $$;
 
-\echo ''
-\echo '── 8. The authenticator role (what PostgREST connects as) ─────────────'
 select r.rolname as role, r.rolcanlogin as can_login, r.rolinherit as inherit,
        array(select b.rolname from pg_auth_members m join pg_roles b on b.oid = m.roleid where m.member = r.oid order by 1) as can_switch_to
 from pg_roles r where r.rolname = 'authenticator';
@@ -305,8 +290,6 @@ do $$ begin
   end if;
 end $$;
 
-\echo ''
-\echo '── 9. Blast-radius record: unrelated tables (RLS state PRINTED, not changed)'
 -- The tables docs/security/2026-08-15-admin-exposure.md names, then every
 -- other non-bolagio table. Nothing here is asserted; it is the evidence to
 -- keep with the change record and the input to proposed_unrelated_hardening.sql.
@@ -324,10 +307,7 @@ from pg_class c join pg_namespace n on n.oid = c.relnamespace
 where n.nspname = 'public' and c.relkind in ('r','p') and c.relname not like 'bolagio\_%'
   and c.relname not in ('invoices','emails','email_attachments','properties','property_units')
 order by 1;
-\echo '(record both tables above with the change; run shared_project_inventory.sql before and after and diff)'
 
-\echo ''
-\echo '── 10. Row-level security posture on every bolagio_ table (if any) ─────'
 select c.relname as table_name, c.relrowsecurity as rls_enabled,
        (select count(*) from pg_policies p where p.schemaname='public' and p.tablename=c.relname) as policies,
        (select count(*) from information_schema.role_table_grants g where g.table_schema='public' and g.table_name=c.relname and g.grantee in ('anon','authenticated')) as browser_grants,
@@ -336,5 +316,3 @@ from pg_class c join pg_namespace n on n.oid=c.relnamespace
 where n.nspname='public' and c.relkind='r' and c.relname like 'bolagio\_%'
 order by 1;
 
-\echo ''
-\echo '════════ shared-project preflight passed (read-only) ════════'
