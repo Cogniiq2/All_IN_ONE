@@ -103,6 +103,26 @@ export function isConfirmed(state: BookingState): boolean {
  * Read before ANY release. A booking in one of these is never given back to
  * inventory by a timer, a sweep or a webhook — only by a human.
  */
+/**
+ * States in which a guest may still be asked to pay for the hold.
+ *
+ * The set a payment order may be created for and a capture may be attempted
+ * from. Deliberately excludes `expired`, `releasing`, `release_failed` and
+ * `manual_review`: the hold in those states is either being given back or is
+ * under a person's control, and taking money against it would produce a paid
+ * booking with no reservation behind it.
+ */
+export function isPayable(state: BookingState): boolean {
+  return (
+    state === 'hold_created' ||
+    state === 'payment_session_created' ||
+    state === 'awaiting_payment' ||
+    state === 'payment_pending' ||
+    state === 'payment_failed' ||
+    state === 'payment_cancelled'
+  );
+}
+
 export function isPaidSide(state: BookingState): boolean {
   return (
     state === 'paid' ||
@@ -222,8 +242,13 @@ const PAYMENT_TRANSITIONS: Readonly<Record<PaymentState, readonly PaymentState[]
   approved: ['capture_pending', 'paid', 'denied', 'cancelled'],
   capture_pending: ['paid', 'denied', 'cancelled'],
   paid: ['refunded', 'partially_refunded', 'disputed'],
-  denied: ['order_created'],
-  cancelled: ['order_created'],
+  // A declined or abandoned attempt can be retried AGAINST THE SAME ORDER:
+  // PayPal's restart flow re-approves the order the guest already has, and
+  // the next capture may complete. Refusing `denied → paid` would make the
+  // database reject a capture PayPal has already executed — money taken,
+  // row says declined, and the webhook retrying into the same wall.
+  denied: ['order_created', 'approved', 'capture_pending', 'paid'],
+  cancelled: ['order_created', 'approved', 'capture_pending', 'paid'],
   refunded: ['disputed'],
   partially_refunded: ['refunded', 'disputed'],
   disputed: ['refunded', 'partially_refunded', 'paid'],

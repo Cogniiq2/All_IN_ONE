@@ -26,6 +26,7 @@ import type { NextRequest } from 'next/server';
 import { createLogger } from '@/lib/booking/logger';
 import { inventorySyncSecret } from '@/lib/booking/config';
 import { bookingErrorResponse, bookingJson, requireBackend, verifySharedSecret } from '@/lib/booking/http';
+import { recordSchedulerRun } from '@/lib/booking/commands';
 import { findExpiredHolds } from '@/lib/booking/repository';
 import { expireStaleHolds, syncInventory } from '@/lib/booking/service';
 
@@ -63,13 +64,26 @@ export async function POST(request: NextRequest) {
      * `heldForPayment` counts the ones it refused, which is the number worth
      * watching: a rising count means payments are landing later than the lease.
      */
-    const leases = await expireStaleHolds(await findExpiredHolds(), logger);
-    const result = await syncInventory(logger, unitSlug);
-
-    return bookingJson(
-      { ...result, holdsReleased: leases.released, heldForPayment: leases.heldForPayment },
-      logger
-    );
+    const started = new Date();
+    try {
+      const leases = await expireStaleHolds(await findExpiredHolds(), logger);
+      const result = await syncInventory(logger, unitSlug);
+      const report = { units: result.units, days: result.days, failed: result.failed.length, holdsReleased: leases.released, heldForPayment: leases.heldForPayment };
+      await recordSchedulerRun({ job: 'inventory_sync', startedAt: started, ok: result.failed.length === 0, report, worker: logger.correlationId });
+      return bookingJson(
+        { ...result, holdsReleased: leases.released, heldForPayment: leases.heldForPayment },
+        logger
+      );
+    } catch (cause) {
+      await recordSchedulerRun({
+        job: 'inventory_sync',
+        startedAt: started,
+        ok: false,
+        error: cause instanceof Error ? `${cause.name}: ${cause.message}` : 'unknown',
+        worker: logger.correlationId,
+      });
+      throw cause;
+    }
   } catch (cause) {
     return bookingErrorResponse(cause, logger);
   }

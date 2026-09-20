@@ -179,6 +179,24 @@ export interface TrackedCallOptions<T> {
   isDefiniteFailure?: (cause: unknown) => boolean;
   /** Pulls the provider's id out of a success, so it can be recorded. */
   resourceIdOf?: (result: T) => string | undefined;
+  /**
+   * May this call run again while a previous attempt's outcome is unknown?
+   *
+   * Default NO: a create or a capture whose answer was lost must be READ
+   * back, never re-sent. The two operations that opt in are finalize and
+   * release, whose desired end state is idempotent by nature ("this booking
+   * is confirmed", "this booking holds nothing") — re-sending them cannot
+   * produce a second reservation or a second charge.
+   */
+  retryAfterUnknown?: boolean;
+}
+
+/** Raised when a mutation is refused because an earlier attempt is unresolved. */
+export class UnresolvedOperationError extends UncertainOperationError {
+  constructor(operationKey: string, provider: ExternalProvider, operationType: string) {
+    super(operationKey, provider, operationType);
+    this.name = 'UnresolvedOperationError';
+  }
 }
 
 /**
@@ -194,16 +212,31 @@ export interface TrackedCallOptions<T> {
 export async function trackedCall<T>(options: TrackedCallOptions<T>, call: () => Promise<T>): Promise<T> {
   const { key, provider, type, intentId, request, logger } = options;
 
-  const { error: beginError } = await supabaseAdmin().rpc('bolagio_begin_external_operation', {
+  const { data: begun, error: beginError } = await supabaseAdmin().rpc('bolagio_begin_external_operation', {
     p_key: key,
     p_provider: provider,
     p_type: type,
     p_intent_id: intentId ?? null,
     p_request: request ?? null,
+    p_allow_retry_after_unknown: options.retryAfterUnknown === true,
   });
   // A failure to RECORD the intent to call must abort the call. Making an
   // untracked external mutation is precisely the thing this module prevents.
-  if (beginError) throw beginError;
+  if (beginError) {
+    if (isUnresolvedRefusal(beginError)) {
+      logger.warn('external.operation', { provider, eventType: type, outcome: 'refused_unresolved' });
+      throw new UnresolvedOperationError(key, provider, type);
+    }
+    throw beginError;
+  }
+  // Belt to the database's braces: the same refusal, decided from the row the
+  // database handed back, so a database that predates the guard still cannot
+  // be talked into a blind retry by this code.
+  const previous = begun as { outcome?: OperationOutcome } | null;
+  if (previous?.outcome === 'outcome_unknown' && options.retryAfterUnknown !== true) {
+    logger.warn('external.operation', { provider, eventType: type, outcome: 'refused_unresolved' });
+    throw new UnresolvedOperationError(key, provider, type);
+  }
 
   const started = Date.now();
   try {
@@ -242,6 +275,11 @@ export async function trackedCall<T>(options: TrackedCallOptions<T>, call: () =>
     });
     throw new UncertainOperationError(key, provider, type, cause);
   }
+}
+
+/** The database's own refusal of a blind retry: SQLSTATE `BLG01`. */
+function isUnresolvedRefusal(error: { code?: string; message?: string }): boolean {
+  return error.code === 'BLG01' || /unresolved unknown outcome/.test(error.message ?? '');
 }
 
 /** Error text for a database column. Never for a response, never for a guest. */

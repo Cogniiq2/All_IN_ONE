@@ -112,6 +112,9 @@ export async function finalizeBooking(
         logger,
         isDefiniteFailure: () => false,
         resourceIdOf: () => bookingId,
+        // Idempotent end state: "this booking is confirmed". Re-sending after
+        // an unknown outcome cannot create a second reservation.
+        retryAfterUnknown: true,
       },
       () => bookingProvider().confirmBooking(bookingId)
     );

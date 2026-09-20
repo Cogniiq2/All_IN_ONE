@@ -103,6 +103,9 @@ export async function releaseHold(
         request: { bookingId, reason },
         logger,
         isDefiniteFailure: () => false,
+        // Idempotent end state: "this booking holds nothing". Re-sending a
+        // cancellation after an unknown outcome cannot take anything away twice.
+        retryAfterUnknown: true,
       },
       () => bookingProvider().releaseHold(bookingId, reason)
     );

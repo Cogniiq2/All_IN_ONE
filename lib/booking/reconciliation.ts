@@ -194,7 +194,8 @@ async function sweep(logger: BookingLogger): Promise<number> {
     .select('id, reference, status, payment_status, hold_expires_at, updated_at')
     .in('status', [
       'locking', 'hold_created', 'payment_session_created', 'awaiting_payment',
-      'payment_pending', 'paid', 'finalizing', 'paid_unfinalized',
+      'payment_pending', 'payment_failed', 'payment_cancelled', 'expired',
+      'paid', 'finalizing', 'paid_unfinalized',
       'finalization_failed', 'releasing', 'release_failed', 'manual_review',
     ])
     .lt('updated_at', staleBefore)
@@ -234,7 +235,6 @@ export function reconciliationReasonFor(
     case 'released':
     case 'cancelled':
     case 'confirmed':
-    case 'expired':
       return null;
     default:
       return sweepReason(status);
@@ -257,7 +257,15 @@ function sweepReason(
       return { code: 'BOOKING_LOCK_LEASE_EXPIRED', severity: 4 };
     case 'manual_review':
       return null; // already a human's problem
+    case 'expired':
+      // The lease ran out and the release saga did not finish: the Beds24
+      // hold is still blocking every channel. Worked before an ordinary
+      // stale hold, because this one has already been decided.
+      return { code: 'BOOKING_HOLD_STALE', severity: 2 };
     default:
+      // hold_created, payment_session_created, awaiting_payment,
+      // payment_pending, payment_failed, payment_cancelled: through the
+      // lease check, which refuses while any payment evidence exists.
       return { code: 'BOOKING_HOLD_STALE', severity: 3 };
   }
 }
@@ -459,7 +467,19 @@ async function resolveUncertainPayment(intent: IntentRecord, logger: BookingLogg
 
   // Not captured. Record what PayPal actually says, which un-blocks the lease
   // check — an order that is definitively `cancelled` or `denied` no longer
-  // holds the room hostage.
+  // holds the room hostage. The uncertain capture, if there was one, is
+  // resolved as `failed` so that a later capture attempt is no longer refused
+  // as a blind retry: PayPal has been READ and says no money moved.
+  const captureKey = operationKey.paypalCapture(intent.paymentOrderId);
+  const captureOp = await findOperation(captureKey);
+  if (captureOp && (captureOp.outcome === 'outcome_unknown' || captureOp.outcome === 'in_flight')) {
+    await completeOperation(captureKey, 'failed', undefined, `provider read: order is ${order.state}`);
+  }
+  const orderKey = operationKey.paypalOrder(intent.id, intent.quoteHash ?? 'nohash');
+  const orderOp = await findOperation(orderKey);
+  if (orderOp && (orderOp.outcome === 'outcome_unknown' || orderOp.outcome === 'in_flight')) {
+    await completeOperation(orderKey, 'reconciled', order.orderId);
+  }
   await transitionIntent(
     intent.id,
     {

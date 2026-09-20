@@ -489,13 +489,27 @@ export async function logTransition(input: {
   }
 }
 
-/** Holds that ran out. The release sweep reads this. */
-export async function findExpiredHolds(limit = 50): Promise<IntentRecord[]> {
+/**
+ * Holds that ran out. The release sweep reads this.
+ *
+ * Every state a guest could still pay from is a candidate — a declined
+ * (`payment_failed`) or abandoned (`payment_cancelled`) attempt included.
+ * The earlier list stopped at `payment_pending`, so a declined card left its
+ * Beds24 hold blocking the nights on every channel until a person noticed.
+ * The lease check downstream still refuses while any payment evidence exists.
+ */
+export const LEASEABLE_STATUSES: readonly BookingStatus[] = [
+  'hold_created', 'payment_session_created', 'awaiting_payment', 'payment_pending',
+  'payment_failed', 'payment_cancelled',
+];
+
+export async function findExpiredHolds(limit = 50, now: Date = new Date()): Promise<IntentRecord[]> {
   const { data, error } = await supabaseAdmin()
     .from('bolagio_booking_intents')
     .select(INTENT_COLUMNS)
-    .in('status', ['hold_created', 'payment_pending'])
-    .lt('hold_expires_at', new Date().toISOString())
+    .in('status', LEASEABLE_STATUSES as string[])
+    .lt('hold_expires_at', now.toISOString())
+    .order('hold_expires_at', { ascending: true })
     .limit(limit);
   if (error) throw error;
   return ((data ?? []) as unknown as IntentRow[]).map(toIntent);

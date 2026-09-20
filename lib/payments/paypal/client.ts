@@ -185,12 +185,13 @@ export async function paypalRequest<T>(init: PayPalRequestInit): Promise<PayPalR
     // caller's correct response to it is to read the order, not to fail.
     const issue = await issueName(response);
     if (issue === 'ORDER_ALREADY_CAPTURED') {
-      throw new PaymentProviderError('already_captured', 'order already captured');
+      throw new PaymentProviderError('already_captured', 'order already captured', issue);
     }
-    throw new PaymentProviderError('rejected', `PayPal rejected the request (${issue ?? '422'})`);
+    throw new PaymentProviderError('rejected', `PayPal rejected the request (${issue ?? '422'})`, issue);
   }
   if (response.status >= 400 && response.status < 500) {
-    throw new PaymentProviderError('rejected', `PayPal responded ${response.status}`);
+    const issue = await issueName(response);
+    throw new PaymentProviderError('rejected', `PayPal responded ${response.status}`, issue);
   }
   if (response.status >= 500) {
     // Uncertain: a 5xx after a POST may still have taken effect.

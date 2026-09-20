@@ -23,6 +23,7 @@ import 'server-only';
  * ══════════════════════════════════════════════════════════════════════════
  */
 
+import { leaseGraceSeconds } from '@/lib/booking/config';
 import { queueReconciliation } from '@/lib/booking/commands';
 import type { BookingLogger } from '@/lib/booking/logger';
 import type { IntentRecord } from '@/lib/booking/repository';
@@ -118,7 +119,11 @@ export async function evaluateLease(
  */
 function isLeaseUp(intent: IntentRecord, now: Date): boolean {
   if (!intent.holdExpiresAt) return false;
-  return Date.parse(intent.holdExpiresAt) <= now.getTime();
+  // The guest-facing gate closes AT the lease; the sweep opens a grace period
+  // after it. The two therefore cannot cross: a capture that began one second
+  // before the lease ran out has the whole grace period to land before any
+  // release becomes possible. See `leaseGraceSeconds()`.
+  return Date.parse(intent.holdExpiresAt) + leaseGraceSeconds() * 1000 <= now.getTime();
 }
 
 /**

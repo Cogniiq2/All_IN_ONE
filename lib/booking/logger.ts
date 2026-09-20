@@ -49,7 +49,11 @@ export type BookingLogEvent =
   | 'outbox.ack'
   | 'n8n.request'
   | 'webhook.paypal'
-  | 'webhook.beds24';
+  | 'webhook.beds24'
+  | 'operations.pass'
+  | 'scheduler.heartbeat'
+  | 'config.validation'
+  | 'health.read';
 
 /** Field names a booking log line is allowed to carry. Nothing else survives. */
 const ALLOWED = new Set([

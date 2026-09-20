@@ -11,10 +11,20 @@ import { BOOKING_STATES, reservesInventory } from '@/lib/booking/states';
 describe('reconciliationReasonFor', () => {
   it('leaves terminal and non-reserving states alone', () => {
     for (const s of BOOKING_STATES) {
-      if (!reservesInventory(s) || s === 'confirmed' || s === 'expired') {
+      if (!reservesInventory(s) || s === 'confirmed') {
         expect(reconciliationReasonFor(s, 'not_created'), s).toBeNull();
       }
     }
+  });
+
+  it('sweeps an expired hold whose release never finished', () => {
+    /*
+     * `expired` RESERVES: the lease ran out but the Beds24 hold is still
+     * there until the release saga verifies it gone. A booking left here by a
+     * process that died between the transition and the release was previously
+     * never swept — its hold blocked the nights on every channel indefinitely.
+     */
+    expect(reconciliationReasonFor('expired', 'not_created')).toEqual({ code: 'BOOKING_HOLD_STALE', severity: 2 });
   });
 
   it('maps the money-critical states to the top severity', () => {
@@ -38,5 +48,6 @@ describe('reconciliationReasonFor', () => {
   it('treats a held, unpaid attempt as a stale hold', () => {
     expect(reconciliationReasonFor('hold_created', 'order_created')).toEqual({ code: 'BOOKING_HOLD_STALE', severity: 3 });
     expect(reconciliationReasonFor('payment_failed', 'denied')).toEqual({ code: 'BOOKING_HOLD_STALE', severity: 3 });
+    expect(reconciliationReasonFor('payment_cancelled', 'cancelled')).toEqual({ code: 'BOOKING_HOLD_STALE', severity: 3 });
   });
 });

@@ -14,6 +14,7 @@ import {
   canTransition as canTransitionState,
   isTerminal as isTerminalState,
   isPaidSide,
+  isPayable,
   type BookingState,
   type TransitionOutcome,
 } from '@/lib/booking/states';
@@ -50,10 +51,11 @@ export function isHoldExpired(
 ): boolean {
   if (!holdExpiresAt) return false;
   if (isPaidSide(status as BookingState)) return false;
-  const leaseable: BookingStatus[] = [
-    'hold_created', 'payment_session_created', 'awaiting_payment', 'payment_pending',
-  ];
-  if (!leaseable.includes(status)) return false;
+  // Every state a guest could still pay from is leaseable — including a
+  // declined or abandoned attempt. The previous list stopped at
+  // `payment_pending`, so a `payment_failed` hold was never swept and its
+  // Beds24 reservation blocked the nights on every channel indefinitely.
+  if (!isPayable(status as BookingState)) return false;
   return Date.parse(holdExpiresAt) <= now.getTime();
 }
 

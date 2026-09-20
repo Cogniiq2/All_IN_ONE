@@ -113,7 +113,13 @@ export class PaymentProviderError extends Error {
       | 'not_found'         // the order or capture does not exist
       | 'already_captured'  // benign; the caller reads the order instead
       | 'unavailable',      // provider-side fault, answered
-    message: string
+    message: string,
+    /**
+     * The provider's documented issue name (`INSTRUMENT_DECLINED`,
+     * `ORDER_NOT_APPROVED`, …) when a 4xx carried one. A closed vocabulary
+     * of upper-case identifiers — never free text, never a debug id.
+     */
+    readonly issue?: string
   ) {
     super(message);
     this.name = 'PaymentProviderError';

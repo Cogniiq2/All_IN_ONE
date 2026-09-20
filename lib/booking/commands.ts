@@ -458,3 +458,98 @@ export async function failReconciliationJob(id: string, errorText: string): Prom
   });
   if (error) throw error;
 }
+
+/* ── Scheduler heartbeat ───────────────────────────────────────────────── */
+
+export type SchedulerJob = 'reconcile' | 'inventory_sync' | 'operations';
+
+/**
+ * Record one scheduled invocation, whatever its outcome.
+ *
+ * Counts only in `report`; never a reference, never guest data. Never throws:
+ * a heartbeat that fails to write must not turn a successful pass into an
+ * error — the pass already did its work.
+ */
+export async function recordSchedulerRun(input: {
+  job: SchedulerJob;
+  startedAt: Date;
+  ok: boolean;
+  report?: Record<string, number | string | boolean | null>;
+  error?: string;
+  worker?: string;
+}): Promise<void> {
+  const { error } = await supabaseAdmin().rpc('bolagio_record_scheduler_run', {
+    p_job: input.job,
+    p_started_at: input.startedAt.toISOString(),
+    p_ok: input.ok,
+    p_report: input.report ?? null,
+    p_error: input.error?.slice(0, 500) ?? null,
+    p_worker: input.worker ?? null,
+  });
+  if (error) {
+    // eslint-disable-next-line no-console -- the heartbeat itself failed; nothing else can record it.
+    console.error(JSON.stringify({ scope: 'booking', event: 'scheduler.heartbeat', level: 'error', cause: error.code }));
+  }
+}
+
+export interface SchedulerStatusRow {
+  job: SchedulerJob;
+  started_at: string;
+  finished_at: string;
+  ok: boolean;
+  report: Record<string, unknown> | null;
+  error: string | null;
+  worker: string | null;
+}
+
+export async function readSchedulerStatus(): Promise<SchedulerStatusRow[]> {
+  const { data, error } = await supabaseAdmin()
+    .from('bolagio_scheduler_status')
+    .select('job, started_at, finished_at, ok, report, error, worker');
+  if (error) throw error;
+  return (data ?? []) as SchedulerStatusRow[];
+}
+
+/* ── Operations: turnovers and guest events ───────────────────────────── */
+
+export interface TurnoverSyncReport {
+  created: number;
+  updated: number;
+  voided: number;
+}
+
+/** Derive turnovers from confirmed stays. Idempotent; emits `cleaning.required` once per new turnover. */
+export async function syncTurnovers(horizonDays = 60): Promise<TurnoverSyncReport> {
+  const { data, error } = await supabaseAdmin().rpc('bolagio_sync_turnovers', { p_horizon_days: horizonDays });
+  if (error) throw error;
+  const r = (data ?? {}) as Partial<TurnoverSyncReport>;
+  return { created: r.created ?? 0, updated: r.updated ?? 0, voided: r.voided ?? 0 };
+}
+
+export interface GuestEventReport {
+  prearrival: number;
+  checkin: number;
+  review: number;
+}
+
+/**
+ * Emit the time-driven guest-operations events that are due, once each.
+ *
+ * The timing is decided in the database, in the property's own timezone,
+ * and the dedup ledger row is written in the same transaction as the outbox
+ * row — a pass that dies half way emits nothing twice.
+ */
+export async function emitGuestEvents(timing: {
+  prearrivalDays: number;
+  reviewDelayDays: number;
+  reviewWindowDays: number;
+}): Promise<GuestEventReport> {
+  const { data, error } = await supabaseAdmin().rpc('bolagio_emit_guest_events', {
+    p_prearrival_days: timing.prearrivalDays,
+    p_review_delay_days: timing.reviewDelayDays,
+    p_review_window_days: timing.reviewWindowDays,
+  });
+  if (error) throw error;
+  const r = (data ?? {}) as Partial<GuestEventReport>;
+  return { prearrival: r.prearrival ?? 0, checkin: r.checkin ?? 0, review: r.review ?? 0 };
+}

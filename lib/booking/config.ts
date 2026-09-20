@@ -222,6 +222,19 @@ export function staleHoldMinutes(): number {
   return intEnv('BOOKING_STALE_HOLD_MINUTES', 180, 30, 1440);
 }
 
+/**
+ * How long AFTER `hold_expires_at` a sweep waits before it may release.
+ *
+ * The guest-facing gate (order creation, capture) closes exactly at
+ * `hold_expires_at`. The sweep opens strictly later. The gap is what makes
+ * the two unable to cross: a capture that started at 14:59:59 and lands at
+ * 15:00:02 cannot meet a release that only becomes possible at 15:02:00.
+ * Clamped so the grace can neither be disabled nor hold a room for hours.
+ */
+export function leaseGraceSeconds(): number {
+  return intEnv('BOOKING_LEASE_GRACE_SECONDS', 120, 30, 900);
+}
+
 /** How far ahead inventory is synchronised and the calendar may be browsed. */
 export function inventoryMonths(): number {
   return intEnv('BOOKING_INVENTORY_MONTHS', 18, 1, 36);

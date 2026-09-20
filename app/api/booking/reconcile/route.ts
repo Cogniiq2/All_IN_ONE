@@ -30,6 +30,8 @@ import type { NextRequest } from 'next/server';
 import { createLogger } from '@/lib/booking/logger';
 import { inventorySyncSecret } from '@/lib/booking/config';
 import { bookingErrorResponse, bookingJson, requireBackend, verifySharedSecret } from '@/lib/booking/http';
+import { recordSchedulerRun } from '@/lib/booking/commands';
+import { runOperationsPass } from '@/lib/booking/operations';
 import { runReconciliation } from '@/lib/booking/reconciliation';
 
 export const dynamic = 'force-dynamic';
@@ -54,9 +56,55 @@ export async function POST(request: NextRequest) {
       // No body is fine — a cron trigger rarely sends one.
     }
 
-    const report = await runReconciliation(logger, limit);
-    return bookingJson(report, logger);
+    /*
+     * Heartbeat around the pass, whatever its outcome. "Is reconciliation
+     * running?" is answered from `bolagio_scheduler_status`, and a pass that
+     * throws still leaves a row — one that says so.
+     */
+    const started = new Date();
+    let report;
+    try {
+      report = await runReconciliation(logger, limit);
+    } catch (cause) {
+      await recordSchedulerRun({ job: 'reconcile', startedAt: started, ok: false, error: describe(cause), worker: logger.correlationId });
+      throw cause;
+    }
+    await recordSchedulerRun({ job: 'reconcile', startedAt: started, ok: true, report: { ...report }, worker: logger.correlationId });
+
+    /*
+     * The operations pass rides on the same schedule, AFTER reconciliation:
+     * a stay that was just confirmed gets its turnover in the same minute.
+     * Its failure is recorded and does not fail the reconciliation answer —
+     * the money-and-inventory work above is already done and reported.
+     */
+    const opsStarted = new Date();
+    let operations: Awaited<ReturnType<typeof runOperationsPass>> | null = null;
+    try {
+      operations = await runOperationsPass(logger);
+      await recordSchedulerRun({
+        job: 'operations',
+        startedAt: opsStarted,
+        ok: true,
+        report: { ...operations.turnovers, ...prefixed('events_', { ...operations.guestEvents }) },
+        worker: logger.correlationId,
+      });
+    } catch (cause) {
+      logger.error('operations.pass', cause);
+      await recordSchedulerRun({ job: 'operations', startedAt: opsStarted, ok: false, error: describe(cause), worker: logger.correlationId });
+    }
+
+    return bookingJson({ ...report, operations }, logger);
   } catch (cause) {
     return bookingErrorResponse(cause, logger);
   }
+}
+
+function describe(cause: unknown): string {
+  return cause instanceof Error ? `${cause.name}: ${cause.message}` : 'unknown';
+}
+
+function prefixed(prefix: string, counts: Record<string, number>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(counts)) out[`${prefix}${k}`] = v;
+  return out;
 }

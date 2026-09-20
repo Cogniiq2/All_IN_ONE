@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { hardenAdminResponse as harden } from '@/lib/admin/headers';
 import { SESSION_COOKIE, verifySession } from '@/lib/admin/session';
 import {
   PREVIEW_AUDIENCE,
@@ -45,7 +46,11 @@ export async function middleware(request: NextRequest) {
       )
     : null;
 
-  const authenticated = operator.ok || preview?.ok === true;
+  // On a preview-demo deployment ONLY the demo cookie counts. The protected
+  // layout resolves nothing but the demo session there, so honouring a stray
+  // operator cookie here would bounce the request between the layout's
+  // redirect to login and this redirect away from it, forever.
+  const authenticated = previewOn ? preview?.ok === true : operator.ok;
 
   if (isLogin) {
     // A signed-in operator — or demo viewer — asking for the login page is
@@ -74,13 +79,6 @@ export async function middleware(request: NextRequest) {
   }
 
   return harden(NextResponse.next());
-}
-
-function harden(response: NextResponse): NextResponse {
-  response.headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive');
-  response.headers.set('Cache-Control', 'no-store, max-age=0');
-  response.headers.set('Referrer-Policy', 'same-origin');
-  return response;
 }
 
 export const config = {

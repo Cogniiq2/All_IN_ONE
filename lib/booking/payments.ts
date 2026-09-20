@@ -27,8 +27,8 @@ import { requireDirectBooking, BookingError, requireIntent } from '@/lib/booking
 import { finalizeBooking } from '@/lib/booking/finalization';
 import type { BookingLogger } from '@/lib/booking/logger';
 import type { IntentRecord } from '@/lib/booking/repository';
-import { isQuoteExpired } from '@/lib/booking/state-machine';
-import { reservesInventory } from '@/lib/booking/states';
+import { isHoldExpired, isQuoteExpired } from '@/lib/booking/state-machine';
+import { isPayable, mayInvolveMoney } from '@/lib/booking/states';
 import type { PaymentProvider } from '@/lib/booking/types';
 import { paymentAdapter, PaymentProviderError } from '@/lib/payments';
 import type { ProviderOrder, VerifiedPaymentEvent } from '@/lib/payments/provider';
@@ -72,10 +72,17 @@ export async function createPaymentOrder(
   requireDirectBooking();
   const intent = await requireIntent(reference);
 
-  if (!reservesInventory(intent.status) || intent.status === 'locking') {
-    // Nothing is held, so there is nothing to sell.
+  if (!isPayable(intent.status)) {
+    // Not a state a guest may pay from: nothing is held, the hold is being
+    // given back, or a person owns it. In every case an order would be money
+    // taken against nights we cannot promise.
     throw new BookingError('hold_expired');
   }
+  // The lease is the guest-facing deadline. It closes here, exactly at
+  // `hold_expires_at`; the sweep that releases opens only a grace period
+  // later, so the two cannot cross. The quote is checked as well — it is
+  // longer than the hold today, but nothing here may depend on that.
+  if (isHoldExpired(intent.status, intent.holdExpiresAt)) throw new BookingError('hold_expired');
   if (isQuoteExpired(intent.quoteExpiresAt)) throw new BookingError('quote_expired');
   if (!intent.quotedTotalCents || intent.quotedTotalCents <= 0) {
     throw new BookingError('unexpected');
@@ -83,6 +90,11 @@ export async function createPaymentOrder(
   if (intent.paymentStatus === 'paid') {
     // Already paid. Handing back a payable order would invite a second charge.
     throw new BookingError('invalid_input');
+  }
+  if (intent.paymentStatus === 'unknown' || intent.paymentStatus === 'capture_pending') {
+    // Money may already be in motion for this booking. Opening a second order
+    // is how a guest is charged twice; reconciliation reads the provider first.
+    throw new BookingError('pending_verification');
   }
 
   const adapter = paymentAdapter(provider);
@@ -219,7 +231,10 @@ async function reuseOrder(
 ): Promise<OrderHandle | null> {
   try {
     const existing = await paymentAdapter(provider).getOrder(intent.paymentOrderId!);
-    if (existing.state === 'order_created' || existing.state === 'approved') {
+    // `denied` is reusable on purpose: PayPal's restart flow re-approves the
+    // SAME order after a declined instrument, and a fresh order here would
+    // only be the same order again under the deterministic request id.
+    if (existing.state === 'order_created' || existing.state === 'approved' || existing.state === 'denied') {
       logger.info('payment.order', {
         reference: intent.reference,
         orderId: existing.orderId,
@@ -279,8 +294,20 @@ export async function capturePaymentOrder(
   }
   // Already settled. Idempotent by design: a guest refreshing the return page
   // must not trigger a second capture attempt.
-  if (intent.paymentStatus === 'paid' || intent.status === 'confirmed') {
+  if (intent.paymentStatus === 'paid' || isPaidSideStatus(intent.status)) {
     return { status: intent.status, paymentStatus: intent.paymentStatus };
+  }
+  if (intent.paymentStatus === 'unknown') {
+    // A previous capture's outcome was never learned. Asking PayPal to
+    // capture again is the double charge; reconciliation READS the order.
+    throw new BookingError('pending_verification');
+  }
+  // The same gate as order creation. A hold that has run out is not captured
+  // — the guest is told to book again, rather than paying for nights that the
+  // sweep is about to give back. The window between this check and the
+  // capture landing is covered by the sweep's grace period.
+  if (!isPayable(intent.status) || isHoldExpired(intent.status, intent.holdExpiresAt)) {
+    throw new BookingError('hold_expired');
   }
 
   const adapter = paymentAdapter(intent.paymentProvider);
@@ -338,6 +365,21 @@ export async function capturePaymentOrder(
       });
       throw new BookingError('pending_verification');
     }
+    if (cause instanceof PaymentProviderError && cause.code === 'not_found') {
+      // No such order at PayPal. Nothing to mark failed: the guest never
+      // reached the provider with this order, so the hold simply stands.
+      throw new BookingError('invalid_input');
+    }
+    if (cause instanceof PaymentProviderError && !isPaymentDecline(cause)) {
+      /*
+       * PayPal answered, but not with a decline — the order was never
+       * approved (a capture asked for out of turn, or a forged call), or the
+       * request itself was malformed. The guest has not been refused; nothing
+       * about the booking's payment state has changed, so nothing is written.
+       */
+      logger.warn('payment.capture', { reference, outcome: 'capture_rejected', errorCode: cause.issue ?? cause.code });
+      throw new BookingError(cause.issue === 'ORDER_NOT_APPROVED' ? 'invalid_input' : 'payment_handoff_failed');
+    }
     logger.warn('payment.capture', { reference, outcome: 'capture_failed' });
     await markPaymentFailed(intent, 'capture_rejected', logger);
     throw new BookingError('payment_handoff_failed');
@@ -373,6 +415,38 @@ export async function capturePaymentOrder(
 
   const after = await requireIntent(reference);
   return { status: after.status, paymentStatus: after.paymentStatus };
+}
+
+/**
+ * Did PayPal refuse the MONEY, as opposed to the request?
+ *
+ * A decline (`INSTRUMENT_DECLINED`, `PAYER_CANNOT_PAY`, …) is a fact about
+ * the payment and is recorded as `payment_failed`. Anything else on a 4xx —
+ * an order that was never approved, a malformed request — is a fact about
+ * the call, and recording it as a payment failure would tell the guest their
+ * card was refused when it was never asked. A 422 with no recognisable issue
+ * name is read as a decline: the safer of the two directions, because a
+ * `payment_failed` hold is still held and still leaseable.
+ */
+function isPaymentDecline(error: PaymentProviderError): boolean {
+  if (error.code !== 'rejected') return false;
+  if (!error.issue) return true;
+  return !NOT_A_DECLINE.has(error.issue);
+}
+
+const NOT_A_DECLINE = new Set([
+  'ORDER_NOT_APPROVED',
+  'ORDER_ALREADY_CAPTURED',
+  'INVALID_RESOURCE_ID',
+  'PERMISSION_DENIED',
+  'MALFORMED_REQUEST_JSON',
+  'INVALID_REQUEST',
+  'AUTHENTICATION_FAILURE',
+]);
+
+function isPaidSideStatus(status: IntentRecord['status']): boolean {
+  return status === 'paid' || status === 'finalizing' || status === 'confirmed' ||
+    status === 'paid_unfinalized' || status === 'finalization_failed';
 }
 
 async function markPaymentFailed(
