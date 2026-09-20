@@ -32,7 +32,7 @@ Nothing on this branch has been deployed or applied to a production database.
 | Suite | Command | Result |
 |---|---|---|
 | Typecheck, lint | `npm run typecheck`, `npm run lint` | clean |
-| Unit | `npm test` | 604 passing (501 before + 103 finance) |
+| Unit | `npm test` | 605 passing (501 before + 104 finance) |
 | SQL (real Postgres) | `./scripts/db-test.sh` | passing, incl. `tests/sql/finance.sql` (81 assertions) |
 | Ops | `./scripts/db-ops-check.sh` | passing (preflight → migrate → verify → finance rollback → re-apply ×2 → verify → older rollbacks → re-apply → verify) |
 | Integration | `npm run test:integration` | 88 passing (77 before + 11 finance) |
