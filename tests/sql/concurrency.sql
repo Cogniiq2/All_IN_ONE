@@ -343,5 +343,151 @@ begin
     'the severity-1 job is claimed first');
 end $$;
 
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 9. A declined payment may still complete against the same order
+-- ══════════════════════════════════════════════════════════════════════════
+--
+-- PayPal's restart flow re-approves the order after a declined instrument.
+-- The trigger must accept the capture that follows, or the database refuses a
+-- payment PayPal has already executed.
+
+do $$
+declare n uuid; r jsonb;
+begin
+  n := t_intent('BLG-NNNNNN', 'schulstrasse-ii', '2027-07-01', '2027-07-04');
+  perform bolagio_acquire_lock(n);
+  perform bolagio_booking_transition(n, 'locking'::bolagio_booking_status, 'hold_created'::bolagio_booking_status,
+    'fixture', jsonb_build_object('beds24_booking_id','99009','payment_order_id','ORDER-9',
+                                  'payment_provider','paypal','payment_status','order_created'));
+  perform bolagio_booking_transition(n, 'hold_created'::bolagio_booking_status, 'payment_failed'::bolagio_booking_status,
+    'capture_denied', jsonb_build_object('payment_status','denied'));
+  perform t_assert(bolagio_payment_transition_allowed('denied','paid'), 'denied -> paid is legal');
+  perform t_assert(bolagio_payment_transition_allowed('cancelled','approved'), 'cancelled -> approved is legal');
+  perform t_assert(not bolagio_payment_transition_allowed('paid','order_created'), 'paid -> order_created is still illegal');
+  r := bolagio_record_payment_capture('BLG-NNNNNN','paypal','ORDER-9','CAP-9', 42500, 'EUR');
+  perform t_assert(r->>'outcome' = 'applied' and r->>'status' = 'paid',
+    'a capture after a decline is applied against the same order');
+end $$;
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 10. The database refuses a blind retry after an unknown outcome
+-- ══════════════════════════════════════════════════════════════════════════
+
+do $$
+declare v_refused boolean := false; v_row bolagio_external_operations;
+begin
+  delete from bolagio_external_operations;
+  perform bolagio_begin_external_operation('beds24:create_hold:test-1', 'beds24', 'create_hold');
+  perform bolagio_complete_external_operation('beds24:create_hold:test-1', 'outcome_unknown', null, 'timeout');
+
+  begin
+    perform bolagio_begin_external_operation('beds24:create_hold:test-1', 'beds24', 'create_hold');
+  exception when sqlstate 'BLG01' then
+    v_refused := true;
+  end;
+  perform t_assert(v_refused, 'a second create after an unknown outcome is refused with SQLSTATE BLG01');
+  perform t_assert(
+    (select outcome from bolagio_external_operations where operation_key = 'beds24:create_hold:test-1') = 'outcome_unknown',
+    'the refused retry left the unknown verdict untouched');
+
+  -- An idempotent operation may declare itself so, and proceeds.
+  v_row := bolagio_begin_external_operation('beds24:create_hold:test-1', 'beds24', 'create_hold', null, null, true);
+  perform t_assert(v_row.outcome = 'in_flight' and v_row.attempts = 1, 'a declared-idempotent retry proceeds as a new attempt');
+
+  -- A reconciled operation is no longer a block.
+  perform bolagio_complete_external_operation('beds24:create_hold:test-1', 'reconciled', '9001');
+  v_row := bolagio_begin_external_operation('beds24:create_hold:test-1', 'beds24', 'create_hold');
+  perform t_assert(v_row.outcome = 'in_flight', 'once reconciled, the same key may be attempted again');
+end $$;
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 11. Scheduler heartbeat
+-- ══════════════════════════════════════════════════════════════════════════
+
+do $$
+begin
+  delete from bolagio_scheduler_runs;
+  perform bolagio_record_scheduler_run('reconcile', now() - interval '2 seconds', true, '{"scanned":1}'::jsonb);
+  perform bolagio_record_scheduler_run('reconcile', now() - interval '1 second', false, null, 'boom');
+  perform t_assert((select ok from bolagio_scheduler_status where job = 'reconcile') = false,
+    'the scheduler status reports the LATEST run per job');
+  perform t_assert((select count(*) from bolagio_scheduler_status) = 1, 'one status row per job');
+end $$;
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 12. Turnovers are derived once, updated in place, voided when the stay leaves confirmed
+-- ══════════════════════════════════════════════════════════════════════════
+
+do $$
+declare p uuid; q uuid; r jsonb; v_today date;
+begin
+  delete from bolagio_turnovers; delete from bolagio_outbox_events;
+  v_today := (now() at time zone 'Europe/Berlin')::date;
+  p := t_intent('BLG-PPPPPP', 'schulstrasse-i', v_today + 2, v_today + 5);
+  q := t_intent('BLG-QQQQQQ', 'schulstrasse-i', v_today + 5, v_today + 7);
+  perform bolagio_acquire_lock(p);
+  perform bolagio_booking_transition(p, 'locking', 'hold_created', 'fixture', jsonb_build_object('beds24_booking_id','77001'));
+  perform bolagio_booking_transition(p, 'hold_created', 'paid', 'fixture', jsonb_build_object('payment_status','paid'));
+  perform bolagio_booking_transition(p, 'paid', 'confirmed', 'fixture');
+
+  r := bolagio_sync_turnovers();
+  perform t_assert((r->>'created')::int = 1, 'a confirmed stay creates exactly one turnover');
+  perform t_assert((select count(*) from bolagio_outbox_events where event_type = 'cleaning.required' and reference = 'BLG-PPPPPP') = 1,
+    'cleaning.required is emitted with the turnover');
+  perform t_assert((select same_day from bolagio_turnovers where intent_id = p) = false, 'no next arrival yet, so not same-day');
+
+  r := bolagio_sync_turnovers();
+  perform t_assert((r->>'created')::int = 0 and (r->>'updated')::int = 0, 'a second pass changes nothing');
+  perform t_assert((select count(*) from bolagio_outbox_events where event_type = 'cleaning.required') = 1,
+    'cleaning.required is not emitted twice');
+
+  -- A confirmed back-to-back arrival makes it a same-day turnover.
+  perform bolagio_acquire_lock(q);
+  perform bolagio_booking_transition(q, 'locking', 'hold_created', 'fixture', jsonb_build_object('beds24_booking_id','77002'));
+  perform bolagio_booking_transition(q, 'hold_created', 'paid', 'fixture', jsonb_build_object('payment_status','paid'));
+  perform bolagio_booking_transition(q, 'paid', 'confirmed', 'fixture');
+  r := bolagio_sync_turnovers();
+  perform t_assert((select same_day from bolagio_turnovers where intent_id = p) = true, 'a back-to-back arrival marks the turnover same-day');
+  perform t_assert((r->>'created')::int = 1, 'the second stay gets its own turnover');
+  perform t_assert((select window_start < window_end from bolagio_turnovers where intent_id = p), 'the window runs from check-out to check-in time');
+
+  -- The stay leaves confirmed: the turnover is voided, not deleted.
+  perform bolagio_booking_transition(p, 'confirmed', 'manual_review', 'fixture');
+  r := bolagio_sync_turnovers();
+  perform t_assert((r->>'voided')::int = 1, 'a stay that leaves confirmed voids its turnover');
+  perform t_assert((select status from bolagio_turnovers where intent_id = p) = 'void', 'voided, still present');
+end $$;
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 13. Guest-operations events fire once, on the property's calendar
+-- ══════════════════════════════════════════════════════════════════════════
+
+do $$
+declare s uuid; r jsonb; v_today date;
+begin
+  delete from bolagio_guest_events; delete from bolagio_outbox_events;
+  v_today := (now() at time zone 'Europe/Berlin')::date;
+  -- Arrives today, left... no: arrives today, departs in two days.
+  s := t_intent('BLG-SSSSSS', 'schulstrasse-ii', v_today, v_today + 2);
+  perform bolagio_acquire_lock(s);
+  perform bolagio_booking_transition(s, 'locking', 'hold_created', 'fixture', jsonb_build_object('beds24_booking_id','77003'));
+  perform bolagio_booking_transition(s, 'hold_created', 'paid', 'fixture', jsonb_build_object('payment_status','paid'));
+
+  r := bolagio_emit_guest_events();
+  perform t_assert((r->>'checkin')::int = 0, 'a paid but unconfirmed stay emits nothing');
+
+  perform bolagio_booking_transition(s, 'paid', 'confirmed', 'fixture');
+  r := bolagio_emit_guest_events();
+  perform t_assert((r->>'checkin')::int = 1 and (r->>'prearrival')::int = 1,
+    'a confirmed stay arriving today emits check-in and pre-arrival');
+  r := bolagio_emit_guest_events();
+  perform t_assert((r->>'checkin')::int = 0 and (r->>'prearrival')::int = 0, 'nothing is emitted twice');
+  perform t_assert((select count(*) from bolagio_outbox_events where reference = 'BLG-SSSSSS') = 2,
+    'exactly two outbox rows for the two events');
+  perform t_assert((select count(*) from bolagio_guest_events where intent_id = s and kind = 'review.requested') = 0,
+    'no review request before departure');
+end $$;
+
 \echo ''
 \echo '════════ all database concurrency tests passed ════════'
