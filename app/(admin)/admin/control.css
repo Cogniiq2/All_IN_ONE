@@ -2505,3 +2505,11 @@ a.bc-figure:hover {
     -webkit-overflow-scrolling: touch;
   }
 }
+
+/* Form controls inside grids never widen their track: a date input's intrinsic width
+   is larger than a 390 px phone's column and would otherwise push the page sideways. */
+.bc-input,
+.bc-select {
+  min-width: 0;
+  max-width: 100%;
+}
