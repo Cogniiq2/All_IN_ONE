@@ -90,7 +90,8 @@ test('F03 · an operator posts an expense through the form; the ledger, the line
   await page.getByLabel('Category').first().selectOption('cleaning');
   await page.getByLabel('Tax code').first().selectOption('DE_STANDARD');
   await page.getByLabel('Net €').first().fill('100,00');
-  await expect(page.getByLabel('VAT €').first()).toHaveValue('19,00'); // derived from net and code by the form
+  await page.getByLabel('Net €').first().blur(); // the form derives VAT from net and code when the field is left
+  await expect(page.getByLabel('VAT €').first()).toHaveValue('19,00');
   await page.getByRole('button', { name: 'Post expense' }).click();
   await expect(page.getByText('Posted.')).toBeVisible();
   const id = sql(`select id from bolagio_finance_transactions where supplier_invoice_no = 'RN-2026-0042'`);
@@ -109,6 +110,7 @@ test('F03 · an operator posts an expense through the form; the ledger, the line
   await page.getByLabel('Category').first().selectOption('cleaning');
   await page.getByLabel('Tax code').first().selectOption('DE_STANDARD');
   await page.getByLabel('Net €').first().fill('100,00');
+  await page.getByLabel('Net €').first().blur();
   await page.getByRole('button', { name: 'Post expense' }).click();
   await expect(page.getByText(/already posted/)).toBeVisible();
   expect(sql(`select count(*) from bolagio_finance_transactions where supplier_invoice_no = 'RN-2026-0042'`)).toBe('1');
