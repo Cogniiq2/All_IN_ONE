@@ -62,7 +62,7 @@ export function supabaseRowSource(): RowSource {
       const { data, error } = await supabaseAdmin()
         .from('bolagio_units')
         .select(
-          'id, slug, display_name, max_guests, min_nights, currency, is_bookable, created_at, updated_at,' +
+          'id, slug, display_name, max_guests, min_nights, currency, is_bookable, timezone, check_in_time, check_out_time, created_at, updated_at,' +
             ' bolagio_unit_integrations(provider, external_property_id, external_room_id, enabled)'
         )
         .order('display_name');

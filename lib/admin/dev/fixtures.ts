@@ -39,11 +39,11 @@ const at = (dayOffset: number, hour: number, minute = 0) => {
 };
 
 const UNITS: UnitRow[] = [
-  { id: 'u-s1', slug: 'schulstrasse-i', display_name: 'Schulstraße I', max_guests: null, min_nights: null, currency: 'EUR', is_bookable: true, created_at: at(-120, 9), updated_at: at(-3, 9), integration: { provider: 'beds24', external_property_id: '354659', external_room_id: '731147', enabled: true } },
-  { id: 'u-s2', slug: 'schulstrasse-ii', display_name: 'Schulstraße II', max_guests: null, min_nights: null, currency: 'EUR', is_bookable: true, created_at: at(-120, 9), updated_at: at(-3, 9), integration: { provider: 'beds24', external_property_id: '354658', external_room_id: '731146', enabled: true } },
-  { id: 'u-o1', slug: 'opernstrasse-i', display_name: 'Opernstraße I', max_guests: null, min_nights: null, currency: 'EUR', is_bookable: false, created_at: at(-120, 9), updated_at: at(-120, 9), integration: null },
-  { id: 'u-o2', slug: 'opernstrasse-ii', display_name: 'Opernstraße II', max_guests: null, min_nights: null, currency: 'EUR', is_bookable: false, created_at: at(-120, 9), updated_at: at(-120, 9), integration: null },
-  { id: 'u-o3', slug: 'opernstrasse-iii', display_name: 'Opernstraße III', max_guests: null, min_nights: null, currency: 'EUR', is_bookable: false, created_at: at(-120, 9), updated_at: at(-120, 9), integration: null },
+  { id: 'u-s1', slug: 'schulstrasse-i', display_name: 'Schulstraße I', max_guests: null, min_nights: null, currency: 'EUR', is_bookable: true, timezone: 'Europe/Berlin', check_in_time: '14:00:00', check_out_time: '11:00:00', created_at: at(-120, 9), updated_at: at(-3, 9), integration: { provider: 'beds24', external_property_id: '354659', external_room_id: '731147', enabled: true } },
+  { id: 'u-s2', slug: 'schulstrasse-ii', display_name: 'Schulstraße II', max_guests: null, min_nights: null, currency: 'EUR', is_bookable: true, timezone: 'Europe/Berlin', check_in_time: '14:00:00', check_out_time: '11:00:00', created_at: at(-120, 9), updated_at: at(-3, 9), integration: { provider: 'beds24', external_property_id: '354658', external_room_id: '731146', enabled: true } },
+  { id: 'u-o1', slug: 'opernstrasse-i', display_name: 'Opernstraße I', max_guests: null, min_nights: null, currency: 'EUR', is_bookable: false, timezone: 'Europe/Berlin', check_in_time: '14:00:00', check_out_time: '11:00:00', created_at: at(-120, 9), updated_at: at(-120, 9), integration: null },
+  { id: 'u-o2', slug: 'opernstrasse-ii', display_name: 'Opernstraße II', max_guests: null, min_nights: null, currency: 'EUR', is_bookable: false, timezone: 'Europe/Berlin', check_in_time: '14:00:00', check_out_time: '11:00:00', created_at: at(-120, 9), updated_at: at(-120, 9), integration: null },
+  { id: 'u-o3', slug: 'opernstrasse-iii', display_name: 'Opernstraße III', max_guests: null, min_nights: null, currency: 'EUR', is_bookable: false, timezone: 'Europe/Berlin', check_in_time: '14:00:00', check_out_time: '11:00:00', created_at: at(-120, 9), updated_at: at(-120, 9), integration: null },
 ];
 
 interface Seed {

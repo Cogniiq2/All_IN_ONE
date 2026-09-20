@@ -21,6 +21,10 @@ export interface UnitRow {
   min_nights: number | null;
   currency: string;
   is_bookable: boolean;
+  /** The unit's operational clock. Present once the production-hardening migration is applied; null before. */
+  timezone: string | null;
+  check_in_time: string | null;
+  check_out_time: string | null;
   created_at: string;
   updated_at: string;
   integration: {

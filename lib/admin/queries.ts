@@ -86,6 +86,10 @@ function toUnitDto(row: UnitRow, meta: { syncedAt: string | null; daysCached: nu
     currency: row.currency,
     maxGuests: row.max_guests,
     minNights: row.min_nights,
+    clock:
+      row.timezone && row.check_in_time && row.check_out_time
+        ? { timezone: row.timezone, checkInTime: row.check_in_time.slice(0, 5), checkOutTime: row.check_out_time.slice(0, 5) }
+        : null,
     integration: row.integration
       ? {
           provider: row.integration.provider,

@@ -225,6 +225,8 @@ export interface UnitDto {
   currency: string;
   maxGuests: number | null;
   minNights: number | null;
+  /** The property's calendar and house rules. Null when the migration that carries them is not applied. */
+  clock: { timezone: string; checkInTime: string; checkOutTime: string } | null;
   integration: {
     provider: string;
     externalPropertyId: string;

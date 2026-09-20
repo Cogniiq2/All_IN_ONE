@@ -30,19 +30,27 @@
 -- an inventory sync has run successfully. Turning it on is the deliberate act
 -- that opens a residence for sale.
 
-insert into bolagio_units (slug, display_name, max_guests, min_nights, currency, is_bookable)
+-- `timezone`, `check_in_time` and `check_out_time` are the house rules
+-- (Europe/Berlin, 14:00 / 11:00) and exist once
+-- 20260920120000_booking_production_hardening.sql is applied. They drive the
+-- turnover window and the guest-operations timing, per unit.
+
+insert into bolagio_units (slug, display_name, max_guests, min_nights, currency, is_bookable, timezone, check_in_time, check_out_time)
 values
-  ('schulstrasse-i',    'Schulstraße I',    null, null, 'EUR', false),
-  ('schulstrasse-ii',   'Schulstraße II',   null, null, 'EUR', false),
+  ('schulstrasse-i',    'Schulstraße I',    null, null, 'EUR', false, 'Europe/Berlin', '14:00', '11:00'),
+  ('schulstrasse-ii',   'Schulstraße II',   null, null, 'EUR', false, 'Europe/Berlin', '14:00', '11:00'),
   -- The three Opernstraße flats are in renovation. They carry
   -- status 'in-preparation' in the content file, which already keeps them out
   -- of the booking flow; they are listed here so their mapping can be prepared
   -- ahead of opening.
-  ('opernstrasse-i',    'Opernstraße I',    null, null, 'EUR', false),
-  ('opernstrasse-ii',   'Opernstraße II',   null, null, 'EUR', false),
-  ('opernstrasse-iii',  'Opernstraße III',  null, null, 'EUR', false)
+  ('opernstrasse-i',    'Opernstraße I',    null, null, 'EUR', false, 'Europe/Berlin', '14:00', '11:00'),
+  ('opernstrasse-ii',   'Opernstraße II',   null, null, 'EUR', false, 'Europe/Berlin', '14:00', '11:00'),
+  ('opernstrasse-iii',  'Opernstraße III',  null, null, 'EUR', false, 'Europe/Berlin', '14:00', '11:00')
 on conflict (slug) do update
-  set display_name = excluded.display_name;
+  set display_name   = excluded.display_name,
+      timezone       = excluded.timezone,
+      check_in_time  = excluded.check_in_time,
+      check_out_time = excluded.check_out_time;
 
 -- ── The Beds24 mapping ─────────────────────────────────────────────────────
 --

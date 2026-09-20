@@ -113,7 +113,8 @@ export default async function PropertiesPage() {
                         ['Currency', u.currency],
                         ['Max guests', u.maxGuests !== null ? String(u.maxGuests) : <span key="mg" className="bc-meta">Not verified</span>],
                         ['Min nights', u.minNights !== null ? String(u.minNights) : <span key="mn" className="bc-meta">Not verified</span>],
-                        ['Check-in / out', <span key="ci" className="bc-meta">Not recorded</span>],
+                        ['Check-in / out', u.clock ? `${u.clock.checkInTime} / ${u.clock.checkOutTime}` : <span key="ci" className="bc-meta">Not recorded</span>],
+                        ['Calendar', u.clock ? u.clock.timezone : <span key="tz" className="bc-meta">Not recorded</span>],
                         ['Updated', <When key="u" value={u.updatedAt} />],
                       ]}
                     />
