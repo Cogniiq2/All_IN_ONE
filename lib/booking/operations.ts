@@ -32,7 +32,7 @@ export interface OperationsReport {
   turnovers: TurnoverSyncReport;
   guestEvents: GuestEventReport;
   /** Finance ingestion summary, or null when finance is not applied / failed (recorded in its own signal). */
-  finance: { scanned: number; revenuePosted: number; paymentsRecorded: number; refundsPosted: number; matches: number; errors: number } | null;
+  finance: { scanned: number; revenuePosted: number; paymentsRecorded: number; refundsPosted: number; refundsWithoutRevenue: number; matches: number; errors: number } | null;
 }
 
 export async function runOperationsPass(logger: BookingLogger): Promise<OperationsReport> {
@@ -48,7 +48,7 @@ export async function runOperationsPass(logger: BookingLogger): Promise<Operatio
   try {
     const { ingestBookingFacts } = await import('@/lib/finance/commands');
     const r = await ingestBookingFacts({ actor: 'system:operations-pass' });
-    finance = { scanned: r.scanned, revenuePosted: r.revenuePosted, paymentsRecorded: r.paymentsRecorded, refundsPosted: r.refundsPosted, matches: r.matches, errors: r.errors.length };
+    finance = { scanned: r.scanned, revenuePosted: r.revenuePosted, paymentsRecorded: r.paymentsRecorded, refundsPosted: r.refundsPosted, refundsWithoutRevenue: r.refundsWithoutRevenue, matches: r.matches, errors: r.errors.length };
   } catch (cause) {
     logger.warn('finance.ingest', { outcome: 'failed', errorCode: cause instanceof Error ? cause.name : 'unknown' });
   }

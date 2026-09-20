@@ -116,6 +116,30 @@ export function capturePayment(b: BookingFact): Record<string, unknown> | null {
   };
 }
 
+/**
+ * The outgoing CASH fact of a completed refund — on its own, because it is
+ * true on its own.
+ *
+ * Money leaving the account is a fact about the bank, not about the P&L. A
+ * stay cancelled and refunded before the first ingestion pass never reached
+ * a revenue-recognising status, so there are no original lines to reverse
+ * pro-rata; the euros still left. Keeping this separate from
+ * `refundPosting` is what stops the cash fact disappearing with the
+ * reversal it cannot compute.
+ *
+ * Key `paypal:<refund id>`-shaped through `provider_reference`, so a replay,
+ * a webhook and a manual record all collapse to one row.
+ */
+export function refundCashFact(b: BookingFact): Record<string, unknown> | null {
+  if (b.refundState !== 'completed' || !b.refundId || b.refundedAmountCents <= 0) return null;
+  const on = (b.refundCompletedAt ?? b.cancellationCompletedAt ?? new Date().toISOString()).slice(0, 10);
+  return {
+    direction: 'out', source: b.paymentProvider === 'paypal' ? 'paypal' : 'other', provider_reference: b.refundId, amount_cents: b.refundedAmountCents, fee_cents: 0, currency: b.paidCurrency ?? b.currency,
+    occurred_at: b.refundCompletedAt ?? new Date().toISOString(), value_date: on, counterparty_label: `Guest · ${b.reference}`, reference_text: `refund ${b.reference}`,
+    booking_intent_id: b.intentId, booking_reference: b.reference, kind: 'refund',
+  };
+}
+
 /** A completed refund: negative revenue pro-rata over the original lines, plus the outgoing cash fact. */
 export function refundPosting(b: BookingFact, originalLines: Array<{ line_no: number; category: string; description: string | null; tax_code: string; rate_bp: number; gross_cents: number; unit_id: string | null }>): { header: PostingHeader; lines: PostingLine[]; payment: Record<string, unknown> } | null {
   if (b.refundState !== 'completed' || !b.refundId || b.refundedAmountCents <= 0) return null;
@@ -138,11 +162,7 @@ export function refundPosting(b: BookingFact, originalLines: Array<{ line_no: nu
       review_state: lines.some((l) => l.classification === 'needs_review') || b.refundedAmountCents > total ? 'needs_review' : 'auto_verified', document_state: 'not_required', payment_state: 'unpaid', reconciliation_state: 'unmatched',
     },
     lines,
-    payment: {
-      direction: 'out', source: b.paymentProvider === 'paypal' ? 'paypal' : 'other', provider_reference: b.refundId, amount_cents: b.refundedAmountCents, fee_cents: 0, currency: b.paidCurrency ?? b.currency,
-      occurred_at: b.refundCompletedAt ?? new Date().toISOString(), value_date: on, counterparty_label: `Guest · ${b.reference}`, reference_text: `refund ${b.reference}`,
-      booking_intent_id: b.intentId, booking_reference: b.reference, kind: 'refund',
-    },
+    payment: refundCashFact(b)!,
   };
 }
 

@@ -29,6 +29,7 @@ import * as commands from '@/lib/finance/commands';
 import { supabaseFinanceSource } from '@/lib/finance/source-supabase';
 import { financeRowSource } from '@/lib/finance/source';
 import { isIsoDate } from '@/lib/finance/periods';
+import { errorMessage } from '@/lib/finance/errors';
 import { taxCode as taxCodeOf } from '@/lib/finance/tax-codes';
 import { category as categoryOf } from '@/lib/finance/categories';
 import { ACCEPTED_MIME, MAX_DOCUMENT_BYTES, detectStructuredFormat, sha256Hex } from '@/lib/finance/documents';
@@ -54,7 +55,7 @@ function refreshFinance(paths: string[] = []): void {
 }
 
 function fail(cause: unknown): ActionResult<never> {
-  const detail = cause instanceof Error ? cause.message : 'unknown';
+  const detail = errorMessage(cause);
   // eslint-disable-next-line no-console -- server-side diagnostics
   console.error(JSON.stringify({ scope: 'finance', event: 'action.error', level: 'error', cause: detail }));
   if (/BLG11/.test(detail) || /locked/.test(detail)) return { ok: false, reason: 'refused', detail: 'The period is locked. Post the correction into the open period.' };
@@ -73,7 +74,7 @@ export async function runIngestionAction(): Promise<ActionResult<{ report: comma
   if (!g.ok) return g;
   try {
     const report = await commands.ingestBookingFacts({ actor: g.actor });
-    await audit({ operator: g.operator, action: 'finance.ingest', outcome: report.errors.length ? 'partial' : 'ok', detail: { scanned: report.scanned, revenue: report.revenuePosted, payments: report.paymentsRecorded, refunds: report.refundsPosted, errors: report.errors.length } });
+    await audit({ operator: g.operator, action: 'finance.ingest', outcome: report.errors.length ? 'partial' : 'ok', detail: { scanned: report.scanned, revenue: report.revenuePosted, payments: report.paymentsRecorded, refunds: report.refundsPosted, refundsWithoutRevenue: report.refundsWithoutRevenue, errors: report.errors.length } });
     refreshFinance();
     return { ok: true, report };
   } catch (cause) { return fail(cause); }
@@ -384,9 +385,14 @@ export async function recordMinibarMovementAction(fd: FormData): Promise<ActionR
   const qty = int(fd, 'quantity');
   if (!/^[0-9a-f-]{36}$/.test(productId) || !['purchase', 'sale', 'adjustment', 'waste', 'complimentary', 'correction'].includes(movement) || qty === null || qty === 0) return { ok: false, reason: 'invalid', detail: 'Product, movement and a non-zero quantity are required.' };
   const signed = movement === 'purchase' ? Math.abs(qty) : ['sale', 'waste', 'complimentary'].includes(movement) ? -Math.abs(qty) : qty;
+  // Whitelisted like `movement` is: the column carries a CHECK constraint, and
+  // a value that fails it should be refused here with a sentence rather than
+  // surface as a database error the operator cannot act on.
+  const chargeState = str(fd, 'charge_state', 20);
+  if (chargeState && !['not_applicable', 'unpaid', 'paid', 'included', 'written_off', 'needs_review'].includes(chargeState)) return { ok: false, reason: 'invalid', detail: 'Unknown charge state.' };
   const ref = str(fd, 'booking_reference', 20) || null;
   try {
-    const r = (await commands.recordMinibarMovement({ product_id: productId, movement, quantity: signed, occurred_on: occurredOn, unit_id: /^[0-9a-f-]{36}$/.test(str(fd, 'unit_id', 40)) ? str(fd, 'unit_id', 40) : null, booking_intent_id: /^[0-9a-f-]{36}$/.test(str(fd, 'booking_intent_id', 40)) ? str(fd, 'booking_intent_id', 40) : null, booking_reference: ref, charge_state: str(fd, 'charge_state', 20) || undefined, source_reference: movement === 'sale' && ref ? `${ref}:${str(fd, 'sku', 40) || productId}:${occurredOn ?? ''}` : undefined, note: str(fd, 'note', 400) || null }, g.actor)) as { ok: boolean; code?: string; transaction_id?: string | null; created?: boolean };
+    const r = (await commands.recordMinibarMovement({ product_id: productId, movement, quantity: signed, occurred_on: occurredOn, unit_id: /^[0-9a-f-]{36}$/.test(str(fd, 'unit_id', 40)) ? str(fd, 'unit_id', 40) : null, booking_intent_id: /^[0-9a-f-]{36}$/.test(str(fd, 'booking_intent_id', 40)) ? str(fd, 'booking_intent_id', 40) : null, booking_reference: ref, charge_state: chargeState || undefined, source_reference: movement === 'sale' && ref ? `${ref}:${str(fd, 'sku', 40) || productId}:${occurredOn ?? ''}` : undefined, note: str(fd, 'note', 400) || null }, g.actor)) as { ok: boolean; code?: string; transaction_id?: string | null; created?: boolean };
     if (!r.ok) return { ok: false, reason: 'refused', detail: `Refused (${r.code}).` };
     await audit({ operator: g.operator, action: 'finance.minibar.movement', targetType: 'minibar_product', targetRef: productId, outcome: r.created === false ? 'duplicate' : 'ok', detail: { movement, quantity: signed, reference: ref } });
     refreshFinance(['/admin/finance/minibar']);

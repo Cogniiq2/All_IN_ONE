@@ -20,6 +20,7 @@ import { failed, ok, type QueryResult } from '@/lib/admin/dto';
 import { adminPosture } from '@/lib/admin/config';
 import { AdminUnconfiguredError, financeRowSource } from '@/lib/finance/source';
 import { calendarPolicyFrom, financeConfig } from '@/lib/finance/config';
+import { errorMessage } from '@/lib/finance/errors';
 import type { FinanceConfigSnapshot } from '@/lib/finance/config-shape';
 import { addDays, berlinToday, monthKey, monthKeysBetween, mtd, periodLabel, periodRange, yearOf, yearRange, ytd, type DateRange, type IsoDate } from '@/lib/finance/periods';
 import { computeVatPosition, type VatPosition } from '@/lib/finance/tax/vat';
@@ -60,7 +61,7 @@ async function guard<T>(fn: () => Promise<T>): Promise<QueryResult<T>> {
     return ok(await fn());
   } catch (cause) {
     // eslint-disable-next-line no-console -- server-side diagnostics only; the operator sees `describe()`.
-    console.error(JSON.stringify({ scope: 'finance', event: 'query.error', level: 'error', cause: cause instanceof Error ? `${cause.name}: ${cause.message}` : 'unknown' }));
+    console.error(JSON.stringify({ scope: 'finance', event: 'query.error', level: 'error', cause: errorMessage(cause) }));
     return failed(describe(cause));
   }
 }

@@ -16,7 +16,7 @@ import 'server-only';
 import { supabaseAdmin } from '@/lib/supabase/server';
 import { classifyExpense } from '@/lib/finance/categorization';
 import { proposeMatches, type MatchProposal } from '@/lib/finance/reconciliation';
-import { capturePayment, expectedTurnoverCost, refundPosting, revenuePosting, type BookingFact } from '@/lib/finance/ingestion-rules';
+import { capturePayment, expectedTurnoverCost, refundCashFact, refundPosting, revenuePosting, type BookingFact } from '@/lib/finance/ingestion-rules';
 import { stageCsv, type AdapterId, type StagedRow } from '@/lib/finance/import/adapters';
 import { sha256Hex } from '@/lib/finance/documents';
 import { buildDraft, canIssue, type InvoiceDraft, type StayForInvoice } from '@/lib/finance/invoices';
@@ -30,14 +30,15 @@ import { periodRange, yearRange, berlinToday, type IsoDate } from '@/lib/finance
 import { supabaseFinanceSource } from '@/lib/finance/source-supabase';
 import type { CounterpartyRow, TaxRateRowDb } from '@/lib/finance/rows';
 import { fromNet, splitGross } from '@/lib/finance/money';
-import { requireTaxCode } from '@/lib/finance/tax-codes';
+import { REVIEW_REQUIRED_CODE, requireTaxCode } from '@/lib/finance/tax-codes';
 import { allocateInvoiceNumber } from '@/lib/invoicing/numbering';
+import { FinanceCommandError, asFinanceError, errorMessage } from '@/lib/finance/errors';
 
 type Json = Record<string, unknown>;
 
 async function rpc<T = Json>(fn: string, args: Json): Promise<T> {
   const { data, error } = await supabaseAdmin().rpc(fn, args);
-  if (error) throw error;
+  if (error) throw new FinanceCommandError(fn, error);
   return data as T;
 }
 
@@ -168,6 +169,8 @@ export interface IngestionReport {
   revenuePosted: number;
   paymentsRecorded: number;
   refundsPosted: number;
+  /** Refunds whose stay was never recognised as revenue: the cash is recorded, the reversal has nothing to reverse. */
+  refundsWithoutRevenue: number;
   turnoverCosts: number;
   matches: number;
   errors: string[];
@@ -190,7 +193,7 @@ function toFact(r: IntentFactRow): BookingFact {
  */
 export async function ingestBookingFacts(options: { since?: IsoDate; limit?: number; actor?: string } = {}): Promise<IngestionReport> {
   const actor = options.actor ?? 'system:ingestion';
-  const report: IngestionReport = { scanned: 0, revenuePosted: 0, paymentsRecorded: 0, refundsPosted: 0, turnoverCosts: 0, matches: 0, errors: [] };
+  const report: IngestionReport = { scanned: 0, revenuePosted: 0, paymentsRecorded: 0, refundsPosted: 0, refundsWithoutRevenue: 0, turnoverCosts: 0, matches: 0, errors: [] };
   const db = supabaseAdmin();
   let q = db.from('bolagio_booking_intents')
     .select('id, reference, unit_id, source, status, payment_status, check_in, check_out, currency, quoted_total_cents, quote_components, paid_amount_cents, paid_currency, payment_capture_id, payment_provider, paid_at, confirmed_at, refund_state, refund_id, refunded_amount_cents, refund_completed_at, cancellation_completed_at')
@@ -198,50 +201,80 @@ export async function ingestBookingFacts(options: { since?: IsoDate; limit?: num
     .order('updated_at', { ascending: false }).limit(options.limit ?? 500);
   if (options.since) q = q.gte('updated_at', `${options.since}T00:00:00Z`);
   const { data, error } = await q;
-  if (error) throw error;
+  if (error) throw asFinanceError('booking_intents.select', error);
   const config = financeConfig();
   const accommodationCode = config.accommodationTaxCode ?? 'DE_ACCOMMODATION_REDUCED';
   for (const raw of (data ?? []) as IntentFactRow[]) {
     report.scanned += 1;
     const fact = toFact(raw);
-    try {
+    // Three INDEPENDENT facts. A revenue posting that the database refuses —
+    // a locked period, an inactive tax code — must not take the guest's
+    // money with it: the capture and the refund are cash facts that happened
+    // whatever the P&L does, and each one is recorded, or reported, alone.
+    const step = async (what: string, run: () => Promise<void>): Promise<void> => {
+      try {
+        await run();
+      } catch (cause) {
+        report.errors.push(`${fact.reference} (${what}): ${errorMessage(cause)}`);
+      }
+    };
+
+    await step('revenue', async () => {
       const rev = revenuePosting(fact, accommodationCode);
-      if (rev) {
-        const r = await postTransaction(rev.header, rev.lines, actor);
-        if (r.created) report.revenuePosted += 1;
-      }
+      if (!rev) return;
+      const r = await postTransaction(rev.header, rev.lines, actor);
+      if (r.created) report.revenuePosted += 1;
+    });
+
+    await step('capture', async () => {
       const cap = capturePayment(fact);
-      if (cap) {
-        const r = await recordPayment(cap, actor);
-        if (r.created) report.paymentsRecorded += 1;
-      }
-      if (fact.refundState === 'completed' && fact.refundId) {
-        const { data: orig } = await db.from('bolagio_finance_transactions').select('id').eq('source_system', 'booking').eq('source_reference', `booking:${fact.intentId}`).maybeSingle();
-        if (orig) {
-          const { data: lines } = await db.from('bolagio_finance_transaction_lines').select('line_no, category, description, tax_code, rate_bp, gross_cents, unit_id').eq('transaction_id', orig.id).order('line_no');
-          const refund = refundPosting(fact, ((lines ?? []) as Array<{ line_no: number; category: string; description: string | null; tax_code: string; rate_bp: number; gross_cents: number; unit_id: string | null }>).map((l) => ({ ...l, gross_cents: Number(l.gross_cents), rate_bp: Number(l.rate_bp) })));
-          if (refund) {
-            const r = await postTransaction(refund.header, refund.lines, actor);
-            if (r.created) report.refundsPosted += 1;
-            const p = await recordPayment(refund.payment, actor);
-            if (p.created) report.paymentsRecorded += 1;
-          }
+      if (!cap) return;
+      const r = await recordPayment(cap, actor);
+      if (r.created) report.paymentsRecorded += 1;
+    });
+
+    if (fact.refundState === 'completed' && fact.refundId) {
+      // The outgoing cash is recorded FIRST and unconditionally. It does not
+      // depend on a revenue transaction existing: a stay cancelled and
+      // refunded before the first ingestion pass never had one, and nesting
+      // the refund payment under that lookup lost the money silently —
+      // cash in recorded, cash out never, on every pass, for ever.
+      await step('refund payment', async () => {
+        const cash = refundCashFact(fact);
+        if (!cash) return;
+        const p = await recordPayment(cash, actor);
+        if (p.created) report.paymentsRecorded += 1;
+      });
+
+      await step('refund posting', async () => {
+        const { data: orig, error: oerr } = await db.from('bolagio_finance_transactions').select('id').eq('source_system', 'booking').eq('source_reference', `booking:${fact.intentId}`).maybeSingle();
+        if (oerr) throw asFinanceError('finance_transactions.select', oerr);
+        if (!orig) {
+          // Nothing to reverse pro-rata. The cash fact above stands on its
+          // own and surfaces as an unmatched outgoing payment, which is the
+          // honest state: money left, and no stay was ever recognised.
+          report.refundsWithoutRevenue += 1;
+          return;
         }
-      }
-    } catch (cause) {
-      report.errors.push(`${fact.reference}: ${cause instanceof Error ? cause.message : 'unknown'}`);
+        const { data: lines, error: lerr } = await db.from('bolagio_finance_transaction_lines').select('line_no, category, description, tax_code, rate_bp, gross_cents, unit_id').eq('transaction_id', orig.id).order('line_no');
+        if (lerr) throw asFinanceError('finance_transaction_lines.select', lerr);
+        const refund = refundPosting(fact, ((lines ?? []) as Array<{ line_no: number; category: string; description: string | null; tax_code: string; rate_bp: number; gross_cents: number; unit_id: string | null }>).map((l) => ({ ...l, gross_cents: Number(l.gross_cents), rate_bp: Number(l.rate_bp) })));
+        if (!refund) return;
+        const r = await postTransaction(refund.header, refund.lines, actor);
+        if (r.created) report.refundsPosted += 1;
+      });
     }
   }
   // Expected cleaning costs for turnovers: only when a cleaning policy exists (a counterparty with a default cleaning category and a configured expected cost).
   try {
     report.turnoverCosts = await syncTurnoverCosts();
   } catch (cause) {
-    report.errors.push(`turnover costs: ${cause instanceof Error ? cause.message : 'unknown'}`);
+    report.errors.push(`turnover costs: ${errorMessage(cause)}`);
   }
   try {
     report.matches = (await runReconciliation(actor)).recorded;
   } catch (cause) {
-    report.errors.push(`reconciliation: ${cause instanceof Error ? cause.message : 'unknown'}`);
+    report.errors.push(`reconciliation: ${errorMessage(cause)}`);
   }
   await observe(report.errors.length > 0 ? 'booking_ingestion.failure' : 'booking_ingestion.success', `${report.scanned} scanned, ${report.revenuePosted} revenue, ${report.paymentsRecorded} payments, ${report.refundsPosted} refunds, ${report.errors.length} errors`);
   return report;
@@ -343,7 +376,7 @@ export async function commitImport(batchId: string, actor: string): Promise<Comm
       await db.from('bolagio_finance_import_rows').update({ status: 'imported', transaction_id: ids.transactionId ?? null, payment_id: ids.paymentId ?? null }).eq('id', row.id);
       result.posted += 1;
     } catch (cause) {
-      const msg = cause instanceof Error ? cause.message : 'unknown';
+      const msg = errorMessage(cause);
       result.errors.push(`row ${row.row_no}: ${msg}`);
       await db.from('bolagio_finance_import_rows').update({ status: 'error', error: msg }).eq('id', row.id);
     }
@@ -375,12 +408,25 @@ async function postStagedRow(row: StagedRow, batchId: string, actor: string, reg
   }
   // revenue (Booking.com reservation)
   const unitId = row.unitHint ? units.find((u) => row.unitHint!.toLowerCase().includes(u.slug.replace(/-/g, ' ')) || row.unitHint!.toLowerCase().includes(u.slug))?.id ?? null : null;
-  const split = splitGross(row.grossCents, 700);
+  // A cancelled or no-show reservation that still carries a price is a
+  // cancellation charge, not a night sold. Posting it at 7 % would assert a
+  // VAT treatment nobody has decided — untaxed compensation and a taxable
+  // supply are both arguable — so the amount is recorded and the tax
+  // question is parked on the review-required code, which counts toward no
+  // VAT figure until the adviser classifies it.
+  const split = row.cancelled ? { net: row.grossCents, vat: 0, gross: row.grossCents } : splitGross(row.grossCents, 700);
+  const taxCode = row.cancelled ? REVIEW_REQUIRED_CODE : 'DE_ACCOMMODATION_REDUCED';
+  const rateBp = row.cancelled ? 0 : 700;
+  const notes = [
+    unitId ? null : 'Unit could not be derived from the statement; allocate manually.',
+    row.cancelled ? `Statement status "${row.status}": a cancellation or no-show charge, not accommodation. Classify the VAT treatment before this counts anywhere.` : null,
+  ].filter(Boolean);
   const r = await postTransaction({
-    kind: 'revenue', booked_on: row.checkOut, service_from: row.checkIn, service_to: row.checkOut, currency: row.currency, description: `Booking.com stay ${row.bookingReference} · ${row.checkIn} – ${row.checkOut}`, channel: 'booking_com',
+    kind: 'revenue', booked_on: row.checkOut, service_from: row.checkIn, service_to: row.checkOut, currency: row.currency,
+    description: row.cancelled ? `Booking.com cancellation charge ${row.bookingReference} · ${row.checkIn} – ${row.checkOut}` : `Booking.com stay ${row.bookingReference} · ${row.checkIn} – ${row.checkOut}`, channel: 'booking_com',
     booking_reference: row.bookingReference, unit_id: unitId, source_type: 'import', source_system: 'booking_com_reservations', source_reference: row.sourceReference, import_batch_id: batchId,
-    review_state: unitId ? 'suggested' : 'needs_review', document_state: 'complete', payment_state: 'unpaid', reconciliation_state: 'unmatched', note: unitId ? null : 'Unit could not be derived from the statement; allocate manually.',
-  }, [{ line_no: 1, category: 'accommodation_revenue', description: 'Accommodation (whole price; ancillary split not available from the statement)', tax_code: 'DE_ACCOMMODATION_REDUCED', rate_bp: 700, net_cents: split.net, vat_cents: split.vat, gross_cents: split.gross, input_vat_treatment: 'not_applicable', unit_id: unitId, allocation_method: unitId ? 'direct' : 'unallocated', classification: 'suggested' }], actor);
+    review_state: unitId && !row.cancelled ? 'suggested' : 'needs_review', document_state: 'complete', payment_state: 'unpaid', reconciliation_state: 'unmatched', note: notes.length > 0 ? notes.join(' ') : null,
+  }, [{ line_no: 1, category: row.cancelled ? 'other_guest_charges' : 'accommodation_revenue', description: row.cancelled ? 'Cancellation / no-show charge per statement' : 'Accommodation (whole price; ancillary split not available from the statement)', tax_code: taxCode, rate_bp: rateBp, net_cents: split.net, vat_cents: split.vat, gross_cents: split.gross, input_vat_treatment: 'not_applicable', unit_id: unitId, allocation_method: unitId ? 'direct' : 'unallocated', classification: row.cancelled ? 'needs_review' : 'suggested' }], actor);
   if (row.commissionCents && row.commissionCents > 0) {
     const bcom = registry.find((c) => c.name.toLowerCase().includes('booking.com'));
     await postTransaction({

@@ -39,6 +39,12 @@ Nothing on this branch has been deployed or applied to a production database.
 | Playwright | `npx playwright test e2e/admin/finance.spec.ts` | see the final report for the run on this branch |
 | Build | `npm run build`, `npm run cf:build` | see the final report |
 
+> These are the figures **as this branch stood**. The final integration review
+> (`docs/final-integration-review.md`, 2026-09-20) found and fixed four cross-domain
+> defects on top of it and re-ran every suite: 626 unit, 93 integration, 37 Playwright,
+> with the DB, ops, build and Cloudflare builds green. Read that report for the current
+> state and the GO/NO-GO position.
+
 ## External setup, in order
 
 1. Steuerberater: confirm `tax-sources.md` rows 2, 9, 10, 12, 15, 19; provide the DATEV account map.

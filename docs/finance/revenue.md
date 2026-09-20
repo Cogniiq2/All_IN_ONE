@@ -47,6 +47,19 @@ dated on the refund completion date, plus an outgoing payment keyed by the refun
 above the original stay is capped and flagged `needs_review`. The original revenue row stays as
 posted: corrections are rows, never edits.
 
+**The outgoing cash is recorded first, and on its own.** Money leaving the account is a fact about
+the bank, not about the P&L, so `refundCashFact` is written before — and independently of — the
+pro-rata reversal. A stay cancelled and refunded *before* the first ingestion pass never reached a
+revenue-recognising status, so there are no original lines to allocate over; the reversal is skipped,
+the euros are not. That case is counted as `refundsWithoutRevenue` on the ingestion report and in
+the operations summary, and shows up as an unmatched outgoing payment — the honest state: money
+left, and no stay was ever recognised. (Nesting the cash fact under the reversal lost it silently,
+on every pass: see `docs/final-integration-review.md` §1.)
+
+Revenue, the capture and the refund each have their **own failure boundary**. A revenue posting the
+database refuses — a locked period, an inactive tax code — must not take the guest's captured money
+with it.
+
 ## Screens
 
 `/admin/finance/revenue` — by channel, by unit, nights, ADR, occupancy, refunds, with drill-downs to

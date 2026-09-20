@@ -76,6 +76,14 @@ export interface StagedRevenue {
   grossCents: number;
   commissionCents: number | null;
   status: string;
+  /**
+   * The statement says this reservation was cancelled or a no-show, yet it
+   * carries a price. That price is a cancellation charge, not a night sold:
+   * whether it is a taxable supply or untaxed compensation (echter
+   * Schadensersatz) is exactly the kind of question this system parks for
+   * the adviser instead of answering at 7 %.
+   */
+  cancelled: boolean;
   currency: string;
   guestLabel: string | null;
 }
@@ -188,8 +196,10 @@ async function parseRow(spec: AdapterSpec, r: Record<string, string>, csv: Parse
       const vat = parseDecimalToCents(r.USt ?? '');
       if (net !== null && vat !== null && net + vat !== gross) return { row: null, error: `Netto + USt (${net + vat}) does not equal Brutto (${gross}).` };
       if (!r.Lieferant?.trim()) return { row: null, error: 'Lieferant is empty.' };
+      const exCurrency = (r.Waehrung ?? 'EUR').trim().toUpperCase() || 'EUR';
+      if (exCurrency !== 'EUR') return { row: null, error: `Waehrung ${exCurrency} is not EUR; nothing here converts currency.` };
       const key = `expense:${await sha256Hex(`${r.Lieferant}|${r.Rechnungsnummer ?? ''}|${date}|${gross}`)}`;
-      return { row: { target: 'expense', sourceReference: key, bookedOn: date, invoiceDate: parseDateLoose(r.Rechnungsdatum ?? '') ?? date, dueOn: parseDateLoose(r.Faellig ?? '') ?? null, counterpartyName: r.Lieferant.trim(), counterpartyCountry: (r.Land ?? '').trim().toUpperCase().slice(0, 2) || null, counterpartyVatId: (r['USt-ID'] ?? '').trim() || null, supplierInvoiceNo: (r.Rechnungsnummer ?? '').trim() || null, description: (r.Beschreibung ?? '').trim() || r.Lieferant.trim(), categoryHint: (r.Kategorie ?? '').trim() || null, unitSlug: (r.Einheit ?? '').trim() || null, netCents: net ?? (vat === null ? gross : gross - vat), vatCents: vat ?? (net === null ? 0 : gross - net), grossCents: gross, currency: (r.Waehrung ?? 'EUR').trim().toUpperCase() || 'EUR' }, error: null };
+      return { row: { target: 'expense', sourceReference: key, bookedOn: date, invoiceDate: parseDateLoose(r.Rechnungsdatum ?? '') ?? date, dueOn: parseDateLoose(r.Faellig ?? '') ?? null, counterpartyName: r.Lieferant.trim(), counterpartyCountry: (r.Land ?? '').trim().toUpperCase().slice(0, 2) || null, counterpartyVatId: (r['USt-ID'] ?? '').trim() || null, supplierInvoiceNo: (r.Rechnungsnummer ?? '').trim() || null, description: (r.Beschreibung ?? '').trim() || r.Lieferant.trim(), categoryHint: (r.Kategorie ?? '').trim() || null, unitSlug: (r.Einheit ?? '').trim() || null, netCents: net ?? (vat === null ? gross : gross - vat), vatCents: vat ?? (net === null ? 0 : gross - net), grossCents: gross, currency: 'EUR' }, error: null };
     }
     case 'paypal_activity': {
       const date = parseDateLoose(r.Date);
@@ -201,8 +211,10 @@ async function parseRow(spec: AdapterSpec, r: Record<string, string>, csv: Parse
       const status = (r.Status ?? 'Completed').toLowerCase();
       if (status && status !== 'completed') return { row: null, error: `Status "${r.Status}" is not Completed; only completed movements are cash facts.` };
       const kind: StagedPayment['kind'] = /refund/.test(type) ? 'refund' : /fee/.test(type) ? 'fee' : /withdraw|transfer/.test(type) ? 'transfer' : gross > 0 ? 'receipt' : 'disbursement';
+      const ppCurrency = (r.Currency ?? 'EUR').trim().toUpperCase() || 'EUR';
+      if (ppCurrency !== 'EUR') return { row: null, error: `Currency ${ppCurrency} is not EUR; nothing here converts currency.` };
       const time = (r.Time ?? '12:00:00').trim();
-      return { row: { target: 'payment', direction: gross > 0 ? 'in' : 'out', source: 'paypal', providerReference: id, amountCents: Math.abs(gross), feeCents: Math.abs(fee), currency: (r.Currency ?? 'EUR').trim() || 'EUR', occurredAt: `${date}T${time}+02:00`, valueDate: date, counterpartyLabel: (r.Name ?? '').trim().slice(0, 200) || null, referenceText: ((r['Invoice Number'] ?? '') + ' ' + (r.Note ?? '') + ' ' + (r.Subject ?? '')).trim().slice(0, 300) || null, bookingReference: /BLG-[0-9A-Z]{6}/.exec(`${r['Invoice Number']} ${r.Note} ${r.Subject}`.toUpperCase())?.[0] ?? null, kind }, error: null };
+      return { row: { target: 'payment', direction: gross > 0 ? 'in' : 'out', source: 'paypal', providerReference: id, amountCents: Math.abs(gross), feeCents: Math.abs(fee), currency: ppCurrency, occurredAt: `${date}T${time}+02:00`, valueDate: date, counterpartyLabel: (r.Name ?? '').trim().slice(0, 200) || null, referenceText: ((r['Invoice Number'] ?? '') + ' ' + (r.Note ?? '') + ' ' + (r.Subject ?? '')).trim().slice(0, 300) || null, bookingReference: /BLG-[0-9A-Z]{6}/.exec(`${r['Invoice Number']} ${r.Note} ${r.Subject}`.toUpperCase())?.[0] ?? null, kind }, error: null };
     }
     case 'booking_com_reservations': {
       const ci = parseDateLoose(r['Check-in']);
@@ -213,15 +225,24 @@ async function parseRow(spec: AdapterSpec, r: Record<string, string>, csv: Parse
       if (!book || !ci || !co || price === null) return { row: null, error: 'Book number, Check-in, Check-out or Price missing.' };
       if (co <= ci) return { row: null, error: 'Check-out is not after check-in.' };
       const status = (r.Status ?? '').toLowerCase();
-      if (/cancel|no.?show/.test(status) && price === 0) return { row: null, error: `Status "${r.Status}" with no price: nothing to post.` };
-      return { row: { target: 'revenue', sourceReference: `bcom:${book}`, channel: 'booking_com', bookingReference: book, unitHint: (r['Rooms'] ?? r['Unit type'] ?? r['Room type'] ?? '').trim() || null, checkIn: ci, checkOut: co, grossCents: price, commissionCents: commission, status: status || 'ok', currency: (r.Currency ?? 'EUR').trim() || 'EUR', guestLabel: (r['Guest name(s)'] ?? r['Booker'] ?? '').split(' ').filter(Boolean).slice(-1).map((s) => s.slice(0, 1) + '.').join('') || null }, error: null };
+      const cancelled = /cancel|no.?show/.test(status);
+      if (cancelled && price === 0) return { row: null, error: `Status "${r.Status}" with no price: nothing to post.` };
+      const currency = (r.Currency ?? 'EUR').trim().toUpperCase() || 'EUR';
+      if (currency !== 'EUR') return { row: null, error: `Currency ${currency} is not EUR. Nothing here converts currency, and every report sums cents as euros — post this reservation by hand at the rate you booked it.` };
+      // An unreadable commission must not become a silent zero: the cost is
+      // real and dropping it overstates the margin on every OTA stay.
+      const commissionRaw = (r['Commission amount'] ?? '').trim();
+      if (commissionRaw && commission === null) return { row: null, error: `Commission amount "${commissionRaw}" is not an amount.` };
+      return { row: { target: 'revenue', sourceReference: `bcom:${book}`, channel: 'booking_com', bookingReference: book, unitHint: (r['Rooms'] ?? r['Unit type'] ?? r['Room type'] ?? '').trim() || null, checkIn: ci, checkOut: co, grossCents: price, commissionCents: commission, status: status || 'ok', cancelled, currency, guestLabel: (r['Guest name(s)'] ?? r['Booker'] ?? '').split(' ').filter(Boolean).slice(-1).map((s) => s.slice(0, 1) + '.').join('') || null }, error: null };
     }
     case 'booking_com_payouts': {
       const date = parseDateLoose(r['Payout date']);
       const amount = parseDecimalToCents(r['Payout amount']);
       const id = (r['Payout ID'] ?? '').trim();
       if (!date || amount === null || amount === 0 || !id) return { row: null, error: 'Payout date, amount or ID missing.' };
-      return { row: { target: 'payment', direction: amount > 0 ? 'in' : 'out', source: 'booking_com_payout', providerReference: id, amountCents: Math.abs(amount), feeCents: 0, currency: (r.Currency ?? 'EUR').trim() || 'EUR', occurredAt: `${date}T12:00:00+02:00`, valueDate: date, counterpartyLabel: 'Booking.com', referenceText: (r['Reservations'] ?? r['Reference'] ?? '').slice(0, 300) || null, bookingReference: null, kind: 'payout' }, error: null };
+      const poCurrency = (r.Currency ?? 'EUR').trim().toUpperCase() || 'EUR';
+      if (poCurrency !== 'EUR') return { row: null, error: `Currency ${poCurrency} is not EUR; nothing here converts currency.` };
+      return { row: { target: 'payment', direction: amount > 0 ? 'in' : 'out', source: 'booking_com_payout', providerReference: id, amountCents: Math.abs(amount), feeCents: 0, currency: poCurrency, occurredAt: `${date}T12:00:00+02:00`, valueDate: date, counterpartyLabel: 'Booking.com', referenceText: (r['Reservations'] ?? r['Reference'] ?? '').slice(0, 300) || null, bookingReference: null, kind: 'payout' }, error: null };
     }
     default:
       return { row: null, error: 'unknown adapter' };
