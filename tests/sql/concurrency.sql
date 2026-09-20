@@ -483,8 +483,10 @@ begin
     'a confirmed stay arriving today emits check-in and pre-arrival');
   r := bolagio_emit_guest_events();
   perform t_assert((r->>'checkin')::int = 0 and (r->>'prearrival')::int = 0, 'nothing is emitted twice');
-  perform t_assert((select count(*) from bolagio_outbox_events where reference = 'BLG-SSSSSS') = 2,
+  perform t_assert((select count(*) from bolagio_outbox_events where reference = 'BLG-SSSSSS' and event_type like 'guest.%') = 2,
     'exactly two outbox rows for the two events');
+  perform t_assert((select count(*) from bolagio_outbox_events where reference = 'BLG-SSSSSS' and event_type = 'invoice.required') = 1,
+    'a confirmed, paid direct booking emits invoice.required exactly once');
   perform t_assert((select count(*) from bolagio_guest_events where intent_id = s and kind = 'review.requested') = 0,
     'no review request before departure');
 end $$;

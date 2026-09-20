@@ -14,6 +14,17 @@ describe('operator permissions', () => {
     expect(can('admin', 'manage_operators')).toBe(true);
   });
 
+  it('reserves paid cancellation for administrators and keeps every completion-phase write from viewers', () => {
+    for (const cap of ['cancel_unpaid_booking', 'manage_cleaning', 'requeue_automation'] as const) {
+      expect(can('viewer', cap)).toBe(false);
+      expect(can('operator', cap)).toBe(true);
+      expect(can('admin', cap)).toBe(true);
+    }
+    expect(can('viewer', 'cancel_paid_booking')).toBe(false);
+    expect(can('operator', 'cancel_paid_booking')).toBe(false);
+    expect(can('admin', 'cancel_paid_booking')).toBe(true);
+  });
+
   it('gives an unknown or missing role nothing at all', () => {
     expect(can('superuser', 'view')).toBe(false);
     expect(can(undefined, 'view')).toBe(false);

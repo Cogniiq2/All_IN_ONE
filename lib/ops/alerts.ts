@@ -19,7 +19,7 @@
  * ══════════════════════════════════════════════════════════════════════════
  */
 
-import type { AttentionItem, QueueCountDto } from '@/lib/admin/dto';
+import type { AttentionItem, IntegrationSignalDto, QueueCountDto } from '@/lib/admin/dto';
 import type { SchedulerStatusRow } from '@/lib/admin/rows';
 import type { EnvironmentFinding } from '@/lib/config/environment';
 
@@ -47,6 +47,16 @@ export interface AlertInput {
   configFindings: EnvironmentFinding[];
   /** Oldest inventory sync per unit; empty when nothing was ever synced. */
   inventory: Array<{ unitSlug: string; oldestSync: string | null }>;
+  /**
+   * Guest-message deliveries, turnovers and refunds — the platform-completion
+   * surfaces. Each is optional so a caller on an older schema reports them as
+   * not instrumented rather than as fine.
+   */
+  deliveries?: { stuck: number; retrying: number; waiting: number; oldestWaiting: string | null } | null;
+  turnovers?: { overdue: number; unassignedSoon: number } | null;
+  refunds?: { required: number; pending: number; unknown: number; failed: number; references: string[] } | null;
+  /** Integration signals; `null` when the health table could not be read. */
+  integrations?: IntegrationSignalDto[] | null;
 }
 
 export interface AlertReport {
@@ -67,6 +77,8 @@ export const INVENTORY_STALE_MS = 6 * 60 * 60_000;
 export const WEBHOOK_BACKLOG_MS = 15 * 60_000;
 export const OUTBOX_LAG_MS = 30 * 60_000;
 export const RELEASE_FAILED_CRITICAL_MS = 60 * 60_000;
+/** A pending guest message older than this has been missed by every pump run it should have seen. */
+export const DELIVERY_BACKLOG_MS = 60 * 60_000;
 
 const LEVEL_ORDER: Record<AlertLevel, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2 };
 
@@ -283,6 +295,98 @@ export function deriveAlerts(input: AlertInput): AlertReport {
         title: 'Automation consumer lagging',
         detail: 'Outbox events have waited longer than thirty minutes. The automation platform is not claiming; nothing is lost while it waits.',
         count: sum(queues, 'outbox', ['pending', 'claimed']),
+      });
+    }
+  }
+
+  /* ── Refunds, deliveries, turnovers, integrations ─────────────────────── */
+
+  if (input.refunds === undefined || input.refunds === null) {
+    notInstrumented.push('refunds (cancellation columns not readable)');
+  } else {
+    const r = input.refunds;
+    if (r.unknown > 0 || r.failed > 0) {
+      alerts.push({
+        level: 'CRITICAL',
+        code: 'REFUND_ATTENTION',
+        title: r.unknown > 0 ? 'Refund outcome unknown' : 'Refund failed',
+        detail:
+          r.unknown > 0
+            ? 'A refund was sent to the payment provider and no answer was recorded. Nothing is resent blind; reconciliation reads the provider. Check the capture at the provider before anything else.'
+            : 'The payment provider refused a refund. The cancellation stands; the money decision needs a person.',
+        count: r.unknown + r.failed,
+        references: r.references,
+      });
+    }
+    if (r.required > 0 || r.pending > 0) {
+      alerts.push({
+        level: 'HIGH',
+        code: 'REFUND_DECIDED_NOT_EXECUTED',
+        title: 'Refunds decided, not yet executed',
+        detail: 'A cancellation recorded that money must go back and the refund has not completed. Refund execution runs only where it is explicitly enabled; until then it is done at the provider by hand and recorded here.',
+        count: r.required + r.pending,
+        references: r.references,
+      });
+    }
+  }
+
+  if (input.deliveries === undefined || input.deliveries === null) {
+    notInstrumented.push('guest message deliveries');
+  } else {
+    const d = input.deliveries;
+    if (d.stuck > 0) {
+      alerts.push({
+        level: 'HIGH',
+        code: 'MESSAGE_DELIVERY_FAILED',
+        title: 'Guest messages could not be delivered',
+        detail: 'Deliveries failed every automatic attempt or were marked non-retryable. The bookings are unaffected; the guest has not received the message. Requeue after fixing the cause, or contact the guest directly.',
+        count: d.stuck,
+      });
+    }
+    if (d.oldestWaiting && age(d.oldestWaiting, now) > DELIVERY_BACKLOG_MS) {
+      alerts.push({
+        level: 'MEDIUM',
+        code: 'MESSAGE_DELIVERY_BACKLOG',
+        title: 'Guest messages waiting',
+        detail: 'A prepared message has waited longer than an hour without a send outcome. The guest-message workflow is not completing.',
+        count: d.waiting,
+      });
+    }
+  }
+
+  if (input.turnovers === undefined || input.turnovers === null) {
+    notInstrumented.push('turnovers');
+  } else if (input.turnovers.overdue > 0) {
+    alerts.push({
+      level: 'HIGH',
+      code: 'TURNOVER_OVERDUE',
+      title: 'Cleaning window passed without completion',
+      detail: 'A turnover is still open after its window closed. If the next guest arrives today the apartment may not be ready. Mark it done once it is, or assign it now.',
+      count: input.turnovers.overdue,
+    });
+  } else if (input.turnovers.unassignedSoon > 0) {
+    alerts.push({
+      level: 'MEDIUM',
+      code: 'TURNOVER_UNASSIGNED',
+      title: 'Turnovers within three days have no assignee',
+      detail: 'Nobody is named on a cleaning that is due soon.',
+      count: input.turnovers.unassignedSoon,
+    });
+  }
+
+  if (input.integrations === undefined || input.integrations === null) {
+    notInstrumented.push('integration signals (health table not readable)');
+  } else {
+    const never = input.integrations.filter((s) => s.status === 'never');
+    for (const s of never) notInstrumented.push(`${s.provider}:${s.signal} (never observed)`);
+    const claim = input.integrations.find((s) => s.provider === 'n8n' && s.signal === 'last_claim');
+    const hasOutboxBacklog = queues ? sum(queues, 'outbox', ['pending', 'claimed']) > 0 : false;
+    if (claim?.observedAt && hasOutboxBacklog && age(claim.observedAt, now) > OUTBOX_LAG_MS) {
+      alerts.push({
+        level: 'MEDIUM',
+        code: 'N8N_SILENT',
+        title: 'Automation platform has stopped claiming',
+        detail: `The last outbox claim was ${Math.round(age(claim.observedAt, now) / 60_000)} minutes ago and events are waiting. Check that the n8n pump workflow is active.`,
       });
     }
   }

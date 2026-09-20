@@ -1,7 +1,7 @@
 import type { NavIcon } from '@/components/admin/shell/nav-items';
 
 /**
- * Seven line icons on one 24-unit grid, 1.6 stroke, round joins. Drawn here
+ * Nine line icons on one 24-unit grid, 1.6 stroke, round joins. Drawn here
  * rather than pulled from an icon set so their weight, optical size and
  * alignment are one decision, not seven.
  */
@@ -42,6 +42,21 @@ export function Icon({ name, className }: { name: NavIcon; className?: string })
         <svg {...common}>
           <path d="M12 3.5 21 19H3z" />
           <path d="M12 10v4M12 16.5h.01" />
+        </svg>
+      );
+    case 'cleaning':
+      return (
+        <svg {...common}>
+          <path d="M14.5 3.5 20.5 9.5 9 21H3v-6z" />
+          <path d="M12 6l6 6" />
+        </svg>
+      );
+    case 'automations':
+      return (
+        <svg {...common}>
+          <path d="M4 7h6l2 3h8" />
+          <path d="M4 17h6l2-3h8" />
+          <path d="M17 7l3 3-3 3M17 11l3 3-3 3" />
         </svg>
       );
     case 'properties':

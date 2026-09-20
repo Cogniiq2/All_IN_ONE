@@ -178,6 +178,8 @@ export interface ReconciliationJobDto {
 }
 
 export interface BookingDetailDto extends BookingSummaryDto {
+  /** The intent's primary key; used to join turnovers and events. Never shown. */
+  id: string;
   guest: GuestDto | null;
   quote: {
     lines: QuoteLineDto[];
@@ -203,6 +205,18 @@ export interface BookingDetailDto extends BookingSummaryDto {
     code: string | null;
     reason: string | null;
     at: string | null;
+  };
+  /** The cancellation saga's own facts, separate from booking and payment state. */
+  cancellation: {
+    requestedAt: string | null;
+    requestedBy: string | null;
+    reason: string | null;
+    authorizedBy: string | null;
+    completedAt: string | null;
+    refundState: 'none' | 'not_required' | 'required' | 'pending' | 'completed' | 'unknown' | 'failed' | string;
+    refundRequiredCents: number | null;
+    refundId: string | null;
+    refundLastError: string | null;
   };
   lockExpiresAt: string | null;
   releasedAt: string | null;
@@ -277,6 +291,78 @@ export interface CalendarDto {
   closures: ChannelClosureDto[];
   /** The oldest sync among the cached inventory shown, or null if none. */
   inventorySyncedAt: string | null;
+}
+
+/* ── Cleaning ──────────────────────────────────────────────────────────── */
+
+export type TurnoverAttention = 'overdue' | 'due_today' | 'same_day' | 'unassigned' | null;
+
+export interface TurnoverDto {
+  id: string;
+  reference: string | null;
+  unitSlug: string;
+  unitName: string;
+  departure: IsoDate;
+  nextArrival: IsoDate | null;
+  sameDay: boolean;
+  windowStart: string;
+  windowEnd: string;
+  status: 'required' | 'in_progress' | 'done' | 'void' | string;
+  assignedTo: string | null;
+  note: string | null;
+  startedAt: string | null;
+  doneAt: string | null;
+  doneBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** The most pressing reason an operator should look, derived from the clock. */
+  attention: TurnoverAttention;
+}
+
+export interface TurnoverEventDto {
+  id: string;
+  fromStatus: string | null;
+  toStatus: string;
+  actor: string;
+  note: string | null;
+  at: string;
+}
+
+/* ── Automations ───────────────────────────────────────────────────────── */
+
+export interface MessageDeliveryDto {
+  id: string;
+  reference: string;
+  kind: string;
+  sequence: number;
+  channel: string;
+  locale: string;
+  templateId: string | null;
+  templateVersion: string | null;
+  destinationMasked: string | null;
+  status: 'pending' | 'sending' | 'sent' | 'failed' | 'skipped' | 'suppressed' | string;
+  retryable: boolean;
+  attempts: number;
+  maxAttempts: number;
+  nextAttemptAt: string | null;
+  provider: string | null;
+  providerMessageId: string | null;
+  lastError: string | null;
+  sentAt: string | null;
+  failedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type IntegrationSignalStatus = 'observed' | 'never';
+
+export interface IntegrationSignalDto {
+  provider: 'beds24' | 'paypal' | 'n8n' | string;
+  signal: string;
+  label: string;
+  status: IntegrationSignalStatus;
+  observedAt: string | null;
+  detail: string | null;
 }
 
 /* ── Queues and health ─────────────────────────────────────────────────── */

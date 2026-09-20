@@ -33,6 +33,10 @@ import {
   type QueueCountDto,
   type ReconciliationJobDto,
   type UnitDto,
+  type IntegrationSignalDto,
+  type MessageDeliveryDto,
+  type TurnoverDto,
+  type TurnoverEventDto,
 } from '@/lib/admin/dto';
 import { collectAttention, OUTBOX_BACKLOG_MS, PAYMENT_EVENT_STUCK_MS } from '@/lib/admin/attention';
 import { deriveAlerts, SCHEDULER_INTERVAL_MS, type AlertReport } from '@/lib/ops/alerts';
@@ -41,6 +45,9 @@ import { ageMs, guestListLabel } from '@/lib/admin/format';
 import { PAGE_SIZE, statesFor, type BookingListFilter } from '@/lib/admin/filters';
 import { AdminUnconfiguredError, rowSource } from '@/lib/admin/source';
 import type { IntentRow, JobRow, OperationRow, OutboxRow, PaymentEventRow, SchedulerStatusRow, UnitRow } from '@/lib/admin/rows';
+import { buildCleaningBoard, OPEN_TURNOVER_STATUSES, toTurnoverDto, toTurnoverEventDto, type CleaningBoard } from '@/lib/admin/cleaning';
+import { buildAutomationsBoard, integrationSignals, type AutomationsBoard } from '@/lib/admin/automations';
+import { propertyTodayIso } from '@/lib/admin/format';
 import { reservesInventory } from '@/lib/booking/states';
 import { isBookingState } from '@/lib/admin/presentation';
 
@@ -298,6 +305,7 @@ export async function getBookingDetail(reference: string): Promise<QueryResult<B
 
     return {
       ...toSummary(row, names),
+      id: row.id,
       guest: row.guest_email
         ? {
             firstName: row.guest_first_name ?? '',
@@ -338,6 +346,17 @@ export async function getBookingDetail(reference: string): Promise<QueryResult<B
         paidAt: row.paid_at,
       },
       failure: { code: row.last_failure_code, reason: row.last_failure_reason ? row.last_failure_reason.slice(0, 400) : null, at: row.last_failure_at },
+      cancellation: {
+        requestedAt: row.cancellation_requested_at ?? null,
+        requestedBy: row.cancellation_requested_by ?? null,
+        reason: row.cancellation_reason ? row.cancellation_reason.slice(0, 400) : null,
+        authorizedBy: row.cancellation_authorized_by ?? null,
+        completedAt: row.cancellation_completed_at ?? null,
+        refundState: row.refund_state ?? 'none',
+        refundRequiredCents: row.refund_required_cents ?? null,
+        refundId: row.refund_id ?? null,
+        refundLastError: row.refund_last_error ? row.refund_last_error.slice(0, 400) : null,
+      },
       lockExpiresAt: row.lock_expires_at,
       releasedAt: row.released_at,
       lifecycle,
@@ -578,13 +597,15 @@ export async function loadSystemHealth(now: Date = new Date()): Promise<QueryRes
       throw cause;
     }
 
-    const [reachable, queues, meta, units, schedulers] = await Promise.all([
+    const [reachable, queues, meta, units, schedulers, health] = await Promise.all([
       source.ping().catch(() => false),
       source.queues().catch(() => null),
       source.inventoryMeta().catch(() => null),
       source.units().catch(() => null),
       source.schedulerStatus().catch(() => null),
+      source.integrationHealth().catch(() => null),
     ]);
+    const signals = health ? integrationSignals(health) : null;
 
     const sections: HealthSectionDto[] = [];
 
@@ -768,9 +789,89 @@ export async function loadSystemHealth(now: Date = new Date()): Promise<QueryRes
       sections.push({ key: 'queues', title: 'Queues', status: 'unavailable', summary: 'The operations queues could not be read.', facts: [] });
     }
 
+    sections.push(integrationSection(signals, now));
+
+    if (queues) {
+      const stuckDeliveries = sum(queues, 'message_deliveries', ['failed']);
+      const waitingDeliveries = sum(queues, 'message_deliveries', ['pending', 'sending']);
+      const sentDeliveries = sum(queues, 'message_deliveries', ['sent']);
+      const measured = queues.some((q) => q.queue === 'message_deliveries');
+      sections.push({
+        key: 'messaging',
+        title: 'Guest messaging',
+        status: !measured && sentDeliveries === 0 ? 'not_instrumented' : stuckDeliveries > 0 ? 'attention' : 'healthy',
+        summary:
+          !measured && sentDeliveries === 0
+            ? 'No guest message has been prepared yet. Delivery is proven by the ledger, not by configuration.'
+            : stuckDeliveries > 0
+              ? `${stuckDeliveries} deliver${stuckDeliveries === 1 ? 'y' : 'ies'} failed. See Automations.`
+              : 'Every prepared message has a recorded outcome or is inside its retry budget.',
+        facts: [
+          { label: 'Sent', value: String(sentDeliveries) },
+          { label: 'Waiting', value: String(waitingDeliveries) },
+          { label: 'Failed', value: String(stuckDeliveries), tone: stuckDeliveries > 0 ? 'critical' : undefined },
+          { label: 'Suppressed', value: String(sum(queues, 'message_deliveries', ['suppressed'])), tone: 'muted' },
+        ],
+      });
+
+      const openTurnovers = sum(queues, 'turnovers', ['required', 'in_progress']);
+      const turnoverMeasured = queues.some((q) => q.queue === 'turnovers');
+      sections.push({
+        key: 'cleaning',
+        title: 'Cleaning',
+        status: !turnoverMeasured ? 'not_instrumented' : 'healthy',
+        summary: !turnoverMeasured
+          ? 'No turnover has been derived yet. Turnovers appear once a confirmed departure is inside the sixty-day horizon.'
+          : `${openTurnovers} open turnover${openTurnovers === 1 ? '' : 's'}. Overdue windows are alerted above and listed under Cleaning.`,
+        facts: [
+          { label: 'Open', value: String(openTurnovers) },
+          { label: 'Done', value: String(sum(queues, 'turnovers', ['done'])) },
+        ],
+      });
+    }
+
     sections.push(...postureSections(posture));
     return sections;
   });
+}
+
+/**
+ * Integration signals as a health section. A provider none of our code has
+ * heard from is "not instrumented"; a last failure newer than the last
+ * success is "attention". There is no other way to become healthy.
+ */
+function integrationSection(signals: IntegrationSignalDto[] | null, now: Date): HealthSectionDto {
+  if (!signals) {
+    return { key: 'integrations', title: 'Integration signals', status: 'unavailable', summary: 'The integration health table could not be read. The platform-completion migration may not be applied.', facts: [] };
+  }
+  const facts: HealthSectionDto['facts'] = signals.map((s) => ({
+    label: s.label,
+    value: s.status === 'never' ? 'never observed' : `${Math.round(ageMs(s.observedAt, now) / 60_000)} min ago`,
+    tone: s.status === 'never' ? 'muted' : s.signal.includes('fail') ? 'caution' : 'positive',
+  }));
+  const observed = signals.filter((s) => s.status === 'observed');
+  let status: HealthSectionDto['status'] = 'healthy';
+  let summary = 'Every provider has been heard from; no failure is newer than the last success.';
+  if (observed.length === 0) {
+    status = 'not_instrumented';
+    summary = 'No provider signal has been observed on this deployment. Nothing here is green until a real call, webhook or claim is recorded.';
+  } else {
+    const degraded: string[] = [];
+    for (const provider of ['beds24', 'paypal'] as const) {
+      const ok = signals.find((s) => s.provider === provider && s.signal === 'last_success');
+      const bad = signals.find((s) => s.provider === provider && s.signal === 'last_failure');
+      if (bad?.observedAt && (!ok?.observedAt || bad.observedAt > ok.observedAt)) degraded.push(provider);
+    }
+    const missing = ['beds24', 'paypal', 'n8n'].filter((p) => !observed.some((s) => s.provider === p));
+    if (degraded.length > 0) {
+      status = 'attention';
+      summary = `The last call to ${degraded.join(' and ')} failed and nothing has succeeded since.`;
+    } else if (missing.length > 0) {
+      status = 'attention';
+      summary = `Never heard from: ${missing.join(', ')}. Those signals are not instrumented, not healthy.`;
+    }
+  }
+  return { key: 'integrations', title: 'Integration signals', status, summary, facts };
 }
 
 function gateFact(posture: ReturnType<typeof adminPosture>): HealthSectionDto['facts'][number] {
@@ -853,6 +954,96 @@ function postureSections(posture: ReturnType<typeof adminPosture>): HealthSectio
 }
 
 
+/* ── Cleaning ──────────────────────────────────────────────────────────── */
+
+/**
+ * The turnover board. Reads open turnovers across the horizon plus what was
+ * recently closed; the attention reason is derived from the property clock.
+ */
+export async function loadCleaningBoard(now: Date = new Date()): Promise<QueryResult<CleaningBoard>> {
+  return guard(async () => {
+    const source = await rowSource();
+    const today = propertyTodayIso(now);
+    const since = new Date(now.getTime() - 14 * 86_400_000).toISOString().slice(0, 10);
+    const [open, closed] = await Promise.all([
+      source.turnovers({ statuses: OPEN_TURNOVER_STATUSES, limit: 200 }),
+      source.turnovers({ statuses: ['done', 'void'], departureFrom: since, limit: 40 }),
+    ]);
+    return buildCleaningBoard([...open, ...closed], today, now);
+  });
+}
+
+export async function loadTurnoversForBooking(intentId: string, now: Date = new Date()): Promise<QueryResult<TurnoverDto[]>> {
+  return guard(async () => {
+    const source = await rowSource();
+    const rows = await source.turnovers({ intentId, limit: 10 });
+    const today = propertyTodayIso(now);
+    return rows.map((r) => toTurnoverDto(r, today, now));
+  });
+}
+
+export async function loadTurnoverEvents(turnoverId: string): Promise<QueryResult<TurnoverEventDto[]>> {
+  return guard(async () => (await rowSource()).turnoverEvents(turnoverId).then((r) => r.map(toTurnoverEventDto)));
+}
+
+/* ── Automations ───────────────────────────────────────────────────────── */
+
+export async function loadAutomationsBoard(): Promise<QueryResult<AutomationsBoard>> {
+  return guard(async () => {
+    const source = await rowSource();
+    const rows = await source.messageDeliveries({ limit: 300 });
+    return buildAutomationsBoard(rows);
+  });
+}
+
+export async function loadDeliveriesForBooking(reference: string): Promise<QueryResult<MessageDeliveryDto[]>> {
+  return guard(async () => {
+    const { toDeliveryDto } = await import('@/lib/admin/automations');
+    return (await rowSource()).messageDeliveries({ reference, limit: 50 }).then((r) => r.map(toDeliveryDto));
+  });
+}
+
+/** Every expected integration signal, observed or "never observed". */
+export async function loadIntegrationSignals(): Promise<QueryResult<IntegrationSignalDto[]>> {
+  return guard(async () => integrationSignals(await (await rowSource()).integrationHealth()));
+}
+
+/** Refund states across bookings with a cancellation in flight — the alert input. */
+async function refundSummary(source: Awaited<ReturnType<typeof rowSource>>): Promise<{ required: number; pending: number; unknown: number; failed: number; references: string[] } | null> {
+  try {
+    const { rows } = await source.intents({ refundStates: ['required', 'pending', 'unknown', 'failed'], limit: 100 });
+    const count = (state: string) => rows.filter((r) => r.refund_state === state).length;
+    return {
+      required: count('required'),
+      pending: count('pending'),
+      unknown: count('unknown'),
+      failed: count('failed'),
+      references: rows.filter((r) => r.refund_state === 'unknown' || r.refund_state === 'failed').map((r) => r.reference).slice(0, 10),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** The completion-phase inputs `deriveAlerts` takes, each `null` when it could not be read. */
+async function completionAlertInputs(source: Awaited<ReturnType<typeof rowSource>>, now: Date) {
+  const today = propertyTodayIso(now);
+  const [deliveryRows, turnoverRows, health, refunds] = await Promise.all([
+    source.messageDeliveries({ statuses: ['pending', 'sending', 'failed'], limit: 300 }).catch(() => null),
+    source.turnovers({ statuses: OPEN_TURNOVER_STATUSES, limit: 200 }).catch(() => null),
+    source.integrationHealth().catch(() => null),
+    refundSummary(source),
+  ]);
+  const board = deliveryRows ? buildAutomationsBoard(deliveryRows) : null;
+  const cleaning = turnoverRows ? buildCleaningBoard(turnoverRows, today, now) : null;
+  return {
+    deliveries: board ? { stuck: board.counts.stuck, retrying: board.counts.retrying, waiting: board.counts.waiting, oldestWaiting: board.waiting[0]?.createdAt ?? null } : null,
+    turnovers: cleaning ? { overdue: cleaning.counts.overdue, unassignedSoon: [...cleaning.dueToday, ...cleaning.upcoming].filter((t) => t.attention === 'unassigned').length } : null,
+    integrations: health ? integrationSignals(health) : null,
+    refunds,
+  };
+}
+
 /* ── Alerts ────────────────────────────────────────────────────────────── */
 
 /**
@@ -863,13 +1054,14 @@ export async function loadAlerts(now: Date = new Date()): Promise<QueryResult<Al
   const posture = adminPosture();
   return guard(async () => {
     const source = await rowSource();
-    const [reachable, queues, schedulers, meta, units, attention] = await Promise.all([
+    const [reachable, queues, schedulers, meta, units, attention, completion] = await Promise.all([
       source.ping().catch(() => false),
       source.queues().catch(() => null),
       source.schedulerStatus().catch(() => [] as SchedulerStatusRow[]),
       source.inventoryMeta().catch(() => []),
       source.units().catch(() => []),
       loadAttention(now),
+      completionAlertInputs(source, now),
     ]);
     return deriveAlerts({
       now,
@@ -879,6 +1071,7 @@ export async function loadAlerts(now: Date = new Date()): Promise<QueryResult<Al
       attention: attention.ok ? attention.data.items : [],
       configFindings: posture.configFindings,
       inventory: meta.map((m) => ({ unitSlug: units.find((u) => u.id === m.unit_id)?.slug ?? m.unit_id, oldestSync: m.oldest_sync })),
+      ...completion,
     });
   });
 }

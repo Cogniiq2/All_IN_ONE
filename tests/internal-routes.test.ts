@@ -23,6 +23,7 @@ vi.mock('@/lib/n8n/internal-api', () => ({
 vi.mock('@/lib/admin/queries', () => ({
   loadAlerts: async () => ({ ok: true, data: { alerts: [], notInstrumented: [], counts: { CRITICAL: 0, HIGH: 0, MEDIUM: 0 } }, loadedAt: '' }),
   loadQueues: async () => ({ ok: true, data: [], loadedAt: '' }),
+  loadIntegrationSignals: async () => ({ ok: true, data: [{ provider: 'beds24', signal: 'last_success', label: '', status: 'never', observedAt: null, detail: null }], loadedAt: '' }),
 }));
 vi.mock('@/lib/admin/source', () => ({ rowSource: async () => ({ schedulerStatus: async () => [] }) }));
 
@@ -115,6 +116,9 @@ describe('GET /api/internal/booking and /api/internal/health', () => {
     const json = await hh.json();
     expect(json.counts).toEqual({ CRITICAL: 0, HIGH: 0, MEDIUM: 0 });
     expect(json.environment).toBe('production');
+    // A never-observed signal is carried as such — no age, no "ok".
+    expect(json.integrations).toEqual([{ provider: 'beds24', signal: 'last_success', status: 'never', observedAt: null, ageSeconds: null }]);
+    expect(json.backlog).toEqual({ messageDeliveriesFailed: 0, messageDeliveriesWaiting: 0, turnoversOpen: 0 });
   });
 
   it('refuse without a signature', async () => {

@@ -36,8 +36,10 @@
 # package lifecycle scripts never see it.
 # ══════════════════════════════════════════════════════════════════════════
 
-name: "[TEMP] ⚠ Beds24 WRITE test — hold and release"
+name: "[TEMP] [LIVE] ⚠ Beds24 WRITE test — hold and release"
 
+# LIVE: creates and releases ONE real hold on the real Beds24 account.
+# Manual only — never on push, pull_request or schedule.
 on:
   workflow_dispatch:
     inputs:
@@ -45,6 +47,11 @@ on:
         description: 'Type HOLD-AND-RELEASE to confirm a real write to Beds24'
         required: true
         default: ''
+        type: string
+      ref:
+        description: 'Branch, tag or SHA whose adapter code runs against the live account (its code DOES see the token — see the note on the secret boundary)'
+        required: true
+        default: 'claude/bolagio-platform-completion'
         type: string
 
 permissions:
@@ -58,7 +65,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  TARGET_REF: claude/opernstrasse-ii-iii-calendar-cta-dates
+  TARGET_REF: ${{ inputs.ref }}
 
 jobs:
   hold-and-release:

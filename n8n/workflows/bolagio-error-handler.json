@@ -1,0 +1,258 @@
+{
+  "name": "BoLaGio · Error Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "5740bb80-2054-48c6-8efa-e591ae96423b",
+      "name": "On workflow error",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function resolveTransport() {\n  const value = String($env.BOLAGIO_ALERT_TRANSPORT || 'disabled').trim().toLowerCase();\n  const allowed = [\"disabled\",\"webhook\",\"email\"];\n  if (!allowed.includes(value)) throw new Error('BOLAGIO_ALERT_TRANSPORT has an unsupported value; expected one of ' + allowed.join(', '));\n  return value;\n}\n// Generic incoming-webhook payload: \"text\" is read by Slack and Teams, \"content\" by Discord.\n// Alert bodies carry a booking reference and a code — never guest data.\nfunction formatAlert(alert) {\n  const level = String(alert.level || 'HIGH').toUpperCase();\n  const environment = String(alert.environment || $env.BOLAGIO_ENVIRONMENT || 'unknown');\n  const lines = ['[' + environment + '] ' + level + ' · ' + alert.code + ' — ' + alert.title];\n  if (alert.detail) lines.push(String(alert.detail));\n  if (alert.reference) lines.push('Reference: ' + alert.reference);\n  const text = lines.join('\\n');\n  return {\n    level: level,\n    code: String(alert.code),\n    title: String(alert.title),\n    detail: alert.detail ? String(alert.detail) : undefined,\n    reference: alert.reference ? String(alert.reference) : undefined,\n    environment: environment,\n    source: 'bolagio-n8n',\n    text: text,\n    content: text,\n  };\n}\n// Error text never carries guest data: e-mail addresses are masked, length capped.\nfunction redact(text) {\n  const raw = text === undefined || text === null ? '' : (typeof text === 'string' ? text : (text.message || JSON.stringify(text)));\n  return String(raw).replace(new RegExp('[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\\\.[A-Za-z]{2,}', 'g'), '[email]').slice(0, 400);\n}\n\n// The Error Trigger item: { execution: {id, url, error, lastNodeExecuted, mode}, workflow: {id, name} }.\nconst ERROR_HANDLER_ID = 'A2cTUS2WXAeObiEM';\nconst input = $input.first().json || {};\nconst workflow = input.workflow || {};\nconst execution = input.execution || {};\n// Guard against a loop even if a future edit wires this workflow to itself.\nif (String(workflow.id || '') === ERROR_HANDLER_ID) return [];\n// Only BoLaGio workflows are reported here; a Cogniiq workflow pointing at this\n// handler by mistake is ignored rather than alerted on the BoLaGio channel.\nif (!String(workflow.name || '').startsWith('BoLaGio ·')) return [];\nconst message = execution.error && execution.error.message ? execution.error.message : (execution.error ? execution.error : 'unknown error');\nconst details = [\n  'Workflow ' + String(workflow.name || workflow.id || 'unknown'),\n  'node ' + String(execution.lastNodeExecuted || 'unknown'),\n  'execution ' + String(execution.id || 'unknown'),\n  redact(message),\n];\nif (execution.url) details.push(String(execution.url));\nconst formatted = formatAlert({\n  level: 'HIGH',\n  code: 'N8N_WORKFLOW_ERROR',\n  title: 'A BoLaGio workflow execution failed',\n  detail: details.join('\\n'),\n  reference: null,\n});\nreturn [{ json: {\n  transport: resolveTransport(),\n  alert: formatted,\n  subject: '[BoLaGio ' + formatted.environment + '] ' + formatted.level + ' ' + formatted.code,\n  text: formatted.text,\n} }];\n"
+      },
+      "id": "c4755074-7dad-46df-9e5a-cc0497b200ae",
+      "name": "Shape error alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "dfd50fcc-0a1e-4d5c-90e7-7e3cb78dd0aa",
+                    "leftValue": "={{ $json.transport }}",
+                    "rightValue": "disabled",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "disabled"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "a4ab7737-433e-4b99-b3c0-be74b4682db1",
+                    "leftValue": "={{ $json.transport }}",
+                    "rightValue": "webhook",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "webhook"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "e0f6fca4-8a10-418a-bdea-72881b591c30",
+                    "leftValue": "={{ $json.transport }}",
+                    "rightValue": "email",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "email"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "8160e401-3bf7-4c15-91d2-5aeb4526cb0f",
+      "name": "Alert transport",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "fb52c073-7bcb-4ead-a015-bad2e2ded7cc",
+      "name": "Skip (transport disabled)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        760,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BOLAGIO_ALERT_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.alert) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "cee91ae5-59a3-4462-a71e-31d7cc8c2e97",
+      "name": "POST to alert webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        300
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.BOLAGIO_MAIL_FROM }}",
+        "options": {
+          "appendAttribution": false
+        },
+        "toEmail": "={{ $env.BOLAGIO_ALERT_EMAIL_TO }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.text }}"
+      },
+      "id": "8c321187-c314-470c-b69d-172e19c33a44",
+      "name": "Send alert e-mail",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        760,
+        500
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "UJdSGEGXT0Aq04sU",
+          "name": "BoLaGio SMTP"
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "On workflow error": {
+      "main": [
+        [
+          {
+            "node": "Shape error alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape error alert": {
+      "main": [
+        [
+          {
+            "node": "Alert transport",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alert transport": {
+      "main": [
+        [
+          {
+            "node": "Skip (transport disabled)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "POST to alert webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send alert e-mail",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip (transport disabled)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Berlin"
+  },
+  "tags": [
+    {
+      "name": "bolagio"
+    }
+  ],
+  "id": "A2cTUS2WXAeObiEM",
+  "active": false,
+  "pinData": {}
+}

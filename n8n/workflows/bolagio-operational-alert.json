@@ -1,0 +1,300 @@
+{
+  "name": "BoLaGio · Operational Alert",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "728c3328-d434-4e39-91d8-d1482f937d69",
+      "name": "When called",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function resolveTransport() {\n  const value = String($env.BOLAGIO_ALERT_TRANSPORT || 'disabled').trim().toLowerCase();\n  const allowed = [\"disabled\",\"webhook\",\"email\"];\n  if (!allowed.includes(value)) throw new Error('BOLAGIO_ALERT_TRANSPORT has an unsupported value; expected one of ' + allowed.join(', '));\n  return value;\n}\n// Generic incoming-webhook payload: \"text\" is read by Slack and Teams, \"content\" by Discord.\n// Alert bodies carry a booking reference and a code — never guest data.\nfunction formatAlert(alert) {\n  const level = String(alert.level || 'HIGH').toUpperCase();\n  const environment = String(alert.environment || $env.BOLAGIO_ENVIRONMENT || 'unknown');\n  const lines = ['[' + environment + '] ' + level + ' · ' + alert.code + ' — ' + alert.title];\n  if (alert.detail) lines.push(String(alert.detail));\n  if (alert.reference) lines.push('Reference: ' + alert.reference);\n  const text = lines.join('\\n');\n  return {\n    level: level,\n    code: String(alert.code),\n    title: String(alert.title),\n    detail: alert.detail ? String(alert.detail) : undefined,\n    reference: alert.reference ? String(alert.reference) : undefined,\n    environment: environment,\n    source: 'bolagio-n8n',\n    text: text,\n    content: text,\n  };\n}\n\n// Accepts either a pre-shaped alert ({ alert: {level, code, title, detail, reference?, environment?} })\n// from the Health Poll, or an outbox event from the pump. Guest data is never read.\nconst EVENT_ALERTS = {\n  \"booking.paid_unfinalized\": {\n    \"level\": \"CRITICAL\",\n    \"title\": \"Paid booking not finalised at the channel manager\"\n  },\n  \"booking.manual_review_required\": {\n    \"level\": \"CRITICAL\",\n    \"title\": \"Booking needs a human decision\"\n  },\n  \"booking.release_failed\": {\n    \"level\": \"HIGH\",\n    \"title\": \"Hold could not be verifiably released\"\n  },\n  \"booking.cancellation_requested\": {\n    \"level\": \"HIGH\",\n    \"title\": \"Guest requested a cancellation\"\n  },\n  \"payment.refunded\": {\n    \"level\": \"HIGH\",\n    \"title\": \"Refund recorded\"\n  },\n  \"payment.failed\": {\n    \"level\": \"MEDIUM\",\n    \"title\": \"Payment capture denied by the provider\"\n  },\n  \"invoice.required\": {\n    \"level\": \"MEDIUM\",\n    \"title\": \"Invoice required for a confirmed booking\"\n  }\n};\nconst input = $input.first().json;\nlet alert;\nif (input.alert && typeof input.alert === 'object') {\n  alert = input.alert;\n} else {\n  const type = String(input.type || 'unknown');\n  const payload = input.payload && typeof input.payload === 'object' ? input.payload : {};\n  const known = EVENT_ALERTS[type] || { level: 'HIGH', title: 'Operational event ' + type };\n  const details = ['Outbox event ' + type, 'attempt ' + String(input.attempt || 1)];\n  if (payload.code) details.push('code ' + String(payload.code));\n  if (payload.reason) details.push('reason ' + String(payload.reason).slice(0, 120));\n  if (payload.amountCents !== undefined && payload.currency) details.push('amount ' + String(payload.amountCents) + ' ' + String(payload.currency) + ' (cents)');\n  if (payload.partial === true) details.push('partial refund');\n  alert = {\n    level: known.level,\n    code: payload.code ? String(payload.code) : type,\n    title: known.title,\n    detail: details.join(' · '),\n    reference: input.reference || payload.reference || null,\n  };\n}\nconst formatted = formatAlert(alert);\nreturn [{ json: {\n  eventId: input.eventId || null,\n  transport: resolveTransport(),\n  alert: formatted,\n  subject: '[BoLaGio ' + formatted.environment + '] ' + formatted.level + ' ' + formatted.code,\n  text: formatted.text,\n} }];\n"
+      },
+      "id": "56e0795b-0689-429e-ad5e-42066f738303",
+      "name": "Shape alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "9a97865c-aba6-4ff8-a600-168e0ac4c579",
+                    "leftValue": "={{ $json.transport }}",
+                    "rightValue": "disabled",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "disabled"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "b04c10e0-cb65-4586-97f2-bb94b83b2b22",
+                    "leftValue": "={{ $json.transport }}",
+                    "rightValue": "webhook",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "webhook"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "7cd7fb18-1fbf-4821-b93e-025efd93a0b2",
+                    "leftValue": "={{ $json.transport }}",
+                    "rightValue": "email",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "email"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "be50a322-8ff5-4c04-8840-dc2da1a4d1d3",
+      "name": "Alert transport",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Transport disabled: the alert is not delivered anywhere. The event is acknowledged;\n// the condition itself stays visible on /admin/system and /api/internal/health.\nconst item = $input.first().json;\nreturn [{ json: { eventId: item.eventId, ok: true, outcome: 'skipped', transport: 'disabled', code: item.alert.code } }];\n"
+      },
+      "id": "df795442-867d-402e-a190-a8bcbd370295",
+      "name": "Skip (transport disabled)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BOLAGIO_ALERT_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.alert) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "0f0d14f9-1765-4efc-8aba-0753acd36a51",
+      "name": "POST to alert webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        300
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.BOLAGIO_MAIL_FROM }}",
+        "options": {
+          "appendAttribution": false
+        },
+        "toEmail": "={{ $env.BOLAGIO_ALERT_EMAIL_TO }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.text }}"
+      },
+      "id": "516f4a72-e77f-4279-b035-3a6afa0ee761",
+      "name": "Send alert e-mail",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        760,
+        500
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "UJdSGEGXT0Aq04sU",
+          "name": "BoLaGio SMTP"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Error text never carries guest data: e-mail addresses are masked, length capped.\nfunction redact(text) {\n  const raw = text === undefined || text === null ? '' : (typeof text === 'string' ? text : (text.message || JSON.stringify(text)));\n  return String(raw).replace(new RegExp('[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\\\.[A-Za-z]{2,}', 'g'), '[email]').slice(0, 400);\n}\n\n// Interpret the delivery node's output (webhook or e-mail). Errors became items.\nconst shaped = $('Shape alert').first().json;\nconst response = $input.first().json || {};\nif (response.error !== undefined && response.error !== null) {\n  return [{ json: { eventId: shaped.eventId, ok: false, outcome: 'delivery_failed', code: shaped.alert.code, error: 'alert transport ' + shaped.transport + ': ' + redact(response.error) } }];\n}\nreturn [{ json: { eventId: shaped.eventId, ok: true, outcome: 'delivered', transport: shaped.transport, code: shaped.alert.code } }];\n"
+      },
+      "id": "746c5123-ce77-4bc9-8494-327e61d573a6",
+      "name": "Return result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "When called": {
+      "main": [
+        [
+          {
+            "node": "Shape alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape alert": {
+      "main": [
+        [
+          {
+            "node": "Alert transport",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alert transport": {
+      "main": [
+        [
+          {
+            "node": "Skip (transport disabled)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "POST to alert webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send alert e-mail",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip (transport disabled)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST to alert webhook": {
+      "main": [
+        [
+          {
+            "node": "Return result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send alert e-mail": {
+      "main": [
+        [
+          {
+            "node": "Return result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Berlin",
+    "errorWorkflow": "A2cTUS2WXAeObiEM"
+  },
+  "tags": [
+    {
+      "name": "bolagio"
+    }
+  ],
+  "id": "Ms3RTuwUWzoCaAdr",
+  "active": false,
+  "pinData": {}
+}

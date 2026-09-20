@@ -18,13 +18,21 @@ export type Capability =
   | 'reconcile_booking'
   /** Run one full reconciliation pass — the same one the scheduler runs. */
   | 'run_reconciliation_pass'
+  /** Cancel a booking that carries NO payment evidence (the release the sweep already performs). */
+  | 'cancel_unpaid_booking'
+  /** Authorise the cancellation of a booking with payment evidence, recording a refund decision. Gated by configuration as well. */
+  | 'cancel_paid_booking'
+  /** Change a turnover's status or assignee. */
+  | 'manage_cleaning'
+  /** Requeue a failed guest-message delivery or a dead-lettered automation event. */
+  | 'requeue_automation'
   /** Reserved: manage the operator allowlist. No UI exists for it yet. */
   | 'manage_operators';
 
 const GRANTS: Readonly<Record<OperatorRole, readonly Capability[]>> = {
   viewer: ['view'],
-  operator: ['view', 'reconcile_booking', 'run_reconciliation_pass'],
-  admin: ['view', 'reconcile_booking', 'run_reconciliation_pass', 'manage_operators'],
+  operator: ['view', 'reconcile_booking', 'run_reconciliation_pass', 'cancel_unpaid_booking', 'manage_cleaning', 'requeue_automation'],
+  admin: ['view', 'reconcile_booking', 'run_reconciliation_pass', 'cancel_unpaid_booking', 'cancel_paid_booking', 'manage_cleaning', 'requeue_automation', 'manage_operators'],
 };
 
 export function isOperatorRole(value: unknown): value is OperatorRole {

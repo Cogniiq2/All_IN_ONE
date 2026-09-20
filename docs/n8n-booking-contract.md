@@ -194,6 +194,123 @@ because an event nobody consumed is an operational fact.
 Call this rather than letting the lease lapse silently: the error text is what
 an operator reads at 07:00.
 
+### 3.4 Operator requeue
+
+A dead-lettered event (`status = exhausted`) is not gone. On the Automations
+page of BoLaGio Control an operator can press **Requeue event**, which calls
+`bolagio_requeue_outbox_event(id, actor)`: the row goes back to `pending`
+with `attempts = 0`, `available_at = now()`, the claim cleared, and
+`last_error` prefixed with `requeued by <actor>; previous: …`. Only
+`exhausted` rows move — the function returns `false` for any other status,
+so a pending, claimed or acknowledged event can never be re-issued from
+Control. The action needs the `requeue_automation` capability and is audited
+as `outbox.requeue`. The next claim picks the event up as attempt 1; your
+workflow sees it exactly as it would any other event, which is why it must be
+idempotent.
+
+---
+
+## 3a. The messages endpoint
+
+```
+POST https://<site>/api/internal/messages
+```
+
+Guest messages are **rendered by the backend and transported by n8n**. This
+endpoint hands out a rendered message together with a claimed delivery slot
+in the exactly-once ledger `bolagio_message_deliveries`, and records what the
+transport did. Same signature as §2, over the raw body. Two actions.
+
+The full model — ledger columns, backoff, templates, suppression — is in
+`docs/guest-messaging.md`. This section is the wire contract.
+
+### 3a.1 Prepare
+
+```json
+{ "action": "prepare", "kind": "booking_confirmation", "reference": "BLG-7K2M9Q", "eventId": "8f3c1e2a-....", "sequence": 1 }
+```
+
+* `kind` — `booking_confirmation`, `prearrival`, `checkin`, `checkout` or
+  `review_request`.
+* `reference` — the booking reference.
+* `eventId` — optional; the outbox event you are handling. Stored on the
+  ledger row as `outbox_event_id`. Ignored unless uuid-shaped.
+* `sequence` — optional integer 1–20, default 1. Anything above 1 is a
+  **deliberate resend** and gets its own ledger row; do not set it from a
+  workflow.
+
+The backend checks the booking is still `confirmed` and has a guest e-mail,
+renders the template in the guest's locale, and claims the slot. It answers
+`200` with one of:
+
+```json
+{ "outcome": "claimed", "deliveryId": "…", "attempt": 1,
+  "message": { "channel": "email", "to": "ada@example.com", "subject": "…", "text": "…",
+               "locale": "de", "templateId": "booking_confirmation.de", "templateVersion": "1" } }
+```
+
+| `outcome` | Also carries | What n8n does |
+|---|---|---|
+| `claimed` | `deliveryId`, `attempt`, `message` | send `message`, then **complete** |
+| `already_sent` | `deliveryId`, `status` (`sent`, `skipped` or `suppressed`) | nothing; **ack** the event |
+| `in_progress` | `deliveryId` | another worker holds the lease; **ack** |
+| `backoff` | `deliveryId`, `nextAttemptAt` | a failed attempt is waiting; **ack** — the ledger decides when to retry, and the event that triggers the next attempt is the next redelivery |
+| `not_retryable` | `deliveryId`, `reason` | failed for good (transport said so, or the template could not render); **ack**; an operator requeues from Control |
+| `suppressed` | `reason` | the booking is not a confirmed stay; nothing was claimed; **ack** |
+| `unknown_reference` | — | no such booking; **fail** the event so it is visible |
+
+The `message` object is the only place the guest's name and address appear.
+It is returned once, on a signed request, never stored on the backend, and
+must never be logged, put in an error text or forwarded to an alert.
+
+### 3a.2 Complete
+
+```json
+{ "action": "complete", "deliveryId": "…", "outcome": "sent", "provider": "smtp",
+  "providerMessageId": "<msg-1@example>", "error": "SMTP 450 try later", "retryable": true }
+```
+
+* `outcome` — `sent`, `failed` or `skipped`.
+* `provider` — a short name for the transport (`smtp`, `test`, `disabled`).
+  Required.
+* `providerMessageId` — optional, on `sent`.
+* `error`, `retryable` — on `failed`. `retryable` defaults to `true`; a
+  bounce or a rejected recipient should send `false`.
+
+```json
+{ "recorded": true }
+```
+
+| Response | Meaning |
+|---|---|
+| `{ "recorded": true }` | settled |
+| `{ "recorded": false }` | stale: the slot was no longer held by this claim (lease lapsed and reclaimed, or already settled). Nothing changed; do not retry |
+| `{ "recorded": true, "refused": "test_completion_refused" }` | `sent` with `provider: "test"` where a test transport is not believed (production always; staging unless `MESSAGING_TEST_COMPLETIONS_ALLOWED=true`). Recorded as a **non-retryable failure** |
+
+After `complete`: **ack** the event on `sent` or `skipped`; **fail** it on
+`failed`, so the pump retries with backoff and the next attempt asks the
+ledger again.
+
+### 3a.3 Rejections
+
+| Status | Body | Cause |
+|---|---|---|
+| `401` | none | signature (§2.4) |
+| `413` | none | body over 32 000 characters |
+| `400` | `{ "error": "invalid_input" }` | not JSON, unknown `action`, bad `kind` / `reference` / `deliveryId` / `outcome`, empty `provider` |
+| `503` | `{ "error": "provider_unavailable" }` | the backend has no database configured |
+| `500` | `{ "error": "unexpected" }` | anything else; cause logged under the `x-correlation-id` the response carries |
+
+Every business outcome above, including `not_retryable` and
+`test_completion_refused`, is a `200`. Each call also records an integration
+signal (`n8n:last_message_prepare`, `n8n:last_message_complete`) shown on the
+System and Automations pages.
+
+### 3a.4 What this endpoint cannot do
+
+Send anything, change a booking, or make the ledger read `sent` without a
+transport saying so.
+
 ---
 
 ## 4. Booking context
@@ -256,7 +373,7 @@ minutes of work and prevents a silent mis-read later.
 | `payment.order_created` | a PayPal order exists | `reference, amountCents, currency` | nothing |
 | `payment.completed` | a **verified** capture, amount and currency matched | `reference, amountCents, currency` | internal notification at most — **not** the guest confirmation |
 | `booking.confirmed` | Beds24 updated **and read back verified** | `reference, unitSlug, checkIn, checkOut, amountCents, currency` | **the guest confirmation email.** This is the only event that means a guest has a reservation |
-| `booking.cancelled` | a hold was released and **verified** released | `reference, reason, unitSlug` | internal; a guest message only if the reason warrants one |
+| `booking.cancelled` | a hold was released and **verified** released, or a requested cancellation completed | `reference, reason, requestedBy, refundState` (no `unitSlug`; fetch the booking) | internal; a guest message only if the reason warrants one |
 | `booking.expired` | a lease ran out with no payment evidence | `reference, unitSlug` | optional: a gentle "your dates are free again" |
 | `payment.failed` | the provider denied the capture | `reference, reason` | optional guest nudge. **Never** say the booking is cancelled |
 | `payment.refunded` | a refund event arrived | `reference, amountCents, currency, partial` | internal alert. Do not act on the booking |
@@ -288,6 +405,26 @@ Only for **confirmed** stays; each at most once per booking; a stay that
 leaves `confirmed` first never gets them. Timing and the rules:
 `docs/guest-operations.md`. The booking context now carries `houseRules`
 (`timezone`, `checkInTime`, `checkOutTime`).
+
+### Emitted by the platform-completion migration (2026-09-21)
+
+All defined in `supabase/migrations/20260921120000_platform_completion.sql`.
+`aggregate_id` is the booking's internal id in every case.
+
+| Type | When | Payload | What n8n should do |
+|---|---|---|---|
+| `booking.cancellation_requested` | `bolagio_request_cancellation()` on a booking that may hold inventory (not for one that cancels outright). Once per booking | `reference, status, refundState, authorized` | internal alert. The booking is **not** cancelled yet; `booking.cancelled` follows once the release is verified |
+| `payment.refunded` | `bolagio_record_refund_outcome('completed')` — the saga, the REFUNDED webhook or an order read-back. Also emitted by the webhook path for a refund nobody here authorised (without `refundId`) | `reference, amountCents, currency, partial, refundId` | internal alert. Do not act on the booking (also listed above; the payload gained `refundId`) |
+| `guest.checkout_ready` | `checkout_notice_days` (unit column, default 1) days before check-out, once the guest has arrived (`today ≥ checkIn`); once | `reference, unitSlug, checkIn, checkOut, daysUntilDeparture` | guest message `checkout` |
+| `invoice.required` | every confirmed, **direct**, paid booking (`payment_status` in `paid`, `partially_refunded`, `disputed`), once; not date-bound; at most 200 per pass | `reference, unitSlug, amountCents, currency, paidAt, confirmedAt` (`aggregate_type = invoice`) | internal alert today. No invoice is produced by this repository (`docs/invoicing.md`) |
+| `cleaning.required` | a turnover is created, or a voided one is required again | `reference, unitSlug, departure, nextArrival, sameDay, windowStart, windowEnd` (`aggregate_type = turnover`) | cleaning work item **upsert** keyed on the reference |
+| `cleaning.rescheduled` | a turnover's `departure`, `nextArrival` or `sameDay` changed | the same, plus `previousDeparture` | cleaning work item **upsert** on the same key — update, never duplicate |
+| `cleaning.cancelled` | an open turnover's stay left `confirmed` (the turnover is voided) | `reference, unitSlug, departure` | cleaning work item **cancel** |
+
+The existing `cleaning.required` row in the table above is superseded by this
+one: the payload now also carries `windowStart` and `windowEnd`, and the event
+is re-emitted when a voided turnover comes back. Details:
+`docs/cleaning-operations.md`, `docs/cancellation.md`.
 
 ---
 

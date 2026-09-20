@@ -129,6 +129,35 @@ export function validateEnvironment(source: EnvironmentSource = process.env): En
     );
   }
 
+  /* ── Simulators, mocks and overrides never reach a production-like deployment ── */
+  const beds24Override = read(source, 'BEDS24_API_BASE_URL');
+  if (beds24Override && beds24Override !== 'https://beds24.com/api/v2' && environment !== 'local') {
+    refuse('PROVIDER_OVERRIDE_OUTSIDE_LOCAL', `BEDS24_API_BASE_URL points somewhere other than Beds24 on APP_ENV=${environment}. Provider URLs may only be overridden on a local deployment (simulators); the override is ignored here and the configuration is refused.`);
+  }
+  if (read(source, 'PAYPAL_SIMULATOR_URL') && environment !== 'local') {
+    refuse('PROVIDER_OVERRIDE_OUTSIDE_LOCAL', `PAYPAL_SIMULATOR_URL is set on APP_ENV=${environment}. The payment simulator exists for local runs only; the value is ignored here and the configuration is refused.`);
+  }
+  if (!beds24Live && environment === 'production') {
+    // Refused outright when the gate is on (DIRECT_BOOKING_WITHOUT_LIVE_BEDS24
+    // below); with the gate off no fixture can reach a guest booking, but the
+    // condition is still named so it is never silently in place.
+    warn('MOCK_BEDS24_ON_PRODUCTION', 'BEDS24_MODE is not live on production. Fixture availability is served to the calendar; direct booking is refused until BEDS24_MODE=live.');
+  }
+  if (isOn(source, 'PAYMENT_REFUND_EXECUTION_ENABLED')) {
+    (environment === 'production' ? refuse : warn)(
+      'REFUND_EXECUTION_UNVALIDATED',
+      environment === 'production'
+        ? 'PAYMENT_REFUND_EXECUTION_ENABLED=true on production. The provider refund contract has not been proven in the sandbox; refused until docs/payment-paypal.md §8 records the refund cases as proven and this rule is relaxed.'
+        : 'PAYMENT_REFUND_EXECUTION_ENABLED=true. The refund saga may call the provider on this deployment; the provider refund contract is unvalidated.'
+    );
+  }
+  if (isOn(source, 'OPERATOR_PAID_CANCELLATION_ENABLED')) {
+    warn('PAID_CANCELLATION_ENABLED', 'OPERATOR_PAID_CANCELLATION_ENABLED=true. Administrators may authorise the cancellation of paid bookings; the Beds24 cancellation of a confirmed reservation is unvalidated on the live account.');
+  }
+  if (isOn(source, 'MESSAGING_TEST_COMPLETIONS_ALLOWED') && environment === 'production') {
+    refuse('TEST_MESSAGING_ON_PRODUCTION', 'MESSAGING_TEST_COMPLETIONS_ALLOWED=true on production. A delivery reported "sent" by a test transport would be a confirmation a guest never received.');
+  }
+
   /* ── Beds24 mode by environment ──────────────────────────────────────── */
   if (beds24Live && environment === 'preview') {
     warn('LIVE_BEDS24_ON_PREVIEW', 'BEDS24_MODE=live on a preview. Reads are harmless; no write is reachable while direct booking is off, which it must stay on a preview.');

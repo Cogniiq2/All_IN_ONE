@@ -4,8 +4,11 @@
  * ══════════════════════════════════════════════════════════════════════════
  * THE OPERATOR'S COMMANDS — all of them.
  *
- * Four server actions: sign in, sign out, reconcile one booking, run one
- * reconciliation pass. Every one follows the same shape:
+ * Sign in, sign out, reconcile one booking, run one reconciliation pass —
+ * and, since the platform-completion phase, cancel a booking (through the
+ * cancellation saga), move a turnover, name its cleaner, and requeue a
+ * failed guest message or a dead-lettered automation event. Every one
+ * follows the same shape:
  *
  *   1. resolve the operator from the signed cookie and the allowlist
  *   2. check the capability server-side
@@ -15,8 +18,10 @@
  *   6. revalidate the screens that changed
  *   7. answer with a structured result the UI can render honestly
  *
- * There is no action that sets a booking status, releases a hold, refunds a
- * payment or edits a mapping. Those are not omissions.
+ * There is no action that sets a booking status directly, releases a hold
+ * outside the saga, sends money back, changes dates or edits a mapping.
+ * Those are not omissions: a refund is a separate, configuration-gated
+ * command that no screen triggers yet.
  * ══════════════════════════════════════════════════════════════════════════
  */
 
@@ -39,8 +44,10 @@ import { clientKey, rateLimit } from '@/lib/booking/http';
 import { BookingError } from '@/lib/booking/service';
 import { isBookingReference } from '@/lib/booking/reference';
 import { findIntentByReference } from '@/lib/booking/repository';
-import { queueReconciliation } from '@/lib/booking/commands';
+import { assignTurnover, queueReconciliation, requeueMessageDelivery, requeueOutboxEvent, setTurnoverStatus } from '@/lib/booking/commands';
 import { reconciliationReasonFor, runReconciliation, type ReconciliationReport } from '@/lib/booking/reconciliation';
+import { cancelBooking, classifyCancellation } from '@/lib/booking/cancellation';
+import { operatorPaidCancellationEnabled } from '@/lib/booking/config';
 
 /* ── Sign in / out ─────────────────────────────────────────────────────── */
 
@@ -210,4 +217,217 @@ export async function searchBookingsAction(
   const { searchBookings } = await import('@/lib/admin/queries');
   const result = await searchBookings(q, 8);
   return result.ok ? { ok: true, items: result.data } : { ok: false };
+}
+
+/* ── Cancellation ──────────────────────────────────────────────────────── */
+
+export type CancelBookingActionResult =
+  | { ok: true; outcome: 'cancelled'; status: string; refundState: string }
+  | { ok: true; outcome: 'already_cancelled' }
+  | { ok: true; outcome: 'release_pending'; code: string; status: string }
+  | { ok: false; reason: 'unauthenticated' | 'forbidden' | 'preview' | 'invalid_reference' | 'not_found' | 'fixture' | 'failed' | 'confirmation_mismatch' | 'invalid_refund' | 'paid_cancellation_disabled' | 'in_progress' | 'manual_review' }
+  | { ok: false; reason: 'refused'; code: string };
+
+export interface CancelBookingActionInput {
+  reason: string;
+  /** Typed back by the operator; refused when it does not match. */
+  confirmReference: string;
+  /**
+   * The refund DECISION for a booking with payment evidence, in minor units.
+   * 0 records "no refund"; a positive amount records "refund required" and
+   * nothing more. Ignored for a booking without payment evidence.
+   */
+  refundCents?: number | null;
+}
+
+/**
+ * Cancel one booking through the saga.
+ *
+ * A booking WITHOUT payment evidence is released exactly as the stale-hold
+ * sweep would release it; any operator may do that. A booking WITH payment
+ * evidence needs an administrator, an explicit configuration switch
+ * (`OPERATOR_PAID_CANCELLATION_ENABLED`) and a refund decision, and even then
+ * the money is not touched: the decision is recorded for the separate,
+ * gated refund command. The database trigger enforces the same rule.
+ */
+export async function cancelBookingAction(reference: string, input: CancelBookingActionInput): Promise<CancelBookingActionResult> {
+  const viewer = await operatorFor('cancel_unpaid_booking');
+  if (!viewer.ok) return { ok: false, reason: viewer.reason };
+  if (!isBookingReference(reference)) return { ok: false, reason: 'invalid_reference' };
+  if (String(input?.confirmReference ?? '').trim().toUpperCase() !== reference) return { ok: false, reason: 'confirmation_mismatch' };
+  const reason = String(input?.reason ?? '').trim().slice(0, 400);
+  if (adminMode() !== 'supabase') return { ok: false, reason: 'fixture' };
+
+  const logger = createLogger();
+  try {
+    const intent = await findIntentByReference(reference);
+    if (!intent) return { ok: false, reason: 'not_found' };
+
+    const klass = classifyCancellation(intent);
+    if (klass.kind === 'terminal') return { ok: true, outcome: 'already_cancelled' };
+    if (klass.kind === 'in_progress') return { ok: false, reason: 'in_progress' };
+    if (klass.kind === 'manual_review') return { ok: false, reason: 'manual_review' };
+
+    const paidPath = klass.kind === 'paid' || klass.kind === 'payment_evidence';
+    let refundCents: number | null = null;
+    if (paidPath) {
+      const admin = await operatorFor('cancel_paid_booking');
+      if (!admin.ok) {
+        await audit({ operator: viewer.operator, action: 'booking.cancel', targetType: 'booking', targetRef: reference, outcome: `denied:${admin.reason}`, detail: { class: klass.kind }, correlationId: logger.correlationId });
+        return { ok: false, reason: admin.reason };
+      }
+      if (!operatorPaidCancellationEnabled()) {
+        await audit({ operator: viewer.operator, action: 'booking.cancel', targetType: 'booking', targetRef: reference, outcome: 'denied:paid_cancellation_disabled', detail: { class: klass.kind }, correlationId: logger.correlationId });
+        return { ok: false, reason: 'paid_cancellation_disabled' };
+      }
+      if (klass.kind === 'paid') {
+        const requested = input?.refundCents;
+        if (typeof requested !== 'number' || !Number.isInteger(requested) || requested < 0 || (intent.paidAmountCents !== null && requested > intent.paidAmountCents)) {
+          return { ok: false, reason: 'invalid_refund' };
+        }
+        refundCents = requested;
+      } else {
+        refundCents = 0;
+      }
+    }
+
+    const result = await cancelBooking(intent, { actor: viewer.operator.email, reason: reason || undefined, authorized: paidPath, refundCents }, logger);
+
+    await audit({
+      operator: viewer.operator,
+      action: 'booking.cancel',
+      targetType: 'booking',
+      targetRef: reference,
+      outcome: result.outcome === 'refused' ? `refused:${result.code}` : result.outcome,
+      detail: { class: klass.kind, before: intent.status, after: result.intent.status, refundCents, code: result.outcome === 'release_pending' ? result.code : null },
+      correlationId: logger.correlationId,
+    });
+
+    revalidatePath('/admin');
+    revalidatePath('/admin/operations');
+    revalidatePath('/admin/bookings');
+    revalidatePath('/admin/calendar');
+    revalidatePath('/admin/cleaning');
+    revalidatePath(`/admin/bookings/${reference}`);
+
+    switch (result.outcome) {
+      case 'cancelled':
+        return { ok: true, outcome: 'cancelled', status: result.intent.status, refundState: result.refundState };
+      case 'already_cancelled':
+        return { ok: true, outcome: 'already_cancelled' };
+      case 'release_pending':
+        return { ok: true, outcome: 'release_pending', code: result.code, status: result.intent.status };
+      case 'refused':
+        return { ok: false, reason: 'refused', code: result.code };
+    }
+  } catch (cause) {
+    logger.error('booking.cancel', cause, { reference, outcome: 'operator_cancel_failed' });
+    await audit({ operator: viewer.operator, action: 'booking.cancel', targetType: 'booking', targetRef: reference, outcome: 'error', correlationId: logger.correlationId });
+    return { ok: false, reason: 'failed' };
+  }
+}
+
+/* ── Cleaning ──────────────────────────────────────────────────────────── */
+
+export type TurnoverActionResult =
+  | { ok: true; noop?: boolean }
+  | { ok: false; reason: 'unauthenticated' | 'forbidden' | 'preview' | 'fixture' | 'invalid' | 'failed' | 'refused'; code?: string };
+
+const TURNOVER_TARGETS = ['required', 'in_progress', 'done'] as const;
+type TurnoverTarget = (typeof TURNOVER_TARGETS)[number];
+
+function isUuid(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+/**
+ * Move a turnover between required, in progress and done. `void` is not an
+ * operator target: a turnover is voided only by the sync when the departure
+ * it was derived from no longer exists.
+ */
+export async function setTurnoverStatusAction(turnoverId: string, to: string, note?: string): Promise<TurnoverActionResult> {
+  const gate = await operatorFor('manage_cleaning');
+  if (!gate.ok) return { ok: false, reason: gate.reason };
+  if (!isUuid(turnoverId) || !(TURNOVER_TARGETS as readonly string[]).includes(to)) return { ok: false, reason: 'invalid' };
+  if (adminMode() !== 'supabase') return { ok: false, reason: 'fixture' };
+  const trimmed = String(note ?? '').trim().slice(0, 300);
+  try {
+    const result = await setTurnoverStatus(turnoverId, to as TurnoverTarget, gate.operator.email, trimmed || undefined);
+    await audit({ operator: gate.operator, action: 'turnover.status', targetType: 'turnover', targetRef: turnoverId, outcome: result.ok ? (result.noop ? 'unchanged' : 'moved') : `refused:${result.code ?? 'unknown'}`, detail: { from: result.from ?? null, to } });
+    revalidatePath('/admin/cleaning');
+    revalidatePath('/admin');
+    if (!result.ok) return { ok: false, reason: 'refused', code: result.code };
+    return { ok: true, noop: result.noop };
+  } catch (cause) {
+    createLogger().error('turnover.status', cause, { outcome: 'operator_turnover_failed' });
+    await audit({ operator: gate.operator, action: 'turnover.status', targetType: 'turnover', targetRef: turnoverId, outcome: 'error' });
+    return { ok: false, reason: 'failed' };
+  }
+}
+
+/** Name the person responsible; an empty name clears the assignment. */
+export async function assignTurnoverAction(turnoverId: string, assignee: string): Promise<TurnoverActionResult> {
+  const gate = await operatorFor('manage_cleaning');
+  if (!gate.ok) return { ok: false, reason: gate.reason };
+  if (!isUuid(turnoverId)) return { ok: false, reason: 'invalid' };
+  if (adminMode() !== 'supabase') return { ok: false, reason: 'fixture' };
+  const name = String(assignee ?? '').trim().slice(0, 80);
+  try {
+    const found = await assignTurnover(turnoverId, name || null, gate.operator.email);
+    await audit({ operator: gate.operator, action: 'turnover.assign', targetType: 'turnover', targetRef: turnoverId, outcome: found ? 'ok' : 'not_found', detail: { assigned: name ? true : false } });
+    revalidatePath('/admin/cleaning');
+    if (!found) return { ok: false, reason: 'refused', code: 'NOT_FOUND' };
+    return { ok: true };
+  } catch (cause) {
+    createLogger().error('turnover.assign', cause, { outcome: 'operator_assign_failed' });
+    await audit({ operator: gate.operator, action: 'turnover.assign', targetType: 'turnover', targetRef: turnoverId, outcome: 'error' });
+    return { ok: false, reason: 'failed' };
+  }
+}
+
+/* ── Automations ───────────────────────────────────────────────────────── */
+
+export type RequeueResult =
+  | { ok: true; requeued: boolean }
+  | { ok: false; reason: 'unauthenticated' | 'forbidden' | 'preview' | 'fixture' | 'invalid' | 'failed' };
+
+/**
+ * Put a failed guest-message delivery back in the pump's path. The ledger
+ * decides whether the row is in a state that can be requeued (failed only);
+ * a sent message is never sent again from here.
+ */
+export async function requeueDeliveryAction(deliveryId: string): Promise<RequeueResult> {
+  const gate = await operatorFor('requeue_automation');
+  if (!gate.ok) return { ok: false, reason: gate.reason };
+  if (!isUuid(deliveryId)) return { ok: false, reason: 'invalid' };
+  if (adminMode() !== 'supabase') return { ok: false, reason: 'fixture' };
+  try {
+    const requeued = await requeueMessageDelivery(deliveryId, gate.operator.email);
+    await audit({ operator: gate.operator, action: 'delivery.requeue', targetType: 'message_delivery', targetRef: deliveryId, outcome: requeued ? 'ok' : 'not_requeueable' });
+    revalidatePath('/admin/automations');
+    return { ok: true, requeued };
+  } catch (cause) {
+    createLogger().error('delivery.requeue', cause, { outcome: 'operator_requeue_failed' });
+    await audit({ operator: gate.operator, action: 'delivery.requeue', targetType: 'message_delivery', targetRef: deliveryId, outcome: 'error' });
+    return { ok: false, reason: 'failed' };
+  }
+}
+
+/** Return a dead-lettered outbox event to pending. Only `exhausted` rows move; the database refuses anything else. */
+export async function requeueOutboxAction(eventId: string): Promise<RequeueResult> {
+  const gate = await operatorFor('requeue_automation');
+  if (!gate.ok) return { ok: false, reason: gate.reason };
+  if (!isUuid(eventId)) return { ok: false, reason: 'invalid' };
+  if (adminMode() !== 'supabase') return { ok: false, reason: 'fixture' };
+  try {
+    const requeued = await requeueOutboxEvent(eventId, gate.operator.email);
+    await audit({ operator: gate.operator, action: 'outbox.requeue', targetType: 'outbox_event', targetRef: eventId, outcome: requeued ? 'ok' : 'not_requeueable' });
+    revalidatePath('/admin/automations');
+    revalidatePath('/admin/system');
+    return { ok: true, requeued };
+  } catch (cause) {
+    createLogger().error('outbox.requeue', cause, { outcome: 'operator_requeue_failed' });
+    await audit({ operator: gate.operator, action: 'outbox.requeue', targetType: 'outbox_event', targetRef: eventId, outcome: 'error' });
+    return { ok: false, reason: 'failed' };
+  }
 }

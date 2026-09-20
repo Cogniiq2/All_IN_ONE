@@ -18,11 +18,11 @@ import 'server-only';
  * message in a guest-facing dialog is both a leak and a break in the brand.
  */
 
-import { beds24Config } from '@/lib/booking/config';
+import { beds24Config, providerTimeoutMs } from '@/lib/booking/config';
+import { observeIntegration } from '@/lib/booking/commands';
 import { getAccessToken, invalidateAccessToken } from '@/lib/integrations/beds24/auth';
 import { ProviderError } from '@/lib/integrations/provider';
 
-const TIMEOUT_MS = 10_000;
 
 export interface Beds24RequestInit {
   path: string;
@@ -34,7 +34,16 @@ export interface Beds24RequestInit {
 }
 
 export async function beds24Request<T>(init: Beds24RequestInit): Promise<T> {
-  return attempt<T>(init, false);
+  try {
+    const result = await attempt<T>(init, false);
+    // Reads count as a heartbeat too: "last heard from Beds24" is answered by
+    // a calendar read as well as by a hold.
+    observeIntegration('beds24', 'last_success', `${init.method ?? 'GET'} ${init.path}`);
+    return result;
+  } catch (cause) {
+    observeIntegration('beds24', 'last_failure', `${init.method ?? 'GET'} ${init.path}: ${cause instanceof Error ? cause.message.slice(0, 100) : 'error'}`);
+    throw cause;
+  }
 }
 
 async function attempt<T>(init: Beds24RequestInit, isRetry: boolean): Promise<T> {
@@ -57,7 +66,7 @@ async function attempt<T>(init: Beds24RequestInit, isRetry: boolean): Promise<T>
   if (init.idempotencyKey) headers['idempotency-key'] = init.idempotencyKey;
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), providerTimeoutMs('beds24'));
 
   let response: Response;
   try {

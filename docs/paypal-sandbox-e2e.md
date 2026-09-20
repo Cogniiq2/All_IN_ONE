@@ -40,7 +40,7 @@ Run each from the staging site; observe with the admin (Payments, the booking pa
 | 4 | Browser closes after capture | close during "confirming" | same end state; no second capture in PayPal |
 | 5 | Double submit | click Pay twice fast; open the same booking in two tabs | one order id in PayPal (`PayPal-Request-Id`), one capture |
 | 6 | Refresh the return page | refresh repeatedly | capture endpoint answers idempotently; no new order |
-| 7 | Cancel at PayPal | cancel in the PayPal window | `payment_cancelled`; hold stands; after lease + grace the sweep releases it and Beds24 reopens the night |
+| 7 | Cancel at PayPal | cancel in the PayPal window | the server is not told: `payment_session_created` with `order_created`; the hold stands; after lease + grace the sweep reads the order, withdraws it and releases; Beds24 reopens the night (`tests/integration/paypal-cases.test.ts` case 7, `e2e/guest/happy-path.spec.ts` G04) |
 | 8 | Declined instrument | buyer with the "decline" test card | `payment_failed`, `denied`; retry with a good funding source on the **same** order → `paid` (`denied → paid`) |
 | 9 | Duplicate webhook | Dashboard → Webhooks → resend the COMPLETED event twice | `duplicate: true`; no state change |
 | 10 | Reordered webhooks | resend `CHECKOUT.ORDER.APPROVED` after `COMPLETED` | refused by compare-and-set; booking stays `confirmed` |

@@ -25,6 +25,7 @@ import { bookingErrorResponse, bookingJson, requireBackend } from '@/lib/booking
 import { BookingError } from '@/lib/booking/service';
 import { verifyN8nSignature } from '@/lib/n8n/signing';
 import { acknowledgeEvent, claimEvents, failEvent } from '@/lib/n8n/internal-api';
+import { observeIntegration } from '@/lib/booking/commands';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -63,16 +64,21 @@ export async function POST(request: NextRequest) {
       case 'claim': {
         const limit = typeof body.limit === 'number' ? Math.min(50, Math.max(1, body.limit)) : 20;
         const events = await claimEvents(worker, limit, logger);
+        observeIntegration('n8n', 'last_claim', `${worker}: ${events.length}`);
         return bookingJson({ events }, logger);
       }
       case 'ack': {
         const id = requireId(body.eventId);
-        return bookingJson({ acknowledged: await acknowledgeEvent(id, worker, logger) }, logger);
+        const acknowledged = await acknowledgeEvent(id, worker, logger);
+        if (acknowledged) observeIntegration('n8n', 'last_ack', worker);
+        return bookingJson({ acknowledged }, logger);
       }
       case 'fail': {
         const id = requireId(body.eventId);
         const reason = typeof body.error === 'string' ? body.error : 'unspecified';
-        return bookingJson({ recorded: await failEvent(id, worker, reason, logger) }, logger);
+        const recorded = await failEvent(id, worker, reason, logger);
+        if (recorded) observeIntegration('n8n', 'last_fail', `${worker}: ${reason.slice(0, 120)}`);
+        return bookingJson({ recorded }, logger);
       }
       default:
         throw new BookingError('invalid_input');

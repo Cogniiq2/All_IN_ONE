@@ -57,7 +57,8 @@ for f in supabase/migrations/20260916120000_booking_foundation.sql \
          supabase/migrations/20260917100000_booking_core_states.sql \
          supabase/migrations/20260917110000_booking_core_hardening.sql \
          supabase/migrations/20260919120000_admin_operators.sql \
-         supabase/migrations/20260920120000_booking_production_hardening.sql; do
+         supabase/migrations/20260920120000_booking_production_hardening.sql \
+         supabase/migrations/20260921120000_platform_completion.sql; do
   echo "   $f"
   psql "$TEST" -v ON_ERROR_STOP=1 -q -f "$f" 2>&1 | grep -vE "NOTICE|^$" || true
 done
@@ -66,7 +67,13 @@ echo "── running tests ──"
 psql "$TEST" -v ON_ERROR_STOP=1 -f tests/sql/concurrency.sql 2>&1 \
   | sed -n 's/^.*NOTICE:  //p; /════/p; s/^.*ERROR:/ERROR:/p'
 
+echo "── running the platform-completion tests ──"
+psql "$TEST" -v ON_ERROR_STOP=1 -f tests/sql/completion.sql 2>&1 \
+  | sed -n 's/^.*NOTICE:  //p; /════/p; s/^.*ERROR:/ERROR:/p'
+
 echo "── running the concurrent race ──"
-tests/sql/race.sh "$TEST" 
+tests/sql/race.sh "$TEST"
+echo "── running the concurrent delivery-ledger race ──"
+tests/sql/race-delivery.sh "$TEST" 
 
 [ "$OWN_CLUSTER" = "1" ] && echo "(throwaway cluster removed)"

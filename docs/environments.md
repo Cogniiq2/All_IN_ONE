@@ -43,11 +43,15 @@ A `refuse` finding shuts the direct-booking gate whatever
 | `SANDBOX_PAYPAL_ON_PRODUCTION` | production, `PAYPAL_MODE=sandbox`, gate on (warn when the gate is off) |
 | `DIRECT_BOOKING_ON_PREVIEW` | gate on, on a preview |
 | `DIRECT_BOOKING_WITHOUT_*` | gate on with a missing PayPal mode, credential, webhook id, live Beds24, Beds24 token, database, or scheduler secret |
+| `PROVIDER_OVERRIDE_OUTSIDE_LOCAL` | `BEDS24_API_BASE_URL` (not Beds24) or `PAYPAL_SIMULATOR_URL` set on anything but `local`; the override is ignored **and** the configuration refused |
+| `REFUND_EXECUTION_UNVALIDATED` | `PAYMENT_REFUND_EXECUTION_ENABLED=true` on production (warn elsewhere) until the refund contract is validated in the sandbox |
+| `TEST_MESSAGING_ON_PRODUCTION` | `MESSAGING_TEST_COMPLETIONS_ALLOWED=true` on production |
 
 Warnings (surfaced, no behaviour change): `APP_ENV_ASSUMED`,
 `DEMO_WITH_DATABASE`, `PAYPAL_MODE_INVALID`, `LIVE_BEDS24_ON_PREVIEW`,
 `DIRECT_BOOKING_WITHOUT_BEDS24_WEBHOOK`, `ADMIN_UNCONFIGURED`,
-`N8N_UNCONFIGURED`, `SCHEDULER_UNCONFIGURED`, `PAYPAL_MODE_UNSET`.
+`N8N_UNCONFIGURED`, `SCHEDULER_UNCONFIGURED`, `PAYPAL_MODE_UNSET`,
+`MOCK_BEDS24_ON_PRODUCTION`, `PAID_CANCELLATION_ENABLED`.
 
 ## 3. Secret matrix
 
@@ -76,6 +80,12 @@ Nothing below may be `NEXT_PUBLIC_`.
 | `ADMIN_PREVIEW_*` | secret | preview only | — | |
 | `DIRECT_BOOKING_ENABLED` | var | ✓ | — | |
 | `BOOKING_*_MINUTES/SECONDS` | var | optional | — | clamped defaults |
+| `OPERATOR_PAID_CANCELLATION_ENABLED` | var | optional | — | default off; `admin` role may then authorise the cancellation of a paid booking (warned on every environment) |
+| `PAYMENT_REFUND_EXECUTION_ENABLED` | var | optional | — | default off; **refused on production** until the sandbox refund validation is recorded |
+| `MESSAGING_CONTACT_EMAIL` / `MESSAGING_CONTACT_PHONE` | var | ✓ | — | rendered into guest messages; a template missing them fails safely (nothing is sent) |
+| `MESSAGING_TEST_COMPLETIONS_ALLOWED` | var | local / staging only | — | **refused on production** |
+| `PAYPAL_SIMULATOR_URL`, `BEDS24_API_BASE_URL` (non-Beds24), `PROVIDER_TIMEOUT_MS` | var | **local only** | — | ignored and refused elsewhere (`PROVIDER_OVERRIDE_OUTSIDE_LOCAL`) |
+| `INVOICE_*` | var | optional | — | see `docs/invoicing.md`; absence blocks invoicing, never defaults a rate |
 
 Rotation: rotate a secret in **both** stores in one change window; the
 PayPal webhook id is per-webhook, so a new webhook means a new id in both.

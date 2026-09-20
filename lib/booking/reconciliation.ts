@@ -35,8 +35,10 @@ import { staleHoldMinutes } from '@/lib/booking/config';
 import {
   claimPaymentEvents,
   claimReconciliationJobs,
+  completeCancellation,
   failReconciliationJob,
   queueReconciliation,
+  recordRefundOutcome,
   resolveReconciliationJob,
   settlePaymentEvent,
   transitionIntent,
@@ -48,11 +50,12 @@ import { applyCapture, processPaymentEvent } from '@/lib/booking/payments';
 import { releaseHold } from '@/lib/booking/release';
 import {
   findIntentByReference,
+  findReleasedPendingCancellation,
   findUnitBySlug,
   type IntentRecord,
 } from '@/lib/booking/repository';
 import { evaluateLease } from '@/lib/booking/lease';
-import { mayHoldExternalBooking } from '@/lib/booking/states';
+import { isPaidSide, mayHoldExternalBooking } from '@/lib/booking/states';
 import { bookingProvider } from '@/lib/integrations/beds24';
 import { paymentAdapter } from '@/lib/payments';
 import {
@@ -100,6 +103,7 @@ export async function runReconciliation(
 
   report.paymentEvents = await drainPaymentInbox(logger, limit);
   report.queued = await sweep(logger);
+  await finishCancellations(logger);
 
   const jobs = await claimReconciliationJobs(WORKER, limit);
   report.scanned = jobs.length;
@@ -270,6 +274,20 @@ function sweepReason(
   }
 }
 
+/**
+ * A cancellation whose release was verified but whose final move never
+ * happened (the process died between `released` and `cancelled`). Finishing
+ * it is a pure local transition; nothing external is involved.
+ */
+async function finishCancellations(logger: BookingLogger): Promise<void> {
+  const pending = await findReleasedPendingCancellation(50).catch(() => []);
+  for (const intent of pending) {
+    await completeCancellation(intent.id, logger).catch((cause) =>
+      logger.error('booking.cancel', cause, { reference: intent.reference, outcome: 'complete_failed' })
+    );
+  }
+}
+
 /* ══ Phase 3 — the handlers ════════════════════════════════════════════ */
 
 type Outcome = 'resolved' | 'escalated' | 'retry';
@@ -283,6 +301,9 @@ async function handle(job: ReconciliationJobRow, logger: BookingLogger): Promise
     case 'BEDS24_HOLD_OUTCOME_UNKNOWN':
     case 'BOOKING_MISSING_EXTERNAL_HOLD':
       return resolveUnknownHold(intent, logger);
+
+    case 'BEDS24_HOLD_DID_NOT_BLOCK':
+      return resolveHoldBlocked(intent, logger);
 
     case 'PAID_BOOKING_UNFINALIZED':
     case 'BEDS24_FINALIZATION_FAILED':
@@ -299,6 +320,12 @@ async function handle(job: ReconciliationJobRow, logger: BookingLogger): Promise
     case 'BOOKING_LOCK_LEASE_EXPIRED':
       return resolveStaleLock(intent, logger);
 
+    case 'PAYMENT_REFUND_UNCERTAIN':
+      return resolveUncertainRefund(intent, logger);
+
+    case 'CANCELLATION_RELEASE_PENDING':
+      return resolveRelease(intent, logger);
+
     case 'BOOKING_HOLD_STALE':
     case 'BOOKING_LEASE_HELD_FOR_PAYMENT':
       return resolveStaleHold(intent, logger);
@@ -311,11 +338,41 @@ async function handle(job: ReconciliationJobRow, logger: BookingLogger): Promise
     case 'PAYMENT_AFTER_TERMINAL_STATE':
     case 'PAYMENT_DISPUTED':
     case 'PAYMENT_REFUNDED':
+    case 'PAYMENT_REFUND_FAILED':
+    case 'PAYMENT_REFUND_DUPLICATE':
     case 'BEDS24_HOLD_MISMATCH':
       return 'escalated';
 
     default:
       return 'escalated';
+  }
+}
+
+/**
+ * The post-hold calendar check could not run, or found a night still open.
+ *
+ * Read the calendar again, live. Every night closed: the hold blocks what it
+ * should, resolved. A night still open: the channel manager has our booking
+ * and is still selling the night — a person decides; nothing is torn down,
+ * because the booking exists and the guest may be paying. Cannot read:
+ * retry. A booking that no longer reserves inventory has nothing to check.
+ */
+async function resolveHoldBlocked(intent: IntentRecord, logger: BookingLogger): Promise<Outcome> {
+  if (!mayHoldExternalBooking(intent.status) || !intent.beds24BookingId) return 'resolved';
+  const unit = await findUnitBySlug(intent.unitSlug);
+  if (!unit?.providerRef) return 'escalated';
+  try {
+    const days = await bookingProvider().fetchAvailability({ unit: unit.providerRef, from: intent.checkIn, to: intent.checkOut });
+    const stillOpen = days.filter((d) => d.date >= intent.checkIn && d.date < intent.checkOut && d.available);
+    if (stillOpen.length === 0) {
+      logger.info('beds24.verify', { reference: intent.reference, providerBookingId: intent.beds24BookingId, outcome: 'hold_blocks' });
+      return 'resolved';
+    }
+    logger.warn('beds24.verify', { reference: intent.reference, providerBookingId: intent.beds24BookingId, outcome: 'hold_did_not_block', count: stillOpen.length });
+    return 'escalated';
+  } catch (cause) {
+    logger.warn('beds24.verify', { reference: intent.reference, outcome: 'inventory_check_failed', errorCode: cause instanceof Error ? cause.name : 'unknown' });
+    return 'retry';
   }
 }
 
@@ -388,7 +445,7 @@ async function resolveUnknownHold(intent: IntentRecord, logger: BookingLogger): 
         beds24VerifiedAt: new Date().toISOString(),
         providerSnapshot: found.snapshot,
         reconciliationState: 'ok',
-        lastFailureCode: undefined,
+        lastFailureCode: null,
       },
       outbox: {
         type: 'booking.held',
@@ -424,9 +481,49 @@ async function resolveUnfinalized(intent: IntentRecord, logger: BookingLogger): 
  */
 async function resolveRelease(intent: IntentRecord, logger: BookingLogger): Promise<Outcome> {
   const result = await releaseHold(intent, 'reconcile_release', logger);
-  if (result.outcome === 'released' || result.outcome === 'nothing_to_release') return 'resolved';
+  if (result.outcome === 'released' || result.outcome === 'nothing_to_release') {
+    // A release that was part of a cancellation finishes the cancellation.
+    if (intent.cancellationRequestedAt && !intent.cancellationCompletedAt) {
+      await completeCancellation(intent.id, logger).catch(() => undefined);
+    }
+    return 'resolved';
+  }
   if (result.outcome === 'refused') return 'escalated';
   return 'retry';
+}
+
+/**
+ * A refund call whose outcome was lost.
+ *
+ * The provider is READ, never re-POSTed: the order lists the refunds against
+ * its capture. A COMPLETED refund of the decided amount is the evidence the
+ * ledger needs; it is recorded through the same command the saga and the
+ * webhook use. No refund listed yet → the job stays open and is retried with
+ * backoff; a person is alerted by the manual-review event the unknown
+ * outcome already emitted.
+ */
+async function resolveUncertainRefund(intent: IntentRecord, logger: BookingLogger): Promise<Outcome> {
+  if (intent.refundState !== 'unknown') return 'resolved';
+  if (!intent.paymentOrderId || !intent.paymentCaptureId) return 'escalated';
+
+  const order = await paymentAdapter(intent.paymentProvider ?? 'paypal')
+    .getOrder(intent.paymentOrderId)
+    .catch(() => null);
+  if (!order) return 'retry';
+
+  const completed = (order.refunds ?? []).find((r) => r.state === 'refunded' && r.amountCents === intent.refundRequiredCents);
+  if (!completed) {
+    logger.warn('payment.refund', { reference: intent.reference, orderId: order.orderId, outcome: 'no_refund_listed' });
+    return 'retry';
+  }
+
+  await completeOperation(operationKey.paypalRefund(intent.paymentCaptureId), 'reconciled', completed.refundId).catch(() => undefined);
+  const recorded = await recordRefundOutcome(
+    intent.id,
+    { outcome: 'completed', refundId: completed.refundId, amountCents: completed.amountCents ?? intent.refundRequiredCents ?? 0, source: 'readback' },
+    logger
+  );
+  return recorded.ok ? 'resolved' : 'escalated';
 }
 
 /**
@@ -536,8 +633,40 @@ async function resolveStaleLock(intent: IntentRecord, logger: BookingLogger): Pr
 async function resolveStaleHold(intent: IntentRecord, logger: BookingLogger): Promise<Outcome> {
   if (!mayHoldExternalBooking(intent.status)) return 'resolved';
 
-  const decision = await evaluateLease(intent, logger);
+  let decision = await evaluateLease(intent, logger);
   if (decision.action === 'wait') return 'retry';
+
+  if (decision.action === 'hold' && intent.paymentStatus === 'approved' && intent.paymentOrderId && !isPaidSide(intent.status)) {
+    /*
+     * Approved at the provider, never captured — the guest closed the tab
+     * between approving and returning. Only THIS server captures, and it
+     * refuses to once the lease is up, so an order the provider still shows
+     * as uncaptured can never become money. Read it; if there is no capture,
+     * the approval is recorded as withdrawn and the lease check runs again.
+     * A capture that did land is applied through the validated path instead.
+     */
+    const order = await paymentAdapter(intent.paymentProvider ?? 'paypal').getOrder(intent.paymentOrderId).catch(() => null);
+    if (!order) return 'retry';
+    if (order.state === 'paid' && order.captureId && order.captured) {
+      const applied = await applyCapture(
+        { reference: intent.reference, provider: intent.paymentProvider ?? 'paypal', orderId: order.orderId, captureId: order.captureId, amountCents: order.captured.amountCents, currency: order.captured.currency },
+        logger
+      );
+      return applied.outcome === 'applied' || applied.outcome === 'duplicate' ? 'resolved' : 'escalated';
+    }
+    if (order.state === 'capture_pending' || order.state === 'unknown') return 'escalated';
+    const withdrawn = await transitionIntent(
+      intent.id,
+      { expected: intent.status, to: intent.status, reason: 'approval_lapsed', patch: { paymentStatus: 'cancelled' } },
+      logger
+    );
+    if (!withdrawn) return 'retry';
+    logger.info('payment.event', { reference: intent.reference, orderId: order.orderId, paymentState: order.state, outcome: 'approval_lapsed' });
+    decision = await evaluateLease(withdrawn, logger);
+    if (decision.action === 'wait') return 'retry';
+    intent = withdrawn;
+  }
+
   if (decision.action === 'hold') return 'escalated';
 
   const expired = await transitionIntent(

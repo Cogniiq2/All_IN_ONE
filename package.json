@@ -13,7 +13,14 @@
     "cf:deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:beds24-write": "vitest run --config vitest.write-test.config.ts"
+    "test:beds24-write": "vitest run --config vitest.write-test.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:e2e": "playwright test",
+    "stack:up": "./scripts/test-stack.sh up",
+    "stack:down": "./scripts/test-stack.sh down",
+    "test:db": "./scripts/db-test.sh",
+    "test:db-ops": "./scripts/db-ops-check.sh",
+    "n8n:build": "node n8n/build.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
@@ -81,6 +88,7 @@
   },
   "devDependencies": {
     "@opennextjs/cloudflare": "^1.14.0",
+    "@playwright/test": "^1.49.1",
     "vitest": "^2.1.9",
     "wrangler": "^4.123.0"
   }

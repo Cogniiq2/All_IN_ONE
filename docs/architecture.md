@@ -103,3 +103,11 @@ reachability (no live probe), n8n internals.
 | admin | `admin-control.md` |
 | incidents | `incident-runbooks.md` |
 | launch | `production-readiness.md` |
+
+Added in the platform-completion phase: `docs/platform-completion-delta.md`
+(what changed and why), `docs/platform-completion-report.md` (the final
+report), `docs/cancellation.md`, `docs/guest-messaging.md`,
+`docs/cleaning-operations.md`, `docs/provider-simulation.md`,
+`docs/invoicing.md`, `docs/data-retention.md`, `docs/supabase-shared-project.md`,
+`docs/security/2026-09-21-platform-completion-review.md`, and the automation
+package under `n8n/`.

@@ -1,0 +1,759 @@
+{
+  "name": "BoLaGio · Outbox Event Pump",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "seconds",
+              "secondsInterval": 60
+            }
+          ]
+        }
+      },
+      "id": "d3956d61-7654-48d4-b679-4a33a4385c7c",
+      "name": "Every 60 seconds",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// ═══ BoLaGio internal API client — identical in every \"BoLaGio ·\" workflow ═══\n// HMAC-SHA256 over \"v1:<unix seconds>:<raw body>\" (docs/n8n-booking-contract.md §2).\n// The body string is built once, signed, and sent unchanged. A GET signs \"\".\n// Requires: NODE_FUNCTION_ALLOW_BUILTIN to include \"crypto\", env access in Code nodes.\nconst crypto = require('crypto');\nconst helpers = this.helpers;\n\nfunction bolagioConfig() {\n  const site = String($env.BOLAGIO_SITE_URL || '').replace(new RegExp('/+$'), '');\n  const secret = String($env.BOLAGIO_N8N_INTERNAL_SECRET || '');\n  if (!new RegExp('^https?://').test(site)) throw new Error('BOLAGIO_SITE_URL is not set (expected https://host without trailing slash)');\n  if (!secret) throw new Error('BOLAGIO_N8N_INTERNAL_SECRET is not set');\n  return { site, secret };\n}\n\nfunction bolagioSignature(secret, timestamp, rawBody) {\n  return 'v1=' + crypto.createHmac('sha256', secret).update('v1:' + timestamp + ':' + rawBody).digest('hex');\n}\n\nasync function bolagioRequest(method, path, rawBody) {\n  const config = bolagioConfig();\n  const body = method === 'GET' ? '' : String(rawBody);\n  const timestamp = String(Math.floor(Date.now() / 1000));\n  const headers = {\n    'x-bolagio-timestamp': timestamp,\n    'x-bolagio-signature': bolagioSignature(config.secret, timestamp, body),\n    accept: 'application/json',\n  };\n  const options = {\n    method: method,\n    url: config.site + path,\n    headers: headers,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n    timeout: 20000,\n  };\n  if (method !== 'GET') {\n    headers['content-type'] = 'application/json';\n    options.body = body;\n    options.json = false;\n  }\n  const response = await helpers.httpRequest(options);\n  const status = Number(response.statusCode);\n  let data = response.body;\n  if (typeof data === 'string') {\n    if (data.length === 0) data = null;\n    else { try { data = JSON.parse(data); } catch (err) { data = { raw: data.slice(0, 200) }; } }\n  }\n  if (data === undefined) data = null;\n  return { status: status, data: data };\n}\n\nfunction bolagioExpect(result, path) {\n  if (result.status === 401) throw new Error('BoLaGio ' + path + ': 401 (secret mismatch, clock skew or re-serialised body)');\n  if (result.status < 200 || result.status >= 300) throw new Error('BoLaGio ' + path + ': HTTP ' + result.status);\n  return result.data;\n}\n// ═══ end of shared client ═══\n\n// Claim a batch. The claim is a five-minute LEASE, not a removal: an execution that\n// dies mid-batch leaves rows whose lease lapses, and the next claim picks them up.\nconst WORKER = 'n8n-bolagio';\nconst body = JSON.stringify({ action: 'claim', worker: WORKER, limit: 20 });\nconst claimed = bolagioExpect(await bolagioRequest('POST', '/api/internal/outbox', body), '/api/internal/outbox');\nconst events = claimed && Array.isArray(claimed.events) ? claimed.events : [];\n// One item per event; no events → no items → the rest of the workflow does not run.\nreturn events.map(function (event) {\n  return { json: {\n    eventId: String(event.id),\n    type: String(event.type),\n    version: Number(event.version),\n    reference: event.reference === undefined ? null : event.reference,\n    occurredAt: event.occurredAt,\n    attempt: Number(event.attempt || 1),\n    payload: event.payload && typeof event.payload === 'object' ? event.payload : {},\n    worker: WORKER,\n  } };\n});\n"
+      },
+      "id": "feded694-4315-45fe-a92f-6fe2c87b8a96",
+      "name": "Claim events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "dbd66640-a3cd-4486-be8b-e1a5aa970da6",
+      "name": "Loop over events",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        480,
+        400
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "c2c13461-a8ba-4734-a841-ce5849744504",
+      "name": "Batch complete",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        720,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Decide what an event means. Only known (type, version 1) pairs get a route;\n// everything else is refused explicitly, so an unknown event dead-letters visibly\n// instead of being acknowledged away.\nconst GUEST_KINDS = {\n  \"booking.confirmed\": \"booking_confirmation\",\n  \"guest.prearrival_ready\": \"prearrival\",\n  \"guest.checkin_ready\": \"checkin\",\n  \"guest.checkout_ready\": \"checkout\",\n  \"review.requested\": \"review_request\"\n};\nconst CLEANING_ACTIONS = {\n  \"cleaning.required\": \"upsert\",\n  \"cleaning.rescheduled\": \"upsert\",\n  \"cleaning.cancelled\": \"cancel\"\n};\nconst ALERT_TYPES = [\"booking.paid_unfinalized\",\"booking.manual_review_required\",\"booking.release_failed\",\"booking.cancellation_requested\",\"payment.refunded\",\"payment.failed\",\"invoice.required\"];\nconst SILENT_TYPES = [\"booking.held\",\"payment.order_created\",\"payment.completed\",\"booking.cancelled\",\"booking.expired\"];\n\nconst event = $input.item.json;\nconst type = String(event.type || '');\nlet route = 'unsupported';\nlet kind = null;\nlet cleaningAction = null;\n\nif (event.version === 1) {\n  if (Object.prototype.hasOwnProperty.call(GUEST_KINDS, type)) { kind = GUEST_KINDS[type]; route = 'guest:' + kind; }\n  else if (Object.prototype.hasOwnProperty.call(CLEANING_ACTIONS, type)) { cleaningAction = CLEANING_ACTIONS[type]; route = 'cleaning'; }\n  else if (ALERT_TYPES.includes(type)) route = 'alert';\n  else if (SILENT_TYPES.includes(type)) route = 'silent';\n}\n\nreturn { json: Object.assign({}, event, { route: route, kind: kind, cleaningAction: cleaningAction }) };\n"
+      },
+      "id": "d428e1fd-8966-4319-9260-eaa540ea12a1",
+      "name": "Classify event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "cb0a61b2-8b75-4221-9f62-f792cd0591c1",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "guest:booking_confirmation",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "guest:booking_confirmation"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "9c31aa05-2a90-4d8e-97de-10b145a294b9",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "guest:prearrival",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "guest:prearrival"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "5bab58c0-de63-438f-a2fc-66b0229f4c97",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "guest:checkin",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "guest:checkin"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "a46d27cd-d707-4cbf-8d79-016dab1c3e6e",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "guest:checkout",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "guest:checkout"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "1aff1f76-2284-4085-b824-d66eb4d6a9a0",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "guest:review_request",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "guest:review_request"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "184e77cb-97ae-4cf4-939a-6aa5ec0ada65",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "cleaning",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "cleaning"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "999686b0-1311-41c5-91c1-360691023d02",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "alert",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "alert"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "73cf7dca-002c-427b-bdee-68b4e61f2aed",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "silent",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "silent"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "8bc37eda-150a-4bdd-85f6-4f175be85bf5",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "unsupported",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "unsupported"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "fd596c65-ce00-4c59-ab8c-782a2271db4e",
+      "name": "Route by type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        960,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "uGLX4W7hDCGFAzpW"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "2533fd46-72b9-4aa3-94b5-3d2354695517",
+      "name": "Guest Message · Confirmation",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        1260,
+        40
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "uGLX4W7hDCGFAzpW"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "0027c7bc-8eff-476f-ae66-3c2adf61f66e",
+      "name": "Guest Message · Pre-arrival",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        1260,
+        200
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "uGLX4W7hDCGFAzpW"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "6c8f5163-1cdf-47ec-a3c0-bebc7e3947e0",
+      "name": "Guest Message · Check-in",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        1260,
+        360
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "uGLX4W7hDCGFAzpW"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "852a8514-1c31-4142-a479-56d199b9c231",
+      "name": "Guest Message · Check-out",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        1260,
+        520
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "uGLX4W7hDCGFAzpW"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "46446bac-b3f8-4a84-9346-6841631c3ab4",
+      "name": "Guest Message · Review request",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        1260,
+        680
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "Ofnr3ItMsitTJQ6b"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "46ef50c7-3c9b-4bae-a8fd-c9a1add418db",
+      "name": "Cleaning Routing",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        1260,
+        840
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "Ms3RTuwUWzoCaAdr"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "615e72bc-0de6-42bd-9d04-5d86e283df95",
+      "name": "Operational Alert",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        1260,
+        1000
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Acknowledged without side effects: the event is informational for n8n.\nconst event = $input.first().json;\nreturn [{ json: { eventId: event.eventId, ok: true, outcome: 'silent', type: event.type } }];\n"
+      },
+      "id": "9d7aff87-73c1-4285-bc6f-c51145eb68de",
+      "name": "Handled silently",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        1160
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Refused on purpose. The backend retries with backoff and dead-letters after eight\n// attempts, where an operator sees \"unsupported type/version\" in the ops queue.\nconst event = $input.first().json;\nreturn [{ json: { eventId: event.eventId, ok: false, error: 'unsupported type/version', type: event.type, version: event.version } }];\n"
+      },
+      "id": "c020cd6b-8061-4c68-bdf3-d98ae2e67f6b",
+      "name": "Reject unsupported event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        1320
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// ═══ BoLaGio internal API client — identical in every \"BoLaGio ·\" workflow ═══\n// HMAC-SHA256 over \"v1:<unix seconds>:<raw body>\" (docs/n8n-booking-contract.md §2).\n// The body string is built once, signed, and sent unchanged. A GET signs \"\".\n// Requires: NODE_FUNCTION_ALLOW_BUILTIN to include \"crypto\", env access in Code nodes.\nconst crypto = require('crypto');\nconst helpers = this.helpers;\n\nfunction bolagioConfig() {\n  const site = String($env.BOLAGIO_SITE_URL || '').replace(new RegExp('/+$'), '');\n  const secret = String($env.BOLAGIO_N8N_INTERNAL_SECRET || '');\n  if (!new RegExp('^https?://').test(site)) throw new Error('BOLAGIO_SITE_URL is not set (expected https://host without trailing slash)');\n  if (!secret) throw new Error('BOLAGIO_N8N_INTERNAL_SECRET is not set');\n  return { site, secret };\n}\n\nfunction bolagioSignature(secret, timestamp, rawBody) {\n  return 'v1=' + crypto.createHmac('sha256', secret).update('v1:' + timestamp + ':' + rawBody).digest('hex');\n}\n\nasync function bolagioRequest(method, path, rawBody) {\n  const config = bolagioConfig();\n  const body = method === 'GET' ? '' : String(rawBody);\n  const timestamp = String(Math.floor(Date.now() / 1000));\n  const headers = {\n    'x-bolagio-timestamp': timestamp,\n    'x-bolagio-signature': bolagioSignature(config.secret, timestamp, body),\n    accept: 'application/json',\n  };\n  const options = {\n    method: method,\n    url: config.site + path,\n    headers: headers,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n    timeout: 20000,\n  };\n  if (method !== 'GET') {\n    headers['content-type'] = 'application/json';\n    options.body = body;\n    options.json = false;\n  }\n  const response = await helpers.httpRequest(options);\n  const status = Number(response.statusCode);\n  let data = response.body;\n  if (typeof data === 'string') {\n    if (data.length === 0) data = null;\n    else { try { data = JSON.parse(data); } catch (err) { data = { raw: data.slice(0, 200) }; } }\n  }\n  if (data === undefined) data = null;\n  return { status: status, data: data };\n}\n\nfunction bolagioExpect(result, path) {\n  if (result.status === 401) throw new Error('BoLaGio ' + path + ': 401 (secret mismatch, clock skew or re-serialised body)');\n  if (result.status < 200 || result.status >= 300) throw new Error('BoLaGio ' + path + ': HTTP ' + result.status);\n  return result.data;\n}\n// ═══ end of shared client ═══\n// Error text never carries guest data: e-mail addresses are masked, length capped.\nfunction redact(text) {\n  const raw = text === undefined || text === null ? '' : (typeof text === 'string' ? text : (text.message || JSON.stringify(text)));\n  return String(raw).replace(new RegExp('[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\\\.[A-Za-z]{2,}', 'g'), '[email]').slice(0, 400);\n}\n\n// Settle the event this loop iteration handled: ack when the handler reported ok,\n// otherwise fail with its error (the backend schedules the retry).\nconst WORKER = 'n8n-bolagio';\nconst current = $('Classify event').first().json;\nconst result = $input.first().json || {};\nconst eventId = String(result.eventId || current.eventId);\nconst ok = result.ok === true;\n\nif (ok) {\n  const body = JSON.stringify({ action: 'ack', worker: WORKER, eventId: eventId });\n  const data = bolagioExpect(await bolagioRequest('POST', '/api/internal/outbox', body), '/api/internal/outbox');\n  return [{ json: { eventId: eventId, settled: 'ack', acknowledged: data ? data.acknowledged === true : false, type: current.type } }];\n}\n\nconst error = redact(result.error || 'handler returned no result');\nconst body = JSON.stringify({ action: 'fail', worker: WORKER, eventId: eventId, error: error });\nconst data = bolagioExpect(await bolagioRequest('POST', '/api/internal/outbox', body), '/api/internal/outbox');\nreturn [{ json: { eventId: eventId, settled: 'fail', recorded: data ? data.recorded === true : false, error: error, type: current.type } }];\n"
+      },
+      "id": "0189765f-ff28-4da1-97b7-4c1d1771e481",
+      "name": "Settle event (ack or fail)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        480
+      ]
+    }
+  ],
+  "connections": {
+    "Every 60 seconds": {
+      "main": [
+        [
+          {
+            "node": "Claim events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim events": {
+      "main": [
+        [
+          {
+            "node": "Loop over events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop over events": {
+      "main": [
+        [
+          {
+            "node": "Batch complete",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Classify event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify event": {
+      "main": [
+        [
+          {
+            "node": "Route by type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by type": {
+      "main": [
+        [
+          {
+            "node": "Guest Message · Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Guest Message · Pre-arrival",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Guest Message · Check-in",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Guest Message · Check-out",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Guest Message · Review request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cleaning Routing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Operational Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handled silently",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reject unsupported event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reject unsupported event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guest Message · Confirmation": {
+      "main": [
+        [
+          {
+            "node": "Settle event (ack or fail)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guest Message · Pre-arrival": {
+      "main": [
+        [
+          {
+            "node": "Settle event (ack or fail)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guest Message · Check-in": {
+      "main": [
+        [
+          {
+            "node": "Settle event (ack or fail)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guest Message · Check-out": {
+      "main": [
+        [
+          {
+            "node": "Settle event (ack or fail)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guest Message · Review request": {
+      "main": [
+        [
+          {
+            "node": "Settle event (ack or fail)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cleaning Routing": {
+      "main": [
+        [
+          {
+            "node": "Settle event (ack or fail)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Operational Alert": {
+      "main": [
+        [
+          {
+            "node": "Settle event (ack or fail)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handled silently": {
+      "main": [
+        [
+          {
+            "node": "Settle event (ack or fail)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reject unsupported event": {
+      "main": [
+        [
+          {
+            "node": "Settle event (ack or fail)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Settle event (ack or fail)": {
+      "main": [
+        [
+          {
+            "node": "Loop over events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Berlin",
+    "errorWorkflow": "A2cTUS2WXAeObiEM"
+  },
+  "tags": [
+    {
+      "name": "bolagio"
+    }
+  ],
+  "id": "FEBPCqRDXnNsGHQt",
+  "active": false,
+  "pinData": {}
+}

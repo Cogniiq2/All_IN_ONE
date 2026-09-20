@@ -12,6 +12,7 @@ procedure, the SQL to run before and after, and what each answer means.
 | 3 | `20260917110000_booking_core_hardening.sql` | functions, trigger, outbox, inbox, operations, jobs, views, grants |
 | 4 | `20260919120000_admin_operators.sql` | operators, audit log |
 | 5 | `20260920120000_booking_production_hardening.sql` | payment edges, retry guard (replaces one function signature), heartbeat, unit clock, turnovers, guest events, views |
+| 6 | `20260921120000_platform_completion.sql` | same-state transitions carry their patch; cancellation/refund state with invariants; message-delivery ledger; turnover status/events; unit timing columns, check-out and invoice events, injectable clock (**replaces `bolagio_sync_turnovers` and `bolagio_emit_guest_events` with a trailing `timestamptz` parameter**); integration health; gapless invoice sequences. Rollback: `supabase/ops/rollback_20260921.sql` |
 
 Not BoLaGio, do not run for the website: `20260612*` (archived admin app) and
 `20260815120000_lockdown_revoke_anon_access.sql` (one-shot, precondition-guarded,
@@ -49,22 +50,30 @@ for f in supabase/migrations/20260916120000_booking_foundation.sql \
          supabase/migrations/20260917100000_booking_core_states.sql \
          supabase/migrations/20260917110000_booking_core_hardening.sql \
          supabase/migrations/20260919120000_admin_operators.sql \
-         supabase/migrations/20260920120000_booking_production_hardening.sql; do
+         supabase/migrations/20260920120000_booking_production_hardening.sql \
+         supabase/migrations/20260921120000_platform_completion.sql; do
   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f" || { echo "STOP at $f"; break; }
 done
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/seed/bolagio_booking_units.sql
 ```
 
-Lock implications: #5 drops and recreates one function and one partial index.
-Both are sub-second on an empty or small table. Apply with direct booking off
-(it is) so no request is mid-`trackedCall`.
+In the shared project (§6) run the same six files with `-1` each, between the
+shared-project preflight and verify — the sequence is in §6.
+
+Lock implications: #5 drops and recreates one function and one partial index;
+#6 drops and recreates two functions (`bolagio_sync_turnovers`,
+`bolagio_emit_guest_events`) and adds columns to `bolagio_booking_intents` and
+`bolagio_units`. All sub-second on an empty or small table. Apply with direct
+booking off (it is) so no request is mid-`trackedCall`.
 
 **Failure half way:** each statement in these files is idempotent
 (`if not exists`, `create or replace`, `do $$ … exception when duplicate_object`).
 Re-run the same file; it continues. The one exception is #5's function drop +
 create: if the process dies between them the 5-arg function is gone and the
 6-arg one missing — re-running #5 fixes it, and the application fails closed
-in the meantime (every external mutation refused, nothing half-done).
+in the meantime (every external mutation refused, nothing half-done). #6 has
+the same shape for its two functions; run each file with `-1` and the case
+cannot arise.
 
 ## 4. Verify
 
@@ -82,48 +91,73 @@ Schedulers section shows three jobs.
 
 ## 5. Rollback / recovery
 
-* #5 only: `psql "$DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f supabase/ops/rollback_20260920.sql`.
+* #6 only: `psql "$DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f supabase/ops/rollback_20260921.sql`.
+  One transaction. It **refuses** (nothing changed) while a refund is not
+  settled, a cancellation is in progress, a message delivery is open or a
+  turnover is in progress — let them finish or resolve them by hand. It
+  restores the 2026-09-20 signatures of the two functions #6 replaced.
+* #5 (after #6 is rolled back): `psql "$DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f supabase/ops/rollback_20260920.sql`.
   Roll the **application** back first or at the same time; see
-  `docs/cloudflare-deployment.md` §4.
+  `docs/cloudflare-deployment.md` §4. On staging, `ops/staging/rollback.sh`
+  runs both in this order.
 * Anything earlier: restore the backup. The earlier migrations were never
-  designed to be reversed individually and the tables would carry data.
+  designed to be reversed individually and the tables would carry data. In
+  the shared project a restore also rolls back Cogniiq's data — both owners
+  must agree first (`docs/supabase-shared-project.md` §1).
 * Proven on a throwaway cluster by `scripts/db-ops-check.sh`
-  (preflight → apply → verify → rollback → re-apply twice → verify).
+  (preflight → apply all six → verify → rollback #6 → re-apply → verify →
+  rollback #6 and #5 → re-apply twice → verify).
 
-## 6. Stay in the shared project, or a dedicated one?
+## 6. The project: one, shared with Cogniiq
 
-**Recommendation: a dedicated BoLaGio Supabase project for production, now,
-before the first migration is applied there.** Reasons, in order of weight:
+**Decision (2026-09-21): BoLaGio stays in the ONE existing Supabase project,
+shared with the Cogniiq tables.** This replaces the earlier recommendation of
+a dedicated project. The reasoning, the trade-offs (blast radius: one
+service-role key reaches all data), the inventory's risk report, the optional
+`bolagio_app` role and the service-role possession rules are in
+**`docs/supabase-shared-project.md`**. What follows is the command sequence.
 
-1. **Blast radius.** The existing project holds unrelated finance and business
-   tables, some with RLS disabled and some with browser-role policies
-   (`docs/security/2026-08-15-admin-exposure.md`). One service-role key
-   reaches all of it. The booking system's key lives in Cloudflare and in a
-   Supabase Edge Function; a leak of either would expose invoices and emails
-   that have nothing to do with bookings. Separation makes the worst case
-   "guest booking data", not "the company".
-2. **GDPR.** Guest names, emails and phone numbers are a distinct processing
-   activity with its own purpose, retention and processor list (PayPal,
-   Beds24, Cloudflare). A dedicated project makes the data map honest and a
-   subject-access or deletion request answerable without touching finance
-   data.
-3. **Backups and recovery.** A restore for a booking incident must not roll
-   back accounting data, and the reverse.
-4. **Operational clarity.** `pg_cron` jobs, the Edge Function, database
-   settings (`app.booking_sync_secret`) and the operator allowlist all belong
-   to one product.
-5. **Cost.** One additional Pro project. Small against a single overbooking.
-6. **Migration effort.** Zero data to move: the booking tables do not exist in
-   production yet. Every object is prefixed `bolagio_` and every migration is
-   self-contained; the repository already assumes its own project through
-   `SUPABASE_URL`. Moving later, with live bookings, would be a real
-   migration. Moving now is a URL.
+Shared-project sequence (what `ops/staging/migrate.sh` runs; on production,
+by hand, in this order):
 
-The repository is arranged for this: nothing in the website references a
-non-`bolagio_` table, `archive/` and the two 2026-06 migrations are excluded
-from every script, and the environment matrix assigns one project per
-environment. The only decision needed is the project itself.
+```bash
+# 1. inventory before (read-only; keep the file)
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v format=unaligned \
+     -f supabase/ops/shared_project_inventory.sql > inventory-before.txt
 
-If the shared project is kept regardless: apply
-`20260815120000_lockdown_revoke_anon_access.sql` after its preflight first,
-and treat preflight §9's list as the audit backlog.
+# 2. shared-project preflight (read-only; exit ≠ 0 = collision or missing role — stop)
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/ops/shared_project_preflight.sql
+
+# 3. the six migrations, ONE transaction EACH (never -1 across files: #2 must commit before #3)
+for f in supabase/migrations/20260916120000_booking_foundation.sql \
+         supabase/migrations/20260917100000_booking_core_states.sql \
+         supabase/migrations/20260917110000_booking_core_hardening.sql \
+         supabase/migrations/20260919120000_admin_operators.sql \
+         supabase/migrations/20260920120000_booking_production_hardening.sql \
+         supabase/migrations/20260921120000_platform_completion.sql; do
+  psql "$DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f "$f" || { echo "STOP at $f"; break; }
+done
+
+# 4. seed (idempotent; every unit stays is_bookable = false)
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/seed/bolagio_booking_units.sql
+
+# 5. shared-project verify (raises on the first failure; supersedes verify.sql)
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/ops/shared_project_verify.sql
+
+# 6. inventory after, and the diff — every changed line must name a bolagio_* object (or btree_gist)
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v format=unaligned \
+     -f supabase/ops/shared_project_inventory.sql > inventory-after.txt
+diff -u inventory-before.txt inventory-after.txt
+```
+
+`shared_project_preflight.sql` contains every check of `preflight.sql` (§2)
+plus name-collision and blast-radius checks; `shared_project_verify.sql`
+contains every assertion of `verify.sql` (§4) plus the shared-project
+invariants. In the shared project use the `shared_project_*` pair; the plain
+pair remains for the local throwaway clusters (`scripts/db-ops-check.sh`).
+
+The CRITICAL/HIGH rows the inventory prints for **unrelated** tables are
+Cogniiq's; hand them to that table owner with
+`supabase/ops/proposed_unrelated_hardening.sql`. No BoLaGio runbook runs it.
+`20260815120000_lockdown_revoke_anon_access.sql` remains the older one-shot
+for the same clean-up and is likewise not part of the BoLaGio sequence.

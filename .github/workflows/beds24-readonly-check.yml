@@ -43,10 +43,18 @@
 # Delete this file once the mapping is confirmed.
 # ══════════════════════════════════════════════════════════════════════════
 
-name: "[TEMP] Beds24 read-only live check"
+name: "[TEMP] [LIVE] Beds24 read-only live check"
 
+# LIVE: talks to the real Beds24 account with a real token. Manual only —
+# never on push, pull_request or schedule. Read-only (GET) by construction.
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, tag or SHA whose integration code is validated (checked out read-only; the token never reaches its code)'
+        required: true
+        default: 'claude/bolagio-platform-completion'
+        type: string
 
 permissions:
   contents: read
@@ -56,12 +64,14 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # The branch whose integration code this validates. Pinned rather than
-  # taken as an input: the branch selector in the "Run workflow" dialog
-  # chooses which workflow FILE runs, which is a different thing, and a
-  # free-form ref plus a live credential is a combination worth not
-  # offering. The resolved ref and SHA are printed in the summary.
-  TARGET_REF: claude/opernstrasse-ii-iii-calendar-cta-dates
+  # The branch whose integration code this validates — the `ref` input,
+  # defaulting to the current integration branch. The branch selector in the
+  # "Run workflow" dialog chooses which workflow FILE runs, which is a
+  # different thing. A free-form ref plus a live credential is acceptable
+  # here only because the token is scoped to Part A, which runs the inline
+  # script below and never the checked-out code. The resolved ref and SHA
+  # are printed in the summary.
+  TARGET_REF: ${{ inputs.ref }}
   # The CONFIRMED mapping, established by enumerating the account on
   # 2026-09-17. Each run re-verifies that these pairs still exist rather than
   # assuming they do — an id that silently stops existing would otherwise

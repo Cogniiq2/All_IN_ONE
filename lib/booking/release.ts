@@ -56,7 +56,14 @@ export async function releaseHold(
   reason: string,
   logger: BookingLogger
 ): Promise<ReleaseResult> {
-  if (isPaidSide(intent.status)) {
+  /*
+   * The one exception to the paid-side refusal: an AUTHORISED cancellation.
+   * `cancellationAuthorizedBy` is set only by `bolagio_request_cancellation()`
+   * with a named operator, and the database trigger refuses `releasing` on a
+   * booking with payment evidence when it is null — so this check is the
+   * application agreeing with the database, not the guarantee itself.
+   */
+  if (isPaidSide(intent.status) && !intent.cancellationAuthorizedBy) {
     logger.warn('beds24.hold_release', {
       reference: intent.reference,
       status: intent.status,

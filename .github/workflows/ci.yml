@@ -1,0 +1,197 @@
+# ══════════════════════════════════════════════════════════════════════════
+# CI — every check that needs NO provider credential.
+#
+# Nothing here talks to Beds24, PayPal, Supabase, Cloudflare or n8n. The
+# database jobs start a throwaway PostgreSQL cluster on the runner; the
+# integration and e2e jobs start the local Supabase-shaped stack
+# (scripts/test-stack.sh: Postgres + PostgREST with a JWT minted from a
+# fixed, worthless secret) and the provider simulators. No job reads a
+# repository secret, by design, and
+# tests/shared-project-sql.test.ts asserts that no workflow file carries
+# anything that looks like a credential.
+#
+# Live provider checks are the two MANUAL workflows only:
+#   beds24-readonly-check.yml   (read-only, run by hand from the Actions tab)
+#   beds24-write-test.yml       (hold + release, run by hand from the Actions tab)
+# Neither runs on push or pull_request, and this file must never gain a job
+# that does what they do.
+#
+# PostgreSQL: ubuntu-latest ships server binaries under
+# /usr/lib/postgresql/*/bin; the scripts find them on their own (PGBIN
+# overrides). They only `su postgres` when running as root, which a GitHub
+# runner is not, so initdb runs as the runner user directly.
+# ══════════════════════════════════════════════════════════════════════════
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The local stack and the simulators only. Never a real key.
+  APP_ENV: local
+  BEDS24_MODE: mock
+  CI: 'true'
+
+jobs:
+  quality:
+    name: Typecheck, lint, unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+
+  database:
+    name: Real Postgres — constraints, triggers, races, ops SQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Locate the PostgreSQL binaries the runner ships
+        run: |
+          set -euo pipefail
+          PGBIN="$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1 || true)"
+          if [ -z "$PGBIN" ] || [ ! -x "$PGBIN/initdb" ]; then
+            echo "no PostgreSQL server binaries on this runner; installing"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq postgresql postgresql-contrib
+            PGBIN="$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1)"
+          fi
+          echo "PGBIN=$PGBIN" >> "$GITHUB_ENV"
+          "$PGBIN/postgres" --version
+      - name: db-test.sh (exclusion constraint, transition trigger, SKIP LOCKED, the race)
+        run: ./scripts/db-test.sh
+      - name: db-ops-check.sh (preflight → migrate → verify → rollback → re-apply)
+        run: ./scripts/db-ops-check.sh
+
+  integration:
+    name: Integration — real code against the local stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Locate the PostgreSQL binaries the runner ships
+        run: |
+          set -euo pipefail
+          PGBIN="$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1 || true)"
+          if [ -z "$PGBIN" ] || [ ! -x "$PGBIN/initdb" ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq postgresql postgresql-contrib
+            PGBIN="$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1)"
+          fi
+          echo "PGBIN=$PGBIN" >> "$GITHUB_ENV"
+      - name: Install the pinned PostgREST binary (checksum-verified)
+        run: ./scripts/install-postgrest.sh
+      - name: Start the local stack (Postgres + PostgREST, migrations, seed)
+        run: ./scripts/test-stack.sh up
+      - name: Integration suite
+        run: npm run test:integration
+      - name: Stop the stack
+        if: always()
+        run: ./scripts/test-stack.sh down
+
+  e2e:
+    name: End-to-end — Playwright against the local stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The e2e script (`npm run test:e2e`) and playwright.config are owned by
+    # the lead's change; this job is a required check and must not be
+    # softened to continue-on-error.
+    continue-on-error: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Locate the PostgreSQL binaries the runner ships
+        run: |
+          set -euo pipefail
+          PGBIN="$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1 || true)"
+          if [ -z "$PGBIN" ] || [ ! -x "$PGBIN/initdb" ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq postgresql postgresql-contrib
+            PGBIN="$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1)"
+          fi
+          echo "PGBIN=$PGBIN" >> "$GITHUB_ENV"
+      - name: Install the pinned PostgREST binary (checksum-verified)
+        run: ./scripts/install-postgrest.sh
+      - name: Start the local stack (Postgres + PostgREST, migrations, seed)
+        run: ./scripts/test-stack.sh up
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+      - name: Playwright suite
+        run: npm run test:e2e
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Upload test results (traces, screenshots)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Stop the stack
+        if: always()
+        run: ./scripts/test-stack.sh down
+
+  build:
+    name: Next build and OpenNext (Cloudflare) build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_ENV: local
+      BEDS24_MODE: mock
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: next build
+        run: npm run build
+      - name: opennextjs-cloudflare build (no deploy, no account)
+        run: npm run cf:build

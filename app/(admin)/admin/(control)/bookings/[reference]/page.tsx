@@ -15,6 +15,13 @@ import { AttentionRow } from '@/components/admin/attention/attention-list';
 import { LifecycleTimeline } from '@/components/admin/booking/lifecycle-timeline';
 import { TechnicalPanel } from '@/components/admin/booking/technical-panel';
 import { ReconcileButton } from '@/components/admin/booking/reconcile-button';
+import { CancelPanel, type CancelPanelMode } from '@/components/admin/booking/cancel-panel';
+import { classifyCancellation } from '@/lib/booking/cancellation';
+import type { BookingState, PaymentState } from '@/lib/booking/states';
+import { operatorPaidCancellationEnabled } from '@/lib/booking/config';
+import { loadDeliveriesForBooking, loadTurnoversForBooking } from '@/lib/admin/queries';
+import { adminMode } from '@/lib/admin/config';
+import { KIND_LABEL } from '@/components/admin/automations/delivery-list';
 
 export async function generateMetadata({ params }: { params: { reference: string } }): Promise<Metadata> {
   return { title: isBookingReference(params.reference) ? params.reference : 'Booking' };
@@ -43,7 +50,7 @@ export default async function BookingDetailPage({ params }: { params: { referenc
   const reference = decodeURIComponent(params.reference).toUpperCase();
   if (!isBookingReference(reference)) notFound();
 
-  const [result, operator] = await Promise.all([getBookingDetail(reference), currentOperator()]);
+  const [result, operator, deliveries] = await Promise.all([getBookingDetail(reference), currentOperator(), loadDeliveriesForBooking(reference)]);
   if (!result.ok) {
     return (
       <>
@@ -68,6 +75,19 @@ export default async function BookingDetailPage({ params }: { params: { referenc
   // than not offering one.
   const mayReconcile = can(operator?.role, 'reconcile_booking') && !operator?.preview;
   const guestName = b.guest ? `${b.guest.firstName} ${b.guest.lastName}`.trim() : null;
+  const turnovers = await loadTurnoversForBooking(b.id);
+
+  // Cancellation: which case this booking is, and whether THIS operator on
+  // THIS deployment may start it. The server action re-derives all of it.
+  const klass = classifyCancellation({ status: b.status as BookingState, paymentStatus: b.paymentStatus as PaymentState, paidAmountCents: b.payment.paidAmountCents, refundedAmountCents: b.payment.refundedAmountCents });
+  const cancelMode: CancelPanelMode | null = klass.kind === 'paid' ? 'paid' : klass.kind === 'payment_evidence' ? 'evidence' : klass.kind === 'held_unpaid' || klass.kind === 'nothing_held' ? 'unpaid' : null;
+  const paidPath = cancelMode === 'paid' || cancelMode === 'evidence';
+  let cancelDisabled: string | null = null;
+  if (operator?.preview) cancelDisabled = 'Preview data is read-only.';
+  else if (adminMode() !== 'supabase') cancelDisabled = 'Development fixtures have no booking core behind them.';
+  else if (!can(operator?.role, 'cancel_unpaid_booking')) cancelDisabled = 'Your role can read this booking; cancellation is done by operators.';
+  else if (paidPath && !can(operator?.role, 'cancel_paid_booking')) cancelDisabled = 'This booking carries payment evidence. Cancelling it needs an administrator.';
+  else if (paidPath && !operatorPaidCancellationEnabled()) cancelDisabled = 'This booking carries payment evidence. Cancelling paid bookings from Control is switched off on this deployment (OPERATOR_PAID_CANCELLATION_ENABLED).';
 
   return (
     <>
@@ -155,6 +175,62 @@ export default async function BookingDetailPage({ params }: { params: { referenc
                   {operator?.preview
                     ? 'Preview data is read-only. Reconciliation runs against the live booking core, which this deployment cannot reach.'
                     : 'Your role can read this booking; reconciliation is run by operators.'}
+                </p>
+              )}
+            </div>
+          </Section>
+
+          <Section title="Cancellation" meta={<span>intent, release and refund are three separate facts</span>} id="cancellation">
+            <div className="grid gap-4 pt-3">
+              {(b.cancellation.requestedAt || b.status === 'cancelled') && (
+                <KeyValue
+                  rows={[
+                    b.cancellation.requestedAt ? ['Requested', <span key="rq"><When value={b.cancellation.requestedAt} />{b.cancellation.requestedBy ? ` by ${b.cancellation.requestedBy}` : ''}</span>] : null,
+                    b.cancellation.reason ? ['Reason', b.cancellation.reason] : null,
+                    b.cancellation.authorizedBy ? ['Authorised by', b.cancellation.authorizedBy] : null,
+                    ['Completed', b.cancellation.completedAt ? <When key="cp" value={b.cancellation.completedAt} /> : <span key="ncp" className="bc-meta">Not yet — release pending</span>],
+                    ['Refund', <span key="rs" className="bc-badge ghost" data-tone={b.cancellation.refundState === 'completed' || b.cancellation.refundState === 'not_required' || b.cancellation.refundState === 'none' ? 'positive' : b.cancellation.refundState === 'unknown' || b.cancellation.refundState === 'failed' ? 'critical' : 'caution'}>{b.cancellation.refundState.replace(/_/g, ' ')}</span>],
+                    b.cancellation.refundRequiredCents !== null ? ['Refund decided', <span key="ra" className="bc-num">{formatMoney(b.cancellation.refundRequiredCents, b.payment.paidCurrency ?? b.currency)}</span>] : null,
+                    b.cancellation.refundId ? ['Refund id', <CopyButton key="rid" value={b.cancellation.refundId} className="bc-mono" />] : null,
+                    b.cancellation.refundLastError ? ['Refund error', b.cancellation.refundLastError] : null,
+                  ]}
+                />
+              )}
+              {cancelMode && b.status !== 'cancelled' && !b.cancellation.requestedAt ? (
+                <CancelPanel reference={b.reference} mode={cancelMode} paidAmountCents={b.payment.paidAmountCents} currency={b.payment.paidCurrency ?? b.currency} allowed={!cancelDisabled} disabledReason={cancelDisabled} />
+              ) : b.status === 'cancelled' ? (
+                <p className="bc-meta">Cancelled. {b.cancellation.refundState === 'required' || b.cancellation.refundState === 'pending' ? 'A refund is decided and not yet completed: it runs where refund execution is enabled, or is done by hand at the provider, and the provider\'s refund webhook settles it here.' : ''}</p>
+              ) : b.cancellation.requestedAt ? (
+                <p className="bc-meta">Cancellation requested; the release is being verified. Reconcile now re-runs the release check.</p>
+              ) : (
+                <p className="bc-meta">
+                  {klass.kind === 'in_progress' ? 'Mid-transition: cancellation waits for the lease to lapse or reconciliation.' : klass.kind === 'manual_review' ? 'Under manual review: resolve the review first.' : 'Nothing to cancel.'}
+                </p>
+              )}
+            </div>
+          </Section>
+
+          <Section title="Guest messages" meta={<span>one send per kind; the ledger is the proof</span>} id="messages">
+            <div className="pt-3">
+              {!deliveries.ok ? (
+                <ErrorNotice title="Deliveries could not be loaded." tone="caution">{deliveries.error}</ErrorNotice>
+              ) : deliveries.data.length === 0 ? (
+                <p className="bc-meta">No guest message has been prepared for this booking.</p>
+              ) : (
+                <div className="bc-rows" style={{ fontSize: 13 }}>
+                  {deliveries.data.map((d) => (
+                    <div key={d.id} className="flex flex-wrap items-center gap-2" style={{ padding: '7px 0' }}>
+                      <span className="bc-badge ghost" data-tone={d.status === 'sent' ? 'positive' : d.status === 'failed' ? 'critical' : 'muted'}>{d.status}</span>
+                      <span>{KIND_LABEL[d.kind] ?? d.kind}</span>
+                      <span className="bc-meta">to {d.destinationMasked ?? '—'} · {d.attempts} {d.attempts === 1 ? 'attempt' : 'attempts'}{d.provider ? ` · via ${d.provider}` : ''}{d.lastError ? ` · ${d.lastError}` : ''}</span>
+                      <span className="bc-meta ml-auto"><When value={d.sentAt ?? d.failedAt ?? d.updatedAt} relative /></span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {turnovers.ok && turnovers.data.length > 0 && (
+                <p className="bc-meta mt-3">
+                  Turnover after departure: {turnovers.data.map((t) => `${t.status.replace('_', ' ')}${t.assignedTo ? ` (${t.assignedTo})` : ''}`).join(', ')}. <a href="/admin/cleaning" className="link-quiet">Cleaning board</a>
                 </p>
               )}
             </div>

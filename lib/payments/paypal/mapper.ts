@@ -14,7 +14,7 @@ import 'server-only';
  */
 
 import type { PaymentState } from '@/lib/booking/states';
-import type { ProviderOrder, VerifiedPaymentEvent } from '@/lib/payments/provider';
+import type { ProviderOrder, ProviderRefundSummary, VerifiedPaymentEvent } from '@/lib/payments/provider';
 import type {
   PayPalAmount,
   PayPalCapture,
@@ -126,9 +126,31 @@ function amountOf(amount: PayPalAmount | undefined): { amountCents: number; curr
   return { amountCents: cents, currency: currency.toUpperCase() };
 }
 
+function refundsOf(order: PayPalOrder): ProviderRefundSummary[] {
+  const out: ProviderRefundSummary[] = [];
+  for (const unit of order.purchase_units ?? []) {
+    for (const refund of unit.payments?.refunds ?? []) {
+      if (!refund.id) continue;
+      const money = amountOf(refund.amount);
+      out.push({
+        refundId: String(refund.id),
+        state:
+          refund.status === 'COMPLETED' ? 'refunded'
+          : refund.status === 'PENDING' ? 'capture_pending'
+          : refund.status === 'FAILED' || refund.status === 'CANCELLED' ? 'denied'
+          : 'unknown',
+        amountCents: money?.amountCents,
+        currency: money?.currency,
+      });
+    }
+  }
+  return out;
+}
+
 export function mapOrder(order: PayPalOrder): ProviderOrder {
   const capture = firstCapture(order);
   const captured = amountOf(capture?.amount);
+  const refunds = refundsOf(order);
 
   return {
     orderId: String(order.id ?? ''),
@@ -139,6 +161,7 @@ export function mapOrder(order: PayPalOrder): ProviderOrder {
     captureId: capture?.id ? String(capture.id) : undefined,
     captured,
     reference: capture?.custom_id ?? referenceOf(order.purchase_units),
+    refunds: refunds.length > 0 ? refunds : undefined,
   };
 }
 

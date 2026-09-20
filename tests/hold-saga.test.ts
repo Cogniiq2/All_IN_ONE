@@ -163,6 +163,15 @@ function makeIntent(overrides: Partial<IntentRecord> = {}): IntentRecord {
     reconciliationState: 'ok',
     confirmedAt: null,
     paidAt: null,
+    refundedAmountCents: 0,
+    cancellationRequestedAt: null,
+    cancellationRequestedBy: null,
+    cancellationReason: null,
+    cancellationAuthorizedBy: null,
+    cancellationCompletedAt: null,
+    refundState: 'none',
+    refundRequiredCents: null,
+    refundId: null,
     ...overrides,
   };
 }

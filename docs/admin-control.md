@@ -19,8 +19,10 @@ to Beds24 or PayPal from a browser.
 | `/admin` | Today: attention first, arrivals/departures/in-house, residence status, key figures, upcoming, health. |
 | `/admin/calendar` | Multi-property reservation calendar (read-only). `?days=14\|31\|62`, `?start=YYYY-MM-DD`, `?unit=slug`. |
 | `/admin/bookings` | Booking index with URL-backed search, filters, sort and pagination. |
-| `/admin/bookings/[reference]` | One booking: facts, lifecycle, payment, channel state, reconciliation, technical detail. |
+| `/admin/bookings/[reference]` | One booking: facts, lifecycle, payment, channel state, reconciliation, cancellation, guest messages, technical detail. |
 | `/admin/operations` | The attention inbox, ordered by cost of ignoring. |
+| `/admin/cleaning` | The turnover board: overdue, today, upcoming, recently closed. Status and assignee changes. |
+| `/admin/automations` | Guest-message delivery ledger, automation outbox, last-heard-from signals per provider. Requeue controls. |
 | `/admin/properties` | Unit registry, mapping ids, cache freshness, today's state. Read-only. |
 | `/admin/payments` | Local payment records beside their bookings; recent webhook events. |
 | `/admin/system` | Measured health, queues, recent jobs/operations/outbox, operator audit. |
@@ -97,6 +99,10 @@ interface has no browser-side Supabase client.
 | Read every screen | ✓ | ✓ | ✓ |
 | Reconcile one booking | | ✓ | ✓ |
 | Run one reconciliation pass | | ✓ | ✓ |
+| Cancel a booking without payment evidence | | ✓ | ✓ |
+| Authorise cancellation of a booking with payment evidence (also needs `OPERATOR_PAID_CANCELLATION_ENABLED=true`) | | | ✓ |
+| Change a turnover's status or assignee | | ✓ | ✓ |
+| Requeue a failed delivery or dead-lettered event | | ✓ | ✓ |
 | Manage operators (reserved; no UI yet) | | | ✓ |
 
 Defined in `lib/admin/permissions.ts`; checked server-side in every action.
@@ -119,8 +125,26 @@ engine's guarantees: read the provider before writing, never retry an
 unknown outcome blind, never release or refund a booking with payment
 evidence. In development-fixture mode they refuse and say so.
 
-There is no action for: setting a status, cancelling, releasing, refunding,
-editing a mapping or bookability, moving dates, or deleting a guest.
+### 4a. The completion-phase writes
+
+Added in the platform-completion phase, each following the same seven steps:
+
+| Action | Command it calls | What it can never do |
+|---|---|---|
+| **Cancel booking** (booking page) | `cancelBooking` → `bolagio_request_cancellation`, the release saga, `bolagio_complete_cancellation` | Move a booking with payment evidence without `cancellation_authorized_by` (the trigger refuses). Send money: the refund decision is recorded; execution is a separate command gated by `PAYMENT_REFUND_EXECUTION_ENABLED`, which no screen triggers. |
+| **Start / Mark done / Reopen / Assign** (Cleaning) | `bolagio_set_turnover_status`, `bolagio_assign_turnover` | Void a turnover (only the sync does, when its departure disappears). Create one. |
+| **Requeue delivery** (Automations) | `bolagio_requeue_message_delivery` | Requeue a sent message. Send anything itself. |
+| **Requeue event** (Automations) | `bolagio_requeue_outbox_event` | Move anything but an `exhausted` event. |
+
+A cancellation needs the reference typed back. A booking with payment
+evidence additionally needs the `admin` role, the deployment switch, and an
+explicit refund decision (none / full / partial, in cents, never above the
+captured amount). The action re-derives the case server-side from the
+booking row; the client's classification is only used to choose the form.
+
+There is still no action for: setting a status directly, releasing a hold
+outside the saga, executing a refund, editing a mapping or bookability,
+moving dates, or deleting a guest.
 
 ---
 

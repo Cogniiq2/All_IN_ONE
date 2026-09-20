@@ -86,6 +86,8 @@ function intent(over: Partial<IntentRecord> = {}): IntentRecord {
     paidAmountCents: null, paidCurrency: null, lockExpiresAt: null,
     beds24PropertyId: '354659', beds24RoomId: '731147', beds24Status: 'new', beds24VerifiedAt: null,
     quoteHash: 'hash', lastFailureCode: null, reconciliationState: 'ok', confirmedAt: null, paidAt: null,
+    refundedAmountCents: 0, cancellationRequestedAt: null, cancellationRequestedBy: null, cancellationReason: null,
+    cancellationAuthorizedBy: null, cancellationCompletedAt: null, refundState: 'none', refundRequiredCents: null, refundId: null,
     ...over,
   };
 }

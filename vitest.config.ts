@@ -14,6 +14,9 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],
+    // The integration suite needs the local stack and its own config
+    // (vitest.integration.config.ts); it must never ride along with `npm test`.
+    exclude: ['tests/integration/**', 'node_modules/**'],
   },
   resolve: {
     alias: {

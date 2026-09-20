@@ -12,7 +12,11 @@ import 'server-only';
 import { supabaseAdmin } from '@/lib/supabase/server';
 import type {
   AuditRow,
+  IntegrationHealthRow,
   IntentEventRow,
+  MessageDeliveryRow,
+  TurnoverEventRow,
+  TurnoverRow,
   IntentQuery,
   IntentRow,
   InventoryClosedRow,
@@ -35,6 +39,8 @@ const INTENT_COLUMNS =
   ' beds24_booking_id, beds24_property_id, beds24_room_id, beds24_status, beds24_verified_at,' +
   ' payment_provider, payment_status, payment_order_id, payment_capture_id,' +
   ' paid_amount_cents, paid_currency, refunded_amount_cents, hold_expires_at, lock_expires_at,' +
+  ' cancellation_requested_at, cancellation_requested_by, cancellation_reason, cancellation_authorized_by, cancellation_completed_at,' +
+  ' refund_state, refund_required_cents, refund_id, refund_last_error,' +
   ' last_failure_code, last_failure_reason, last_failure_at, reconciliation_state,' +
   ' confirmed_at, paid_at, released_at, created_at, updated_at, bolagio_units(slug)';
 
@@ -92,6 +98,7 @@ export function supabaseRowSource(): RowSource {
       if (query.paymentActivity) {
         q = q.or('payment_status.neq.not_created,payment_order_id.not.is.null');
       }
+      if (query.refundStates && query.refundStates.length > 0) q = q.in('refund_state', [...query.refundStates]);
       const search = query.search ? safeSearch(query.search) : '';
       if (search) {
         const like = `%${search}%`;
@@ -253,6 +260,62 @@ export function supabaseRowSource(): RowSource {
         .select('job, started_at, finished_at, ok, report, error, worker');
       if (error) throw error;
       return (data ?? []) as unknown as SchedulerStatusRow[];
+    },
+
+    async turnovers(query) {
+      let q = supabaseAdmin()
+        .from('bolagio_turnovers')
+        .select(
+          'id, unit_id, intent_id, departure, window_start, window_end, next_arrival, same_day, status, assigned_to, note,' +
+            ' started_at, done_at, done_by, created_at, updated_at, bolagio_booking_intents(reference), bolagio_units(slug)'
+        )
+        .order('departure', { ascending: true })
+        .limit(Math.min(400, query.limit ?? 200));
+      if (query.statuses && query.statuses.length > 0) q = q.in('status', query.statuses as string[]);
+      if (query.departureFrom) q = q.gte('departure', query.departureFrom);
+      if (query.departureTo) q = q.lt('departure', query.departureTo);
+      if (query.intentId) q = q.eq('intent_id', query.intentId);
+      const { data, error } = await q;
+      if (error) throw error;
+      return ((data ?? []) as unknown as Array<Omit<TurnoverRow, 'reference' | 'unit_slug'> & { bolagio_booking_intents?: { reference: string } | { reference: string }[] | null; bolagio_units?: { slug: string } | { slug: string }[] | null }>).map((row) => {
+        const { bolagio_booking_intents, bolagio_units, ...rest } = row;
+        const intent = Array.isArray(bolagio_booking_intents) ? bolagio_booking_intents[0] : bolagio_booking_intents;
+        const unit = Array.isArray(bolagio_units) ? bolagio_units[0] : bolagio_units;
+        return { ...rest, reference: intent?.reference ?? null, unit_slug: unit?.slug ?? '' };
+      });
+    },
+
+    async turnoverEvents(turnoverId) {
+      const { data, error } = await supabaseAdmin()
+        .from('bolagio_turnover_events')
+        .select('id, turnover_id, from_status, to_status, actor, note, created_at')
+        .eq('turnover_id', turnoverId)
+        .order('created_at', { ascending: true })
+        .limit(100);
+      if (error) throw error;
+      return (data ?? []) as unknown as TurnoverEventRow[];
+    },
+
+    async messageDeliveries(query) {
+      let q = supabaseAdmin()
+        .from('bolagio_message_deliveries')
+        .select(
+          'id, reference, kind, sequence, channel, locale, template_id, template_version, destination_masked, status, retryable,' +
+            ' attempts, max_attempts, next_attempt_at, provider, provider_message_id, last_error, sent_at, failed_at, created_at, updated_at'
+        )
+        .order('created_at', { ascending: false })
+        .limit(Math.min(400, query.limit ?? 100));
+      if (query.reference) q = q.eq('reference', query.reference);
+      if (query.statuses && query.statuses.length > 0) q = q.in('status', query.statuses as string[]);
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data ?? []) as unknown as MessageDeliveryRow[];
+    },
+
+    async integrationHealth() {
+      const { data, error } = await supabaseAdmin().from('bolagio_integration_health').select('provider, signal, observed_at, detail');
+      if (error) throw error;
+      return (data ?? []) as unknown as IntegrationHealthRow[];
     },
 
     async audit(limit) {

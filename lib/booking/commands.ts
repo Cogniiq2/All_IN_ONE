@@ -75,7 +75,8 @@ export interface TransitionPatch {
   paidAmountCents?: number;
   paidCurrency?: string;
   providerSnapshot?: unknown;
-  lastFailureCode?: OpsCode;
+  /** `null` clears the column; `undefined` leaves it alone. */
+  lastFailureCode?: OpsCode | null;
   lastFailureReason?: string;
   reconciliationState?: 'ok' | 'pending' | 'failed' | 'manual';
 }
@@ -516,6 +517,7 @@ export interface TurnoverSyncReport {
   created: number;
   updated: number;
   voided: number;
+  reopened: number;
 }
 
 /** Derive turnovers from confirmed stays. Idempotent; emits `cleaning.required` once per new turnover. */
@@ -523,13 +525,15 @@ export async function syncTurnovers(horizonDays = 60): Promise<TurnoverSyncRepor
   const { data, error } = await supabaseAdmin().rpc('bolagio_sync_turnovers', { p_horizon_days: horizonDays });
   if (error) throw error;
   const r = (data ?? {}) as Partial<TurnoverSyncReport>;
-  return { created: r.created ?? 0, updated: r.updated ?? 0, voided: r.voided ?? 0 };
+  return { created: r.created ?? 0, updated: r.updated ?? 0, voided: r.voided ?? 0, reopened: r.reopened ?? 0 };
 }
 
 export interface GuestEventReport {
   prearrival: number;
   checkin: number;
+  checkout: number;
   review: number;
+  invoice: number;
 }
 
 /**
@@ -551,5 +555,261 @@ export async function emitGuestEvents(timing: {
   });
   if (error) throw error;
   const r = (data ?? {}) as Partial<GuestEventReport>;
-  return { prearrival: r.prearrival ?? 0, checkin: r.checkin ?? 0, review: r.review ?? 0 };
+  return { prearrival: r.prearrival ?? 0, checkin: r.checkin ?? 0, checkout: r.checkout ?? 0, review: r.review ?? 0, invoice: r.invoice ?? 0 };
+}
+
+
+/* ── Cancellation ──────────────────────────────────────────────────────── */
+
+export type CancellationRequestOutcome =
+  | { outcome: 'cancelled'; status: 'cancelled'; refundState: string }
+  | { outcome: 'already_cancelled'; status: string; refundState: string }
+  | { outcome: 'release_required'; status: BookingState; refundState: string; authorized: boolean }
+  | { outcome: 'in_progress'; status: string }
+  | { outcome: 'refused'; code: 'NOT_FOUND' | 'AUTHORIZATION_REQUIRED' | 'REFUND_DECISION_REQUIRED' | 'INVALID_REFUND_AMOUNT' | 'MANUAL_REVIEW'; status?: string; paidAmountCents?: number | null };
+
+/**
+ * Record a cancellation decision. The database classifies the case and
+ * refuses what it must refuse (no authorisation for a booking with payment
+ * evidence, no refund decision for a paid one). It never calls a provider.
+ */
+export async function requestCancellation(
+  input: { intentId: string; actor: string; reason?: string; authorized?: boolean; refundCents?: number | null },
+  logger: BookingLogger
+): Promise<CancellationRequestOutcome> {
+  const { data, error } = await supabaseAdmin().rpc('bolagio_request_cancellation', {
+    p_intent_id: input.intentId,
+    p_actor: input.actor,
+    p_reason: input.reason ?? null,
+    p_authorized: input.authorized === true,
+    p_refund_cents: input.refundCents ?? null,
+    p_correlation_id: logger.correlationId,
+  });
+  if (error) throw error;
+  const r = data as Record<string, unknown>;
+  const result = {
+    outcome: r.outcome,
+    status: r.status,
+    refundState: r.refund_state,
+    authorized: r.authorized,
+    code: r.code,
+    paidAmountCents: r.paid_amount_cents,
+  } as unknown as CancellationRequestOutcome;
+  logger.info('booking.cancel', { outcome: String(r.outcome), errorCode: typeof r.code === 'string' ? r.code : undefined });
+  return result;
+}
+
+export async function completeCancellation(
+  intentId: string,
+  logger: BookingLogger
+): Promise<'cancelled' | 'already_cancelled' | 'not_yet' | 'refused'> {
+  const { data, error } = await supabaseAdmin().rpc('bolagio_complete_cancellation', {
+    p_intent_id: intentId,
+    p_correlation_id: logger.correlationId,
+  });
+  if (error) throw error;
+  const r = data as { outcome: string };
+  return (r.outcome as 'cancelled' | 'already_cancelled' | 'not_yet' | 'refused') ?? 'refused';
+}
+
+/* ── Refunds ───────────────────────────────────────────────────────────── */
+
+export type BeginRefundOutcome =
+  | { ok: true; captureId: string; amountCents: number; currency: string }
+  | { ok: false; code: 'NOT_FOUND' | 'REFUND_ALREADY_COMPLETED' | 'REFUND_IN_PROGRESS' | 'REFUND_NOT_REQUIRED' | 'NO_CAPTURE' | 'AUTHORIZATION_REQUIRED'; refundState?: string };
+
+export async function beginRefund(intentId: string, actor: string): Promise<BeginRefundOutcome> {
+  const { data, error } = await supabaseAdmin().rpc('bolagio_begin_refund', { p_intent_id: intentId, p_actor: actor });
+  if (error) throw error;
+  const r = data as Record<string, unknown>;
+  if (r.ok === true) {
+    return { ok: true, captureId: String(r.capture_id), amountCents: Number(r.amount_cents), currency: String(r.currency) };
+  }
+  return { ok: false, code: r.code as Exclude<BeginRefundOutcome, { ok: true }>['code'], refundState: r.refund_state as string | undefined };
+}
+
+export type RefundOutcomeInput =
+  | { outcome: 'completed'; refundId: string; amountCents: number; source: 'saga' | 'webhook' | 'readback' }
+  | { outcome: 'unknown'; error: string }
+  | { outcome: 'failed'; error: string };
+
+export async function recordRefundOutcome(
+  intentId: string,
+  input: RefundOutcomeInput,
+  logger: BookingLogger
+): Promise<{ ok: boolean; code?: string; duplicate?: boolean; refundState?: string; paymentStatus?: string }> {
+  const { data, error } = await supabaseAdmin().rpc('bolagio_record_refund_outcome', {
+    p_intent_id: intentId,
+    p_outcome: input.outcome,
+    p_refund_id: input.outcome === 'completed' ? input.refundId : null,
+    p_amount_cents: input.outcome === 'completed' ? input.amountCents : null,
+    p_error: input.outcome === 'completed' ? null : input.error.slice(0, 400),
+    p_source: input.outcome === 'completed' ? input.source : 'saga',
+    p_correlation_id: logger.correlationId,
+  });
+  if (error) throw error;
+  const r = data as Record<string, unknown>;
+  logger.info('payment.refund', {
+    outcome: input.outcome,
+    errorCode: typeof r.code === 'string' ? r.code : undefined,
+    resolution: typeof r.refund_state === 'string' ? r.refund_state : undefined,
+  });
+  return {
+    ok: r.ok === true,
+    code: typeof r.code === 'string' ? r.code : undefined,
+    duplicate: r.duplicate === true,
+    refundState: typeof r.refund_state === 'string' ? r.refund_state : undefined,
+    paymentStatus: typeof r.payment_status === 'string' ? r.payment_status : undefined,
+  };
+}
+
+export async function resetRefund(intentId: string, actor: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin().rpc('bolagio_reset_refund', { p_intent_id: intentId, p_actor: actor });
+  if (error) throw error;
+  return data === true;
+}
+
+/* ── Message deliveries ────────────────────────────────────────────────── */
+
+export type DeliveryClaim =
+  | { outcome: 'claimed'; id: string; attempt: number; sequence: number }
+  | { outcome: 'already_sent'; id: string; status: string; provider: string | null; providerMessageId: string | null; sentAt: string | null }
+  | { outcome: 'in_progress'; id: string }
+  | { outcome: 'not_retryable'; id: string; lastError: string | null }
+  | { outcome: 'backoff'; id: string; nextAttemptAt: string }
+  | { outcome: 'unknown_reference' };
+
+export async function beginMessageDelivery(input: {
+  reference: string;
+  kind: string;
+  channel: 'email' | 'sms' | 'none';
+  locale: string;
+  templateId: string;
+  templateVersion: string;
+  destinationMasked: string | null;
+  destinationHash: string | null;
+  outboxEventId?: string | null;
+  sequence?: number;
+}): Promise<DeliveryClaim> {
+  const { data, error } = await supabaseAdmin().rpc('bolagio_begin_message_delivery', {
+    p_reference: input.reference,
+    p_kind: input.kind,
+    p_channel: input.channel,
+    p_locale: input.locale,
+    p_template_id: input.templateId,
+    p_template_version: input.templateVersion,
+    p_destination_masked: input.destinationMasked,
+    p_destination_hash: input.destinationHash,
+    p_outbox_event_id: input.outboxEventId ?? null,
+    p_sequence: input.sequence ?? 1,
+    p_lease_seconds: 300,
+  });
+  if (error) throw error;
+  const r = data as Record<string, unknown>;
+  switch (r.outcome) {
+    case 'claimed':
+      return { outcome: 'claimed', id: String(r.id), attempt: Number(r.attempt), sequence: Number(r.sequence) };
+    case 'already_sent':
+      return { outcome: 'already_sent', id: String(r.id), status: String(r.status), provider: (r.provider as string | null) ?? null, providerMessageId: (r.provider_message_id as string | null) ?? null, sentAt: (r.sent_at as string | null) ?? null };
+    case 'in_progress':
+      return { outcome: 'in_progress', id: String(r.id) };
+    case 'not_retryable':
+      return { outcome: 'not_retryable', id: String(r.id), lastError: (r.last_error as string | null) ?? null };
+    case 'backoff':
+      return { outcome: 'backoff', id: String(r.id), nextAttemptAt: String(r.next_attempt_at) };
+    default:
+      return { outcome: 'unknown_reference' };
+  }
+}
+
+export async function completeMessageDelivery(input: {
+  id: string;
+  outcome: 'sent' | 'failed' | 'skipped' | 'suppressed';
+  provider?: string;
+  providerMessageId?: string;
+  error?: string;
+  retryable?: boolean;
+}): Promise<boolean> {
+  const { data, error } = await supabaseAdmin().rpc('bolagio_complete_message_delivery', {
+    p_id: input.id,
+    p_outcome: input.outcome,
+    p_provider: input.provider ?? null,
+    p_provider_message_id: input.providerMessageId ?? null,
+    p_error: input.error?.slice(0, 400) ?? null,
+    p_retryable: input.retryable !== false,
+  });
+  if (error) throw error;
+  return data === true;
+}
+
+export async function requeueMessageDelivery(id: string, actor: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin().rpc('bolagio_requeue_message_delivery', { p_id: id, p_actor: actor });
+  if (error) throw error;
+  return data === true;
+}
+
+export async function requeueOutboxEvent(id: string, actor: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin().rpc('bolagio_requeue_outbox_event', { p_id: id, p_actor: actor });
+  if (error) throw error;
+  return data === true;
+}
+
+/* ── Cleaning ──────────────────────────────────────────────────────────── */
+
+export type TurnoverStatus = 'required' | 'in_progress' | 'done' | 'void';
+
+export async function setTurnoverStatus(
+  turnoverId: string,
+  to: Exclude<TurnoverStatus, 'void'>,
+  actor: string,
+  note?: string
+): Promise<{ ok: boolean; code?: string; from?: string; noop?: boolean }> {
+  const { data, error } = await supabaseAdmin().rpc('bolagio_set_turnover_status', {
+    p_turnover_id: turnoverId,
+    p_to: to,
+    p_actor: actor,
+    p_note: note ?? null,
+  });
+  if (error) throw error;
+  const r = data as Record<string, unknown>;
+  return { ok: r.ok === true, code: typeof r.code === 'string' ? r.code : undefined, from: typeof r.from === 'string' ? r.from : undefined, noop: r.noop === true };
+}
+
+export async function assignTurnover(turnoverId: string, assignee: string | null, actor: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin().rpc('bolagio_assign_turnover', {
+    p_turnover_id: turnoverId,
+    p_assignee: assignee ?? '',
+    p_actor: actor,
+  });
+  if (error) throw error;
+  return data === true;
+}
+
+/* ── Integration health ────────────────────────────────────────────────── */
+
+export type IntegrationProvider = 'beds24' | 'paypal' | 'n8n';
+
+/**
+ * Leave a timestamp: "we last heard this from that provider". Never throws
+ * and never awaited on a guest-facing path — an observation that fails to
+ * write must not fail the operation it observes.
+ */
+export function observeIntegration(provider: IntegrationProvider, signal: string, detail?: string): void {
+  let client: ReturnType<typeof supabaseAdmin>;
+  try {
+    client = supabaseAdmin();
+  } catch {
+    // No database configured: nothing to observe into, and nothing to fail.
+    return;
+  }
+  void Promise.resolve(
+    client.rpc('bolagio_observe_integration', { p_provider: provider, p_signal: signal, p_detail: detail ?? null })
+  )
+    .then(({ error }) => {
+      if (error) {
+        // eslint-disable-next-line no-console -- nothing else can record that the observation failed.
+        console.error(JSON.stringify({ scope: 'booking', event: 'integration.observe', level: 'warn', cause: error.code }));
+      }
+    })
+    .catch(() => undefined);
 }

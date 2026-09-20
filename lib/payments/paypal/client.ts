@@ -20,10 +20,10 @@ import 'server-only';
  * appeared in them. Errors carry a status code and nothing else.
  */
 
-import { paypalConfig } from '@/lib/booking/config';
+import { paypalConfig, providerTimeoutMs } from '@/lib/booking/config';
+import { observeIntegration } from '@/lib/booking/commands';
 import { PaymentProviderError } from '@/lib/payments/provider';
 
-const TIMEOUT_MS = 12_000;
 
 interface CachedToken {
   token: string;
@@ -68,7 +68,7 @@ async function accessToken(): Promise<string> {
 
   let response: Response;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), providerTimeoutMs('paypal'));
   try {
     response = await fetch(`${baseUrl}/v1/oauth2/token`, {
       method: 'POST',
@@ -141,6 +141,17 @@ export interface PayPalResponse<T> {
  * those two categories; the whole recovery model rests on telling them apart.
  */
 export async function paypalRequest<T>(init: PayPalRequestInit): Promise<PayPalResponse<T>> {
+  try {
+    const result = await paypalRequestInner<T>(init);
+    observeIntegration('paypal', 'last_success', `${init.method ?? 'GET'} ${init.path.replace(/[A-Z0-9]{10,}/g, '…')}`);
+    return result;
+  } catch (cause) {
+    observeIntegration('paypal', 'last_failure', `${init.method ?? 'GET'} ${init.path.replace(/[A-Z0-9]{10,}/g, '…')}: ${cause instanceof Error ? cause.message.slice(0, 100) : 'error'}`);
+    throw cause;
+  }
+}
+
+async function paypalRequestInner<T>(init: PayPalRequestInit): Promise<PayPalResponse<T>> {
   const { baseUrl } = paypalConfig();
   const token = await accessToken();
 
@@ -153,7 +164,7 @@ export async function paypalRequest<T>(init: PayPalRequestInit): Promise<PayPalR
   if (init.requestId) headers['PayPal-Request-Id'] = init.requestId;
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), providerTimeoutMs('paypal'));
 
   let response: Response;
   try {

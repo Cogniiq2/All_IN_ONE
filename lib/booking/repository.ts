@@ -289,7 +289,21 @@ export interface IntentRecord {
   reconciliationState: 'ok' | 'pending' | 'failed' | 'manual';
   confirmedAt: string | null;
   paidAt: string | null;
+
+  /* ── Cancellation and refund: orthogonal to the status ─────────────── */
+  refundedAmountCents: number;
+  cancellationRequestedAt: string | null;
+  cancellationRequestedBy: string | null;
+  cancellationReason: string | null;
+  /** Non-null means a person took responsibility for ending a booking with payment evidence. */
+  cancellationAuthorizedBy: string | null;
+  cancellationCompletedAt: string | null;
+  refundState: RefundState;
+  refundRequiredCents: number | null;
+  refundId: string | null;
 }
+
+export type RefundState = 'none' | 'not_required' | 'required' | 'pending' | 'completed' | 'unknown' | 'failed';
 
 const INTENT_COLUMNS =
   'id, reference, unit_id, check_in, check_out, adults, children, currency,' +
@@ -299,6 +313,8 @@ const INTENT_COLUMNS =
   ' payment_status, payment_order_id, payment_capture_id, paid_amount_cents, paid_currency,' +
   ' lock_expires_at, beds24_property_id, beds24_room_id, beds24_status, beds24_verified_at,' +
   ' quote_hash, last_failure_code, reconciliation_state, confirmed_at, paid_at,' +
+  ' refunded_amount_cents, cancellation_requested_at, cancellation_requested_by, cancellation_reason,' +
+  ' cancellation_authorized_by, cancellation_completed_at, refund_state, refund_required_cents, refund_id,' +
   ' bolagio_units(slug)';
 
 /**
@@ -482,6 +498,15 @@ interface IntentRow {
   reconciliation_state: 'ok' | 'pending' | 'failed' | 'manual';
   confirmed_at: string | null;
   paid_at: string | null;
+  refunded_amount_cents?: number | null;
+  cancellation_requested_at?: string | null;
+  cancellation_requested_by?: string | null;
+  cancellation_reason?: string | null;
+  cancellation_authorized_by?: string | null;
+  cancellation_completed_at?: string | null;
+  refund_state?: RefundState | null;
+  refund_required_cents?: number | null;
+  refund_id?: string | null;
   bolagio_units?: { slug: string } | { slug: string }[] | null;
 }
 
@@ -521,6 +546,15 @@ function toIntent(row: IntentRow): IntentRecord {
     reconciliationState: row.reconciliation_state ?? 'ok',
     confirmedAt: row.confirmed_at,
     paidAt: row.paid_at,
+    refundedAmountCents: row.refunded_amount_cents ?? 0,
+    cancellationRequestedAt: row.cancellation_requested_at ?? null,
+    cancellationRequestedBy: row.cancellation_requested_by ?? null,
+    cancellationReason: row.cancellation_reason ?? null,
+    cancellationAuthorizedBy: row.cancellation_authorized_by ?? null,
+    cancellationCompletedAt: row.cancellation_completed_at ?? null,
+    refundState: row.refund_state ?? 'none',
+    refundRequiredCents: row.refund_required_cents ?? null,
+    refundId: row.refund_id ?? null,
     guest: row.guest_email
       ? {
           firstName: row.guest_first_name ?? '',
@@ -580,4 +614,24 @@ export async function markIntegrationEvent(
     .from('bolagio_integration_events')
     .update({ status, processed_at: new Date().toISOString(), error: error ?? null })
     .eq('id', id);
+}
+
+
+/* ── Cancellations awaiting completion ─────────────────────────────────── */
+
+/**
+ * Bookings whose release was verified after a cancellation request and that
+ * have not been moved to `cancelled` yet — a process died between the two.
+ * Reconciliation finishes them.
+ */
+export async function findReleasedPendingCancellation(limit = 50): Promise<IntentRecord[]> {
+  const { data, error } = await supabaseAdmin()
+    .from('bolagio_booking_intents')
+    .select(INTENT_COLUMNS)
+    .eq('status', 'released')
+    .not('cancellation_requested_at', 'is', null)
+    .is('cancellation_completed_at', null)
+    .limit(limit);
+  if (error) throw error;
+  return ((data ?? []) as unknown as IntentRow[]).map(toIntent);
 }

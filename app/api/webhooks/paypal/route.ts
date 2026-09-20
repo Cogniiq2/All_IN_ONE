@@ -28,7 +28,7 @@
 import type { NextRequest } from 'next/server';
 import { createLogger } from '@/lib/booking/logger';
 import { requireBackend } from '@/lib/booking/http';
-import { recordPaymentEvent } from '@/lib/booking/commands';
+import { observeIntegration, recordPaymentEvent } from '@/lib/booking/commands';
 import { paymentAdapter } from '@/lib/payments';
 import { sanitize } from '@/lib/payments/paypal/mapper';
 import type { PayPalWebhookEvent } from '@/lib/payments/paypal/types';
@@ -106,6 +106,7 @@ export async function POST(request: NextRequest) {
       currency: verified.currency,
     });
 
+    observeIntegration('paypal', 'last_verified_webhook', verified.eventType);
     logger.info('webhook.paypal', {
       eventId: verified.providerEventId,
       eventType: verified.eventType,

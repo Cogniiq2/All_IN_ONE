@@ -1,43 +1,62 @@
 # Production readiness — go / no-go
 
-State on 2026-09-20. Direct booking is OFF (`DIRECT_BOOKING_ENABLED` unset,
-`is_bookable=false` everywhere). This document is the single list of what
-stands between the repository and a real booking.
+State on 2026-09-21, end of the platform-completion phase. Direct booking is
+OFF (`DIRECT_BOOKING_ENABLED` unset, `is_bookable=false` everywhere outside
+test data). This document is the single list of what stands between the
+repository and a real booking. The exhaustive report is
+`docs/platform-completion-report.md`.
 
 | Area | Verdict | What decides it |
 |---|---|---|
-| Admin (BoLaGio Control) in production | **READY AFTER CONFIG** | dedicated Supabase project, migrations applied, `ADMIN_SESSION_SECRET`, `SUPABASE_ANON_KEY`, one operator row |
-| Database migration | **READY** (procedure) / not applied | `docs/supabase-migration-runbook.md`; project decision (§6 there) |
-| PayPal | **REQUIRES SANDBOX VALIDATION** | `docs/paypal-sandbox-e2e.md`, 17 cases |
-| Beds24 | **REQUIRES CONTROLLED LIVE VALIDATION** | `docs/beds24-contract.md` §4 — needs your approval |
-| n8n | **READY AFTER CONFIG** (contract) / workflows not built | `docs/n8n-booking-contract.md` §6 |
+| Booking core, cancellation saga, refund ledger | **READY** (code, real-database and simulator proof) | `docs/platform-completion-delta.md`; every automatic path proven; refund execution gated off |
+| Admin (BoLaGio Control) incl. cleaning, automations, cancellation | **READY AFTER CONFIG** | migrations applied to the shared project, `ADMIN_SESSION_SECRET`, `SUPABASE_ANON_KEY`, operator rows; `OPERATOR_PAID_CANCELLATION_ENABLED` decided |
+| Database migration (six files) on the **shared** Supabase project | **READY** (procedure, rehearsed on a throwaway cluster) / not applied | `docs/supabase-shared-project.md` §2, `docs/supabase-migration-runbook.md` |
+| Guest messaging | **READY AFTER CONFIG** | `MESSAGING_CONTACT_EMAIL/PHONE`, the SMTP credential in n8n, a real send on staging (`n8n/test-mode.md`) |
+| n8n | **READY AFTER IMPORT** (six workflows generated and validated; never imported into a real instance) | `n8n/README.md` §4–5, `n8n/runbooks/staging-activation.md` |
+| PayPal | **REQUIRES SANDBOX VALIDATION** (17 cases proven against a simulator, not against PayPal) | `docs/paypal-sandbox-e2e.md`; refund contract additionally unvalidated (`REFUND_EXECUTION_UNVALIDATED`) |
+| Beds24 | **REQUIRES CONTROLLED LIVE VALIDATION** (contract proven against a simulator) | `docs/beds24-contract.md` §4 — needs your approval; cancellation of a confirmed reservation is included |
+| CI | **READY** (no credential in CI; live checks stay manual) | `.github/workflows/ci.yml` |
+| Invoicing | **BLOCKED** on tax decisions | `docs/invoicing.md` §5 |
+| Data retention | **DOCUMENTED**, nothing automated | `docs/data-retention.md` |
 | Direct booking | **BLOCKED** | every row above, plus legal (§3) |
 | Production launch | **BLOCKED** | as above |
 
 ## 1. Order of manual steps
 
-1. Decide the Supabase project (recommendation: dedicated). Create it.
-2. Run `supabase/ops/preflight.sql` there; apply the five migrations; run
-   `verify.sql`; run the seed.
-3. Deploy the Edge Function with sandbox PayPal values to the **staging**
-   project; create the staging worker (`--env staging`) with the secret
-   matrix; `check-env.mjs` exit 0.
-4. Create the `pg_cron` jobs on staging; confirm three heartbeats on
-   `/admin/system`.
-5. Approve and run the controlled Beds24 validation
-   (`docs/beds24-contract.md` §4). Record results; set
-   `BEDS24_CONFIRMED_STATUS` from row 9.
-6. Run the PayPal sandbox E2E on staging (`docs/paypal-sandbox-e2e.md`).
-   Record results in `docs/payment-paypal.md` §8.
-7. Build the n8n event pump, guest confirmation, operational alerts and
-   queue-health workflows against staging; verify `booking.confirmed` sends
-   exactly once; verify `/api/internal/health` is polled.
-8. Legal (§3).
-9. Production: project, migrations, Edge Function with **live** PayPal app and
-   webhook, worker `--env production` with live values, cron jobs, WAF rules
-   (`docs/cloudflare-deployment.md` §5), alerting on `counts.CRITICAL`.
+1. **Shared Supabase project, staging first.** Run
+   `supabase/ops/shared_project_inventory.sql`, then
+   `shared_project_preflight.sql`; apply the six migrations in order; run
+   `verify.sql` and `shared_project_verify.sql`; run the seed
+   (`docs/supabase-shared-project.md` §2). Optionally apply
+   `bolagio_app_role.sql` and mint the narrower JWT for the worker (§4 there).
+2. **Staging worker and Edge Function.** `ops/staging/.env.staging.example`
+   → real values; `node --experimental-strip-types ops/staging/validate-staging-config.mjs <file>`
+   exit 0; `wrangler secret put` per `ops/staging/secrets-checklist.md`;
+   `supabase functions deploy paypal-webhook` per `ops/staging/edge-function-deploy.md`.
+3. **Schedules.** `ops/staging/cron.sql`; confirm three heartbeats on
+   `/admin/system` and `ops/staging/health-check.sh` exit 0.
+4. **Beds24 controlled live validation** (`docs/beds24-contract.md` §4),
+   now including: hold → finalize → **cancel a confirmed reservation** →
+   verify the nights reopen. Record results; set `BEDS24_CONFIRMED_STATUS`.
+5. **PayPal sandbox E2E** (`docs/paypal-sandbox-e2e.md`, 17 cases) on
+   staging, plus the refund case: capture, refund from the sandbox
+   dashboard, confirm the `PAYMENT.CAPTURE.REFUNDED` webhook settles the
+   ledger. Only then may `PAYMENT_REFUND_EXECUTION_ENABLED` be considered.
+6. **n8n.** Import the six workflows (`n8n/README.md` §4), set the
+   `BOLAGIO_*` environment and credentials (§5, `n8n/credentials-matrix.md`),
+   activate in the order of `n8n/runbooks/staging-activation.md`; send one
+   `booking_confirmation` to a test mailbox with `MESSAGING_TEST_COMPLETIONS_ALLOWED`
+   **unset**; check the row in `/admin/automations` reads `sent`.
+7. **Smoke** on staging: `ops/staging/smoke-test.sh`.
+8. Legal (§3) and tax (`docs/invoicing.md` §5).
+9. **Production**: same six migrations (already present if the project is
+   shared with staging — verify with the inventory diff), worker
+   `--env production` with live PayPal, live webhook id, cron jobs, WAF rules
+   (`docs/cloudflare-deployment.md` §5), alerting on `counts.CRITICAL` from
+   `/api/internal/health`.
 10. `DIRECT_BOOKING_ENABLED=true`; `is_bookable=true` for **one** unit; one
-    real low-value booking on a near date; watch a full day; second unit.
+    real low-value booking on a near date; cancel it through Control and
+    confirm the refund path end to end; watch a full day; second unit.
 
 ## 2. Beds24 account settings (not code)
 

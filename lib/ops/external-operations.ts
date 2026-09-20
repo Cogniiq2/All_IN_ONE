@@ -41,6 +41,7 @@ import 'server-only';
 
 import { supabaseAdmin } from '@/lib/supabase/server';
 import type { BookingLogger } from '@/lib/booking/logger';
+import { observeIntegration } from '@/lib/booking/commands';
 
 export type ExternalProvider = 'beds24' | 'paypal';
 
@@ -242,6 +243,7 @@ export async function trackedCall<T>(options: TrackedCallOptions<T>, call: () =>
   try {
     const result = await call();
     await completeOperation(key, 'succeeded', options.resourceIdOf?.(result));
+    observeIntegration(provider, 'last_success', type);
     logger.info('external.operation', {
       provider,
       eventType: type,
@@ -252,6 +254,7 @@ export async function trackedCall<T>(options: TrackedCallOptions<T>, call: () =>
   } catch (cause) {
     const definite = options.isDefiniteFailure?.(cause) === true;
 
+    observeIntegration(provider, 'last_failure', `${type}: ${describe(cause).slice(0, 120)}`);
     if (definite) {
       await completeOperation(key, 'failed', undefined, describe(cause));
       logger.warn('external.operation', {

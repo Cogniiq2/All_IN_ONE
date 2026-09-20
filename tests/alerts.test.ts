@@ -32,6 +32,21 @@ function quiet(over: Partial<AlertInput> = {}): AlertInput {
     attention: [],
     configFindings: [],
     inventory: [{ unitSlug: 'schulstrasse-i', oldestSync: ago(60_000) }],
+    deliveries: { stuck: 0, retrying: 0, waiting: 0, oldestWaiting: null },
+    turnovers: { overdue: 0, unassignedSoon: 0 },
+    refunds: { required: 0, pending: 0, unknown: 0, failed: 0, references: [] },
+    integrations: [
+      { provider: 'beds24', signal: 'last_success', label: '', status: 'observed', observedAt: ago(60_000), detail: null },
+      { provider: 'beds24', signal: 'last_failure', label: '', status: 'observed', observedAt: ago(600_000), detail: null },
+      { provider: 'paypal', signal: 'last_success', label: '', status: 'observed', observedAt: ago(60_000), detail: null },
+      { provider: 'paypal', signal: 'last_failure', label: '', status: 'observed', observedAt: ago(600_000), detail: null },
+      { provider: 'paypal', signal: 'last_verified_webhook', label: '', status: 'observed', observedAt: ago(60_000), detail: null },
+      { provider: 'n8n', signal: 'last_claim', label: '', status: 'observed', observedAt: ago(60_000), detail: null },
+      { provider: 'n8n', signal: 'last_ack', label: '', status: 'observed', observedAt: ago(60_000), detail: null },
+      { provider: 'n8n', signal: 'last_fail', label: '', status: 'observed', observedAt: ago(60_000), detail: null },
+      { provider: 'n8n', signal: 'last_message_prepare', label: '', status: 'observed', observedAt: ago(60_000), detail: null },
+      { provider: 'n8n', signal: 'last_message_complete', label: '', status: 'observed', observedAt: ago(60_000), detail: null },
+    ],
     ...over,
   };
 }
@@ -154,5 +169,47 @@ describe('ordering and hygiene', () => {
     );
     expect(report.alerts.map((a) => a.level)).toEqual(['CRITICAL', 'HIGH', 'MEDIUM']);
     expect(JSON.stringify(report)).not.toMatch(/@|phone|email/i);
+  });
+});
+
+describe('the completion-phase surfaces', () => {
+  it('reports each surface as not instrumented when it could not be read — never as fine', () => {
+    const report = deriveAlerts(quiet({ deliveries: null, turnovers: null, refunds: null, integrations: null }));
+    expect(report.alerts).toEqual([]);
+    expect(report.notInstrumented).toEqual(expect.arrayContaining([
+      'refunds (cancellation columns not readable)',
+      'guest message deliveries',
+      'turnovers',
+      'integration signals (health table not readable)',
+    ]));
+  });
+
+  it('an unknown refund outcome is CRITICAL with the references; a decided-not-executed refund is HIGH', () => {
+    const report = deriveAlerts(quiet({ refunds: { required: 1, pending: 0, unknown: 1, failed: 0, references: ['BLG-AAAAAA'] } }));
+    const critical = report.alerts.find((a) => a.code === 'REFUND_ATTENTION');
+    expect(critical?.level).toBe('CRITICAL');
+    expect(critical?.references).toEqual(['BLG-AAAAAA']);
+    expect(report.alerts.find((a) => a.code === 'REFUND_DECIDED_NOT_EXECUTED')?.level).toBe('HIGH');
+  });
+
+  it('stuck deliveries are HIGH; a prepared message waiting over an hour is MEDIUM; inside the hour nothing', () => {
+    expect(deriveAlerts(quiet({ deliveries: { stuck: 2, retrying: 0, waiting: 0, oldestWaiting: null } })).alerts.map((a) => a.code)).toEqual(['MESSAGE_DELIVERY_FAILED']);
+    expect(deriveAlerts(quiet({ deliveries: { stuck: 0, retrying: 1, waiting: 1, oldestWaiting: ago(61 * 60_000) } })).alerts.map((a) => a.code)).toEqual(['MESSAGE_DELIVERY_BACKLOG']);
+    expect(deriveAlerts(quiet({ deliveries: { stuck: 0, retrying: 1, waiting: 1, oldestWaiting: ago(5 * 60_000) } })).alerts).toEqual([]);
+  });
+
+  it('an overdue turnover outranks an unassigned one', () => {
+    expect(deriveAlerts(quiet({ turnovers: { overdue: 1, unassignedSoon: 3 } })).alerts.map((a) => `${a.level}:${a.code}`)).toEqual(['HIGH:TURNOVER_OVERDUE']);
+    expect(deriveAlerts(quiet({ turnovers: { overdue: 0, unassignedSoon: 3 } })).alerts.map((a) => `${a.level}:${a.code}`)).toEqual(['MEDIUM:TURNOVER_UNASSIGNED']);
+  });
+
+  it('a never-observed signal is listed as unmeasured, and n8n silence with a backlog is alerted', () => {
+    const base = quiet();
+    const integrations = base.integrations!.map((s) => (s.provider === 'n8n' && s.signal === 'last_claim' ? { ...s, observedAt: ago(45 * 60_000) } : s.signal === 'last_message_complete' ? { ...s, status: 'never' as const, observedAt: null } : s));
+    const idle = deriveAlerts(quiet({ integrations }));
+    expect(idle.alerts).toEqual([]);
+    expect(idle.notInstrumented).toContain('n8n:last_message_complete (never observed)');
+    const backlog = deriveAlerts(quiet({ integrations, queues: [{ queue: 'outbox', state: 'pending', items: 3, oldest: ago(60_000) }] }));
+    expect(backlog.alerts.map((a) => a.code)).toEqual(['N8N_SILENT']);
   });
 });

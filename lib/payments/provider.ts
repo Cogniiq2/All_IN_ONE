@@ -55,6 +55,19 @@ export interface ProviderOrder {
   captured?: PaymentMoney;
   /** The reference the provider echoes back, for cross-checking. */
   reference?: string;
+  /**
+   * Refunds the provider lists against this order's capture. Read by the
+   * reconciliation of a refund whose outcome was lost: the order is the
+   * authoritative record of what money moved back.
+   */
+  refunds?: ProviderRefundSummary[];
+}
+
+export interface ProviderRefundSummary {
+  refundId: string;
+  state: 'refunded' | 'capture_pending' | 'denied' | 'unknown';
+  amountCents?: number;
+  currency?: string;
 }
 
 export interface CaptureRequest {
@@ -70,6 +83,7 @@ export interface RefundRequest extends PaymentMoney {
 
 export interface ProviderRefund {
   refundId: string;
+  /** `refunded` only when the provider said COMPLETED; PENDING is `unknown`. */
   state: PaymentState;
   refunded: PaymentMoney;
 }

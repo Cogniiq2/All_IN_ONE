@@ -63,6 +63,19 @@ describe('a complete production configuration', () => {
 });
 
 describe('contradictions the gate refuses', () => {
+  it('a provider override anywhere but local: refused, by name', () => {
+    expect(codes({ ...COMPLETE_PRODUCTION, PAYPAL_SIMULATOR_URL: 'http://127.0.0.1:56441' })).toContain('PROVIDER_OVERRIDE_OUTSIDE_LOCAL');
+    expect(codes({ ...COMPLETE_PRODUCTION, BEDS24_API_BASE_URL: 'http://127.0.0.1:56442' })).toContain('PROVIDER_OVERRIDE_OUTSIDE_LOCAL');
+    expect(codes({ APP_ENV: 'staging', BEDS24_API_BASE_URL: 'http://127.0.0.1:56442' })).toContain('PROVIDER_OVERRIDE_OUTSIDE_LOCAL');
+    expect(codes({ APP_ENV: 'local', PAYPAL_SIMULATOR_URL: 'http://127.0.0.1:56441', BEDS24_API_BASE_URL: 'http://127.0.0.1:56442' })).not.toContain('PROVIDER_OVERRIDE_OUTSIDE_LOCAL');
+  });
+
+  it('test message completions and refund execution on production: refused, by name', () => {
+    expect(codes({ ...COMPLETE_PRODUCTION, MESSAGING_TEST_COMPLETIONS_ALLOWED: 'true' })).toContain('TEST_MESSAGING_ON_PRODUCTION');
+    expect(codes({ ...COMPLETE_PRODUCTION, PAYMENT_REFUND_EXECUTION_ENABLED: 'true' })).toContain('REFUND_EXECUTION_UNVALIDATED');
+    expect(refusals(validateEnvironment({ APP_ENV: 'staging', PAYMENT_REFUND_EXECUTION_ENABLED: 'true' })).map((f) => f.code)).not.toContain('REFUND_EXECUTION_UNVALIDATED');
+  });
+
   it('production + preview demo switch', () => {
     expect(codes({ APP_ENV: 'production', ADMIN_PREVIEW_DEMO: 'true' })).toContain('DEMO_SWITCH_OUTSIDE_PREVIEW');
     expect(codes({ APP_ENV: 'staging', ADMIN_PREVIEW_DEMO: 'true' })).toContain('DEMO_SWITCH_OUTSIDE_PREVIEW');

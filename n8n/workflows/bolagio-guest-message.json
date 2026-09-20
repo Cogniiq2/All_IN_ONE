@@ -1,0 +1,421 @@
+{
+  "name": "BoLaGio · Guest Message",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "2f24b854-4180-4226-a2bf-1d3f52495211",
+      "name": "When called by the pump",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// ═══ BoLaGio internal API client — identical in every \"BoLaGio ·\" workflow ═══\n// HMAC-SHA256 over \"v1:<unix seconds>:<raw body>\" (docs/n8n-booking-contract.md §2).\n// The body string is built once, signed, and sent unchanged. A GET signs \"\".\n// Requires: NODE_FUNCTION_ALLOW_BUILTIN to include \"crypto\", env access in Code nodes.\nconst crypto = require('crypto');\nconst helpers = this.helpers;\n\nfunction bolagioConfig() {\n  const site = String($env.BOLAGIO_SITE_URL || '').replace(new RegExp('/+$'), '');\n  const secret = String($env.BOLAGIO_N8N_INTERNAL_SECRET || '');\n  if (!new RegExp('^https?://').test(site)) throw new Error('BOLAGIO_SITE_URL is not set (expected https://host without trailing slash)');\n  if (!secret) throw new Error('BOLAGIO_N8N_INTERNAL_SECRET is not set');\n  return { site, secret };\n}\n\nfunction bolagioSignature(secret, timestamp, rawBody) {\n  return 'v1=' + crypto.createHmac('sha256', secret).update('v1:' + timestamp + ':' + rawBody).digest('hex');\n}\n\nasync function bolagioRequest(method, path, rawBody) {\n  const config = bolagioConfig();\n  const body = method === 'GET' ? '' : String(rawBody);\n  const timestamp = String(Math.floor(Date.now() / 1000));\n  const headers = {\n    'x-bolagio-timestamp': timestamp,\n    'x-bolagio-signature': bolagioSignature(config.secret, timestamp, body),\n    accept: 'application/json',\n  };\n  const options = {\n    method: method,\n    url: config.site + path,\n    headers: headers,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n    timeout: 20000,\n  };\n  if (method !== 'GET') {\n    headers['content-type'] = 'application/json';\n    options.body = body;\n    options.json = false;\n  }\n  const response = await helpers.httpRequest(options);\n  const status = Number(response.statusCode);\n  let data = response.body;\n  if (typeof data === 'string') {\n    if (data.length === 0) data = null;\n    else { try { data = JSON.parse(data); } catch (err) { data = { raw: data.slice(0, 200) }; } }\n  }\n  if (data === undefined) data = null;\n  return { status: status, data: data };\n}\n\nfunction bolagioExpect(result, path) {\n  if (result.status === 401) throw new Error('BoLaGio ' + path + ': 401 (secret mismatch, clock skew or re-serialised body)');\n  if (result.status < 200 || result.status >= 300) throw new Error('BoLaGio ' + path + ': HTTP ' + result.status);\n  return result.data;\n}\n// ═══ end of shared client ═══\nfunction resolveTransport() {\n  const value = String($env.BOLAGIO_MESSAGING_TRANSPORT || 'disabled').trim().toLowerCase();\n  const allowed = [\"disabled\",\"test\",\"smtp\"];\n  if (!allowed.includes(value)) throw new Error('BOLAGIO_MESSAGING_TRANSPORT has an unsupported value; expected one of ' + allowed.join(', '));\n  return value;\n}\n\n// Ask the backend for a delivery slot. The backend renders the template, checks the\n// booking is still confirmed and enforces exactly-once per (booking, kind); n8n only\n// transports. The transport is resolved BEFORE claiming, so a misconfigured\n// instance never claims a slot it cannot fill.\nconst KINDS = ['booking_confirmation', 'prearrival', 'checkin', 'checkout', 'review_request'];\nconst input = $input.first().json;\nconst kind = String(input.kind || '');\nconst reference = String(input.reference || '');\nconst eventId = input.eventId ? String(input.eventId) : undefined;\nif (!KINDS.includes(kind)) throw new Error('guest message kind is not supported: ' + kind);\nif (!new RegExp('^BLG-[A-Z0-9]{6}$').test(reference)) throw new Error('booking reference is missing or malformed');\nconst transport = resolveTransport();\n\nconst body = JSON.stringify(eventId ? { action: 'prepare', kind: kind, reference: reference, eventId: eventId } : { action: 'prepare', kind: kind, reference: reference });\nconst prepared = bolagioExpect(await bolagioRequest('POST', '/api/internal/messages', body), '/api/internal/messages');\nif (!prepared || typeof prepared.outcome !== 'string') throw new Error('prepare returned no outcome');\n\n// Only the fields the transport needs leave this node. The message (with the\n// guest address) is present only on \"claimed\" and is consumed by the send node.\nreturn [{ json: {\n  eventId: eventId || null,\n  reference: reference,\n  kind: kind,\n  transport: transport,\n  outcome: prepared.outcome,\n  deliveryId: prepared.deliveryId || null,\n  attempt: prepared.attempt || null,\n  reason: prepared.reason || null,\n  message: prepared.outcome === 'claimed' ? prepared.message : null,\n} }];\n"
+      },
+      "id": "c0aa869f-5242-4ed8-9a11-25fa7bca19b6",
+      "name": "Prepare message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "b684e7a7-37d6-465d-ac24-ce998320d150",
+              "leftValue": "={{ $json.outcome }}",
+              "rightValue": "claimed",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1e0be6ad-36fd-4637-9f8a-3f9730d81f8b",
+      "name": "Claimed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "7543fbf8-c763-4c74-ae05-0a532f508145",
+                    "leftValue": "={{ $json.transport }}",
+                    "rightValue": "disabled",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "disabled"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "cc77f60c-7770-4caa-b84b-62fef4e63df5",
+                    "leftValue": "={{ $json.transport }}",
+                    "rightValue": "test",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "test"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "f0a93121-a8d9-4105-86c3-c415ca433524",
+                    "leftValue": "={{ $json.transport }}",
+                    "rightValue": "smtp",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "smtp"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "c56e4aec-5b1a-4468-932c-3e2ba479bbfe",
+      "name": "Messaging transport",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        720,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// No send. already_sent / suppressed / backoff / not_retryable / in_progress → ack the\n// event (the ledger owns the outcome; in_progress means another worker holds the lease).\n// unknown_reference is a data fault: fail the event so it is visible.\nconst item = $input.first().json;\nconst ACK_OUTCOMES = ['already_sent', 'suppressed', 'in_progress', 'backoff', 'not_retryable'];\nif (ACK_OUTCOMES.includes(item.outcome)) {\n  return [{ json: { eventId: item.eventId, reference: item.reference, kind: item.kind, ok: true, outcome: item.outcome, sent: false } }];\n}\nreturn [{ json: { eventId: item.eventId, reference: item.reference, kind: item.kind, ok: false, outcome: item.outcome, sent: false, error: 'prepare outcome ' + String(item.outcome) } }];\n"
+      },
+      "id": "c3788ceb-5c98-43f3-b3da-37dc200ad7b8",
+      "name": "Acknowledge without sending",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Transport disabled: nothing is sent. The delivery is completed as \"skipped\" with\n// provider \"disabled\", which is FINAL for this (booking, kind) — see n8n/test-mode.md.\nconst item = $input.first().json;\nreturn [{ json: { eventId: item.eventId, reference: item.reference, kind: item.kind, deliveryId: item.deliveryId, completion: { outcome: 'skipped', provider: 'disabled' } } }];\n"
+      },
+      "id": "5523a2c3-bb60-4272-be57-6de153d0a76d",
+      "name": "Skip (transport disabled)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Test transport: no message leaves n8n. The delivery is completed as \"sent\" with\n// provider \"test\" — the backend refuses this provider on production.\nconst item = $input.first().json;\nreturn [{ json: { eventId: item.eventId, reference: item.reference, kind: item.kind, deliveryId: item.deliveryId, completion: { outcome: 'sent', provider: 'test', providerMessageId: 'test-' + item.deliveryId } } }];\n"
+      },
+      "id": "7ca5ea2e-38e6-4839-9905-eaaa314f1147",
+      "name": "Simulate send (test transport)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.BOLAGIO_MAIL_FROM }}",
+        "options": {
+          "appendAttribution": false
+        },
+        "toEmail": "={{ $json.message.to }}",
+        "subject": "={{ $json.message.subject }}",
+        "emailFormat": "both",
+        "text": "={{ $json.message.text }}",
+        "html": "={{ $json.message.html || $json.message.text }}"
+      },
+      "id": "0418b299-93d2-4371-b57d-b5006ecd58a1",
+      "name": "Send e-mail (SMTP)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1000,
+        380
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "UJdSGEGXT0Aq04sU",
+          "name": "BoLaGio SMTP"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Error text never carries guest data: e-mail addresses are masked, length capped.\nfunction redact(text) {\n  const raw = text === undefined || text === null ? '' : (typeof text === 'string' ? text : (text.message || JSON.stringify(text)));\n  return String(raw).replace(new RegExp('[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\\\.[A-Za-z]{2,}', 'g'), '[email]').slice(0, 400);\n}\n\n// Interpret the Send Email node's output. Its error (if any) became an item because\n// the node continues on error; the message id comes from the SMTP response.\nconst prepared = $('Prepare message').first().json;\nconst sent = $input.first().json || {};\nlet completion;\nif (sent.error !== undefined && sent.error !== null) {\n  completion = { outcome: 'failed', provider: 'smtp', error: redact(sent.error), retryable: true };\n} else {\n  const rejected = Array.isArray(sent.rejected) && sent.rejected.length > 0;\n  completion = rejected\n    ? { outcome: 'failed', provider: 'smtp', error: 'SMTP rejected the recipient', retryable: false }\n    : { outcome: 'sent', provider: 'smtp', providerMessageId: sent.messageId ? String(sent.messageId).slice(0, 200) : undefined };\n}\nreturn [{ json: { eventId: prepared.eventId, reference: prepared.reference, kind: prepared.kind, deliveryId: prepared.deliveryId, completion: completion } }];\n"
+      },
+      "id": "a246804f-f63e-4b64-b027-78151011bec4",
+      "name": "Record SMTP result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1240,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// ═══ BoLaGio internal API client — identical in every \"BoLaGio ·\" workflow ═══\n// HMAC-SHA256 over \"v1:<unix seconds>:<raw body>\" (docs/n8n-booking-contract.md §2).\n// The body string is built once, signed, and sent unchanged. A GET signs \"\".\n// Requires: NODE_FUNCTION_ALLOW_BUILTIN to include \"crypto\", env access in Code nodes.\nconst crypto = require('crypto');\nconst helpers = this.helpers;\n\nfunction bolagioConfig() {\n  const site = String($env.BOLAGIO_SITE_URL || '').replace(new RegExp('/+$'), '');\n  const secret = String($env.BOLAGIO_N8N_INTERNAL_SECRET || '');\n  if (!new RegExp('^https?://').test(site)) throw new Error('BOLAGIO_SITE_URL is not set (expected https://host without trailing slash)');\n  if (!secret) throw new Error('BOLAGIO_N8N_INTERNAL_SECRET is not set');\n  return { site, secret };\n}\n\nfunction bolagioSignature(secret, timestamp, rawBody) {\n  return 'v1=' + crypto.createHmac('sha256', secret).update('v1:' + timestamp + ':' + rawBody).digest('hex');\n}\n\nasync function bolagioRequest(method, path, rawBody) {\n  const config = bolagioConfig();\n  const body = method === 'GET' ? '' : String(rawBody);\n  const timestamp = String(Math.floor(Date.now() / 1000));\n  const headers = {\n    'x-bolagio-timestamp': timestamp,\n    'x-bolagio-signature': bolagioSignature(config.secret, timestamp, body),\n    accept: 'application/json',\n  };\n  const options = {\n    method: method,\n    url: config.site + path,\n    headers: headers,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n    timeout: 20000,\n  };\n  if (method !== 'GET') {\n    headers['content-type'] = 'application/json';\n    options.body = body;\n    options.json = false;\n  }\n  const response = await helpers.httpRequest(options);\n  const status = Number(response.statusCode);\n  let data = response.body;\n  if (typeof data === 'string') {\n    if (data.length === 0) data = null;\n    else { try { data = JSON.parse(data); } catch (err) { data = { raw: data.slice(0, 200) }; } }\n  }\n  if (data === undefined) data = null;\n  return { status: status, data: data };\n}\n\nfunction bolagioExpect(result, path) {\n  if (result.status === 401) throw new Error('BoLaGio ' + path + ': 401 (secret mismatch, clock skew or re-serialised body)');\n  if (result.status < 200 || result.status >= 300) throw new Error('BoLaGio ' + path + ': HTTP ' + result.status);\n  return result.data;\n}\n// ═══ end of shared client ═══\n\n// Settle the delivery slot with the backend, then report to the pump:\n//   ok: true  → the pump acks the outbox event\n//   ok: false → the pump fails it with the error (retry with backoff)\nconst item = $input.first().json;\nconst completion = item.completion;\nconst payload = { action: 'complete', deliveryId: item.deliveryId, outcome: completion.outcome, provider: completion.provider };\nif (completion.providerMessageId) payload.providerMessageId = completion.providerMessageId;\nif (completion.error) payload.error = completion.error;\nif (completion.retryable !== undefined) payload.retryable = completion.retryable;\nconst body = JSON.stringify(payload);\nconst data = bolagioExpect(await bolagioRequest('POST', '/api/internal/messages', body), '/api/internal/messages');\nconst recorded = data ? data.recorded === true : false;\nconst ok = completion.outcome !== 'failed';\nreturn [{ json: {\n  eventId: item.eventId, reference: item.reference, kind: item.kind, deliveryId: item.deliveryId,\n  ok: ok, outcome: completion.outcome, provider: completion.provider, recorded: recorded,\n  sent: completion.outcome === 'sent',\n  error: ok ? undefined : ('delivery failed via ' + completion.provider + ': ' + String(completion.error || 'unspecified')),\n} }];\n"
+      },
+      "id": "afe337a3-3bb1-4931-b48e-07a5b9327099",
+      "name": "Complete delivery",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// The sub-workflow's answer to the pump. Always {eventId, ok, error?}; never throws.\nconst item = $input.first().json || {};\nreturn [{ json: {\n  eventId: item.eventId || null,\n  reference: item.reference || null,\n  kind: item.kind || null,\n  ok: item.ok === true,\n  outcome: item.outcome || null,\n  sent: item.sent === true,\n  error: item.ok === true ? undefined : String(item.error || 'unspecified'),\n} }];\n"
+      },
+      "id": "c1ec6c16-ad77-4280-83b2-9088a365148c",
+      "name": "Return result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "When called by the pump": {
+      "main": [
+        [
+          {
+            "node": "Prepare message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare message": {
+      "main": [
+        [
+          {
+            "node": "Claimed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claimed?": {
+      "main": [
+        [
+          {
+            "node": "Messaging transport",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Acknowledge without sending",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Messaging transport": {
+      "main": [
+        [
+          {
+            "node": "Skip (transport disabled)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Simulate send (test transport)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send e-mail (SMTP)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip (transport disabled)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send e-mail (SMTP)": {
+      "main": [
+        [
+          {
+            "node": "Record SMTP result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip (transport disabled)": {
+      "main": [
+        [
+          {
+            "node": "Complete delivery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simulate send (test transport)": {
+      "main": [
+        [
+          {
+            "node": "Complete delivery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record SMTP result": {
+      "main": [
+        [
+          {
+            "node": "Complete delivery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Complete delivery": {
+      "main": [
+        [
+          {
+            "node": "Return result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acknowledge without sending": {
+      "main": [
+        [
+          {
+            "node": "Return result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Berlin",
+    "errorWorkflow": "A2cTUS2WXAeObiEM"
+  },
+  "tags": [
+    {
+      "name": "bolagio"
+    }
+  ],
+  "id": "uGLX4W7hDCGFAzpW",
+  "active": false,
+  "pinData": {}
+}

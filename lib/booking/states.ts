@@ -184,7 +184,9 @@ export const BOOKING_TRANSITIONS: Readonly<Record<BookingState, readonly Booking
   release_failed: ['releasing', 'released', 'manual_review'],
   released: ['cancelled', 'manual_review'],
 
-  manual_review: ['confirmed', 'finalizing', 'releasing', 'released', 'paid_unfinalized', 'cancelled'],
+  // `hold_created` is the recovery edge: an uncertain create whose booking
+  // reconciliation later FOUND at Beds24 by our reference is adopted.
+  manual_review: ['hold_created', 'confirmed', 'finalizing', 'releasing', 'released', 'paid_unfinalized', 'cancelled'],
   cancelled: [],
 };
 

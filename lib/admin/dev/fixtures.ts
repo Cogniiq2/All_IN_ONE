@@ -15,7 +15,11 @@
 
 import type {
   AuditRow,
+  IntegrationHealthRow,
   IntentEventRow,
+  MessageDeliveryRow,
+  TurnoverEventRow,
+  TurnoverRow,
   IntentQuery,
   IntentRow,
   InventoryClosedRow,
@@ -240,6 +244,42 @@ const CLOSED: InventoryClosedRow[] = [
   ...Array.from({ length: 2 }, (_, n) => ({ unit_id: 'u-s1', date: day(-2 + n), synced_at: at(0, 6, 5) })),
 ];
 
+/** Cleaning: one per confirmed stay, in every state a cleaner or an operator can leave it in. */
+const TURNOVERS: TurnoverRow[] = [
+  { id: 'tv-1', unit_id: 'u-s1', intent_id: 'i-01', departure: day(0), window_start: at(0, 11), window_end: at(0, 14), next_arrival: day(0), same_day: true, status: 'in_progress', assigned_to: 'Maria K.', note: null, started_at: at(0, 11, 20), done_at: null, done_by: null, created_at: at(-9, 10, 15), updated_at: at(0, 11, 20), reference: 'BLG-7K2M9P', unit_slug: 'schulstrasse-i' },
+  { id: 'tv-2', unit_id: 'u-s2', intent_id: 'i-02', departure: day(3), window_start: at(3, 11), window_end: at(3, 14), next_arrival: day(3), same_day: true, status: 'required', assigned_to: null, note: null, started_at: null, done_at: null, done_by: null, created_at: at(-6, 18, 45), updated_at: at(-6, 18, 45), reference: 'BLG-QX4T8W', unit_slug: 'schulstrasse-ii' },
+  { id: 'tv-3', unit_id: 'u-s2', intent_id: 'i-04', departure: day(7), window_start: at(7, 11), window_end: at(7, 14), next_arrival: null, same_day: false, status: 'void', assigned_to: null, note: null, started_at: null, done_at: null, done_by: null, created_at: at(-1, 21, 5), updated_at: at(-1, 22, 30), reference: 'BLG-J8R2CF', unit_slug: 'schulstrasse-ii' },
+  { id: 'tv-4', unit_id: 'u-s1', intent_id: 'i-07', departure: day(19), window_start: at(19, 11), window_end: at(19, 14), next_arrival: null, same_day: false, status: 'required', assigned_to: 'Maria K.', note: 'Bettwäsche für 3 Personen', started_at: null, done_at: null, done_by: null, created_at: at(-3, 16, 25), updated_at: at(-2, 9, 0), reference: 'BLG-F2V8HN', unit_slug: 'schulstrasse-i' },
+  { id: 'tv-5', unit_id: 'u-s2', intent_id: 'i-08', departure: day(27), window_start: at(27, 11), window_end: at(27, 14), next_arrival: null, same_day: false, status: 'required', assigned_to: null, note: null, started_at: null, done_at: null, done_by: null, created_at: at(-5, 9, 5), updated_at: at(-5, 9, 5), reference: 'BLG-T6K3RB', unit_slug: 'schulstrasse-ii' },
+  { id: 'tv-6', unit_id: 'u-s2', intent_id: 'i-10', departure: day(-7), window_start: at(-7, 11), window_end: at(-7, 14), next_arrival: null, same_day: false, status: 'done', assigned_to: 'Maria K.', note: null, started_at: at(-7, 11, 5), done_at: at(-7, 13, 10), done_by: 'Maria K.', created_at: at(-14, 12, 5), updated_at: at(-7, 13, 10), reference: 'BLG-M8X2PL', unit_slug: 'schulstrasse-ii' },
+  { id: 'tv-7', unit_id: 'u-s1', intent_id: 'i-14', departure: day(-1), window_start: at(-1, 11), window_end: at(-1, 14), next_arrival: day(0), same_day: false, status: 'required', assigned_to: null, note: null, started_at: null, done_at: null, done_by: null, created_at: at(-4, 15, 5), updated_at: at(-4, 15, 5), reference: 'BLG-P9W3FT', unit_slug: 'schulstrasse-i' },
+];
+
+const TURNOVER_EVENTS: TurnoverEventRow[] = [
+  { id: 'te-1', turnover_id: 'tv-1', from_status: 'required', to_status: 'in_progress', actor: 'fixture@example.com', note: 'started', created_at: at(0, 11, 20) },
+  { id: 'te-2', turnover_id: 'tv-6', from_status: 'required', to_status: 'in_progress', actor: 'fixture@example.com', note: null, created_at: at(-7, 11, 5) },
+  { id: 'te-3', turnover_id: 'tv-6', from_status: 'in_progress', to_status: 'done', actor: 'fixture@example.com', note: null, created_at: at(-7, 13, 10) },
+  { id: 'te-4', turnover_id: 'tv-3', from_status: 'required', to_status: 'void', actor: 'system', note: 'stay no longer confirmed', created_at: at(-1, 22, 30) },
+];
+
+const DELIVERIES: MessageDeliveryRow[] = [
+  { id: 'md-1', reference: 'BLG-QX4T8W', kind: 'booking_confirmation', sequence: 1, channel: 'email', locale: 'de', template_id: 'booking_confirmation.de', template_version: '1', destination_masked: 'e***@example.com', status: 'sent', retryable: true, attempts: 1, max_attempts: 5, next_attempt_at: null, provider: 'smtp', provider_message_id: '<a1b2@mail.example>', last_error: null, sent_at: at(-6, 18, 43), failed_at: null, created_at: at(-6, 18, 43), updated_at: at(-6, 18, 43) },
+  { id: 'md-2', reference: 'BLG-QX4T8W', kind: 'prearrival', sequence: 1, channel: 'email', locale: 'de', template_id: 'prearrival.de', template_version: '1', destination_masked: 'e***@example.com', status: 'sent', retryable: true, attempts: 1, max_attempts: 5, next_attempt_at: null, provider: 'smtp', provider_message_id: '<c3d4@mail.example>', last_error: null, sent_at: at(-3, 9, 2), failed_at: null, created_at: at(-3, 9, 2), updated_at: at(-3, 9, 2) },
+  { id: 'md-3', reference: 'BLG-T6K3RB', kind: 'booking_confirmation', sequence: 1, channel: 'email', locale: 'de', template_id: 'booking_confirmation.de', template_version: '1', destination_masked: 'c***@example.com', status: 'failed', retryable: false, attempts: 5, max_attempts: 5, next_attempt_at: null, provider: 'smtp', provider_message_id: null, last_error: 'SMTP 550 mailbox unavailable', sent_at: null, failed_at: at(-4, 2, 10), created_at: at(-5, 9, 4), updated_at: at(-4, 2, 10) },
+  { id: 'md-4', reference: 'BLG-F2V8HN', kind: 'booking_confirmation', sequence: 1, channel: 'email', locale: 'en', template_id: 'booking_confirmation.en', template_version: '1', destination_masked: 't***@example.com', status: 'failed', retryable: true, attempts: 2, max_attempts: 5, next_attempt_at: at(0, 12), provider: 'smtp', provider_message_id: null, last_error: 'SMTP 450 try again later', sent_at: null, failed_at: at(0, 9, 30), created_at: at(-3, 16, 23), updated_at: at(0, 9, 30) },
+  { id: 'md-5', reference: 'BLG-P9W3FT', kind: 'booking_confirmation', sequence: 1, channel: 'email', locale: 'de', template_id: 'booking_confirmation.de', template_version: '1', destination_masked: 'l***@example.com', status: 'pending', retryable: true, attempts: 0, max_attempts: 5, next_attempt_at: null, provider: null, provider_message_id: null, last_error: null, sent_at: null, failed_at: null, created_at: at(-1, 15, 6), updated_at: at(-1, 15, 6) },
+  { id: 'md-6', reference: 'BLG-7K2M9P', kind: 'checkout', sequence: 1, channel: 'email', locale: 'de', template_id: 'checkout.de', template_version: '1', destination_masked: 'a***@example.com', status: 'skipped', retryable: true, attempts: 1, max_attempts: 5, next_attempt_at: null, provider: 'disabled', provider_message_id: null, last_error: 'messaging transport disabled', sent_at: null, failed_at: null, created_at: at(-1, 8, 0), updated_at: at(-1, 8, 0) },
+];
+
+const INTEGRATION_HEALTH: IntegrationHealthRow[] = [
+  { provider: 'beds24', signal: 'last_success', observed_at: at(0, 6, 5), detail: 'GET /inventory/rooms/calendar' },
+  { provider: 'beds24', signal: 'last_failure', observed_at: at(-1, 22, 30), detail: 'POST /bookings: Beds24 request timed out' },
+  { provider: 'paypal', signal: 'last_success', observed_at: at(0, 7, 52), detail: 'POST /v2/checkout/orders/…/capture' },
+  { provider: 'paypal', signal: 'last_verified_webhook', observed_at: at(0, 7, 52), detail: 'PAYMENT.CAPTURE.COMPLETED' },
+  { provider: 'n8n', signal: 'last_claim', observed_at: at(0, 9, 58), detail: 'n8n-bolagio: 0' },
+  { provider: 'n8n', signal: 'last_ack', observed_at: at(-1, 15, 6), detail: 'n8n-bolagio' },
+];
+
 const AUDIT: AuditRow[] = [
   { id: 'a-1', operator_email: 'fixture@example.com', action: 'auth.sign_in', target_type: null, target_ref: null, outcome: 'ok', created_at: at(0, 8, 2) },
   { id: 'a-2', operator_email: 'fixture@example.com', action: 'booking.reconcile', target_type: 'booking', target_ref: 'BLG-N3H6VD', outcome: 'retry', created_at: at(0, 8, 21) },
@@ -284,6 +324,7 @@ export function fixtureRowSource(): RowSource {
         if (query.overlaps && !(row.check_in < query.overlaps.to && row.check_out > query.overlaps.from)) return false;
         if (query.attentionOnly && !isAttention(row)) return false;
         if (query.paymentActivity && row.payment_status === 'not_created' && !row.payment_order_id) return false;
+        if (query.refundStates && query.refundStates.length > 0 && !query.refundStates.includes(row.refund_state ?? 'none')) return false;
         if (query.search && !matchesSearch(row, query.search.trim())) return false;
         return true;
       });
@@ -330,7 +371,7 @@ export function fixtureRowSource(): RowSource {
       ).slice(0, query.limit ?? 50);
     },
     async queues() {
-      const count = (rows: Array<{ status?: string; outcome?: string; created_at?: string; received_at?: string; started_at?: string }>, queue: string, key: 'status' | 'outcome') => {
+      const count = (rows: Array<{ status?: string; outcome?: string; created_at?: string; received_at?: string; started_at?: string | null }>, queue: string, key: 'status' | 'outcome') => {
         const map = new Map<string, QueueRow>();
         for (const r of rows) {
           const state = String(r[key]);
@@ -347,6 +388,8 @@ export function fixtureRowSource(): RowSource {
         ...count(PAYMENT_EVENTS, 'payment_events', 'status'),
         ...count(JOBS, 'reconciliation', 'status'),
         ...count(OPERATIONS, 'external_operations', 'outcome'),
+        ...count(TURNOVERS, 'turnovers', 'status'),
+        ...count(DELIVERIES, 'message_deliveries', 'status'),
       ];
     },
     async inventoryClosed(from, to) {
@@ -360,6 +403,26 @@ export function fixtureRowSource(): RowSource {
     },
     async audit(limit) {
       return AUDIT.slice(0, limit);
+    },
+    async turnovers(query) {
+      return TURNOVERS.filter(
+        (t) =>
+          (!query.statuses || query.statuses.includes(t.status)) &&
+          (!query.departureFrom || t.departure >= query.departureFrom) &&
+          (!query.departureTo || t.departure < query.departureTo) &&
+          (!query.intentId || t.intent_id === query.intentId)
+      ).slice(0, query.limit ?? 200).map((t) => ({ ...t }));
+    },
+    async turnoverEvents(turnoverId) {
+      return TURNOVER_EVENTS.filter((e) => e.turnover_id === turnoverId);
+    },
+    async messageDeliveries(query) {
+      return DELIVERIES.filter(
+        (d) => (!query.reference || d.reference === query.reference) && (!query.statuses || query.statuses.includes(d.status))
+      ).slice(0, query.limit ?? 100).map((d) => ({ ...d }));
+    },
+    async integrationHealth() {
+      return INTEGRATION_HEALTH.map((r) => ({ ...r }));
     },
     async schedulerStatus() {
       // Synthetic heartbeats: a healthy reconcile a minute ago, an inventory

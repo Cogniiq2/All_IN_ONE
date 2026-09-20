@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { refusals, validateEnvironment } from '@/lib/config/environment';
+import { appEnvironment, refusals, validateEnvironment } from '@/lib/config/environment';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -48,9 +48,23 @@ export function beds24Mode(): Beds24Mode {
   return env('BEDS24_MODE') === 'live' ? 'live' : 'mock';
 }
 
+export const BEDS24_DEFAULT_BASE_URL = 'https://beds24.com/api/v2';
+
+/**
+ * Whether a provider base URL may be pointed somewhere other than the real
+ * provider. Only a deployment that declares itself `local` may: that is where
+ * the provider simulators run. On every other environment an override is
+ * ignored here AND refused by `validateEnvironment()`, so a simulator can
+ * never be selected on staging or production, silently or otherwise.
+ */
+export function providerOverridesPermitted(): boolean {
+  return appEnvironment() === 'local';
+}
+
 export function beds24Config() {
+  const override = env('BEDS24_API_BASE_URL');
   return {
-    baseUrl: env('BEDS24_API_BASE_URL') ?? 'https://beds24.com/api/v2',
+    baseUrl: override && providerOverridesPermitted() ? override : BEDS24_DEFAULT_BASE_URL,
     refreshToken: env('BEDS24_REFRESH_TOKEN'),
   };
 }
@@ -144,13 +158,21 @@ export function paypalMode(): PayPalMode | null {
 
 export function paypalConfig() {
   const mode = paypalMode();
+  // Derived from the mode, never read from an environment variable. A
+  // configurable base URL is one typo away from sandbox credentials being
+  // presented to the live API, or the reverse. The ONE exception is the
+  // local provider simulator, and it is only honoured on APP_ENV=local, and
+  // only in sandbox mode — never against a live mode, never off a laptop.
+  const simulator = env('PAYPAL_SIMULATOR_URL');
+  const baseUrl =
+    simulator && providerOverridesPermitted() && mode === 'sandbox'
+      ? simulator
+      : mode === 'live'
+        ? 'https://api-m.paypal.com'
+        : 'https://api-m.sandbox.paypal.com';
   return {
     mode,
-    // Derived from the mode, never read from an environment variable. A
-    // configurable base URL is one typo away from sandbox credentials being
-    // presented to the live API, or the reverse.
-    baseUrl:
-      mode === 'live' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com',
+    baseUrl,
     clientId: env('PAYPAL_CLIENT_ID'),
     clientSecret: env('PAYPAL_CLIENT_SECRET'),
     /** The webhook whose signature we verify. Registered in the PayPal dashboard. */
@@ -256,4 +278,76 @@ export function inventoryMonths(): number {
  */
 export function quoteMinutes(): number {
   return intEnv('BOOKING_QUOTE_MINUTES', 20, 5, 60);
+}
+
+/* ── Cancellation and refund gates ─────────────────────────────────────── */
+
+/**
+ * May an operator cancel a booking that carries payment evidence?
+ *
+ * Off by default. The domain command, the database invariants and the
+ * release saga are built and tested, but ending a CONFIRMED stay at Beds24
+ * (status → cancelled on a `confirmed` booking) has not been exercised on the
+ * live account, and the commercial cancellation terms are not decided. The
+ * unpaid cancellation path needs no gate: it is the release the lease sweep
+ * already performs.
+ */
+export function operatorPaidCancellationEnabled(): boolean {
+  return env('OPERATOR_PAID_CANCELLATION_ENABLED') === 'true';
+}
+
+/**
+ * May the refund saga call the payment provider?
+ *
+ * Off by default, and refused on production by `validateEnvironment()` until
+ * the PayPal refund contract has been proven in the sandbox
+ * (docs/paypal-sandbox-e2e.md, refund cases). With the gate off, a refund
+ * decision is recorded (`refund_state = required`) and nothing is sent.
+ */
+export function refundExecutionEnabled(): boolean {
+  return env('PAYMENT_REFUND_EXECUTION_ENABLED') === 'true';
+}
+
+/* ── Messaging ─────────────────────────────────────────────────────────── */
+
+/**
+ * Whether a delivery may be completed with provider `test` (no real send).
+ *
+ * The automation platform's test transport reports "sent" without sending.
+ * That is only meaningful where no guest is real: never on production, and
+ * on staging only when explicitly allowed. Elsewhere the completion is
+ * refused and recorded as a failure, so a mis-set transport cannot make the
+ * ledger claim a confirmation went out when it did not.
+ */
+export function testCompletionsAllowed(): boolean {
+  const environment = appEnvironment();
+  if (environment === 'production') return false;
+  if (environment === 'staging') return env('MESSAGING_TEST_COMPLETIONS_ALLOWED') === 'true';
+  return true;
+}
+
+/**
+ * The contact details guest messages carry.
+ *
+ * `MESSAGING_CONTACT_EMAIL` is required before any guest message can render:
+ * the brand file deliberately has no email address until one is verified,
+ * and a template with `{{contactEmail}}` fails safely without it (the
+ * delivery ledger records the refusal; nothing is sent).
+ */
+export function messagingContact(): { email: string | undefined; phone: string | undefined } {
+  return { email: env('MESSAGING_CONTACT_EMAIL'), phone: env('MESSAGING_CONTACT_PHONE') };
+}
+
+/**
+ * Provider HTTP timeouts.
+ *
+ * Fixed in every real environment (Beds24 10 s, PayPal 12 s). Only a local
+ * deployment may shorten them, so the simulator's "never answers" case does
+ * not cost twelve seconds per test; nowhere else is the value read.
+ */
+export function providerTimeoutMs(provider: 'beds24' | 'paypal'): number {
+  const fixed = provider === 'beds24' ? 10_000 : 12_000;
+  if (!providerOverridesPermitted()) return fixed;
+  const override = intEnv('PROVIDER_TIMEOUT_MS', fixed, 200, 60_000);
+  return override;
 }

@@ -1,0 +1,231 @@
+{
+  "name": "BoLaGio · Cleaning Routing",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "a89bd419-6351-4952-8650-3b5ace65208b",
+      "name": "When called by the pump",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function resolveTransport() {\n  const value = String($env.BOLAGIO_CLEANING_TRANSPORT || 'disabled').trim().toLowerCase();\n  const allowed = [\"disabled\",\"webhook\"];\n  if (!allowed.includes(value)) throw new Error('BOLAGIO_CLEANING_TRANSPORT has an unsupported value; expected one of ' + allowed.join(', '));\n  return value;\n}\n\n// One deterministic work item per stay, keyed on the booking reference. required and\n// rescheduled both UPSERT the same key; cancelled CANCELS it — a downstream tool can\n// never end up with two tasks for one turnover.\nconst event = $input.first().json;\nconst payload = event.payload && typeof event.payload === 'object' ? event.payload : {};\nconst reference = String(payload.reference || event.reference || '');\nif (!new RegExp('^BLG-[A-Z0-9]{6}$').test(reference)) throw new Error('cleaning event without a booking reference');\nconst action = event.cleaningAction === 'cancel' ? 'cancel' : 'upsert';\nconst workItem = {\n  action: action,\n  key: 'bolagio:turnover:' + reference,\n  reference: reference,\n  unitSlug: payload.unitSlug === undefined ? null : payload.unitSlug,\n  departure: payload.departure === undefined ? null : payload.departure,\n  nextArrival: payload.nextArrival === undefined ? null : payload.nextArrival,\n  sameDay: payload.sameDay === true,\n  windowStart: payload.windowStart === undefined ? null : payload.windowStart,\n  windowEnd: payload.windowEnd === undefined ? null : payload.windowEnd,\n};\nif (payload.previousDeparture !== undefined) workItem.previousDeparture = payload.previousDeparture;\nreturn [{ json: { eventId: event.eventId, reference: reference, type: event.type, transport: resolveTransport(), workItem: workItem } }];\n"
+      },
+      "id": "5a4ab1cf-7f31-48fc-be77-6bb660b68d5b",
+      "name": "Build work item",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "6056cc1a-910d-48e3-b063-548efb5f58b3",
+                    "leftValue": "={{ $json.transport }}",
+                    "rightValue": "disabled",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "disabled"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "f6c7bcc0-6767-4101-9c2e-a35b6adfae72",
+                    "leftValue": "={{ $json.transport }}",
+                    "rightValue": "webhook",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "webhook"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "7f5481d1-784a-4b0e-b588-4efa51708936",
+      "name": "Cleaning transport",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        480,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Transport disabled: the turnover stays a fact in the backend (bolagio_turnovers);\n// nothing is routed. The event is acknowledged so it does not pile up.\nconst item = $input.first().json;\nreturn [{ json: { eventId: item.eventId, reference: item.reference, ok: true, outcome: 'skipped', transport: 'disabled' } }];\n"
+      },
+      "id": "fe3a3836-e117-4bf9-827a-c784618a25d9",
+      "name": "Skip (transport disabled)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BOLAGIO_CLEANING_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.workItem) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "2e81d11e-73dc-42a9-a371-5fcd2cacdd0b",
+      "name": "POST to cleaning webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        320
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Error text never carries guest data: e-mail addresses are masked, length capped.\nfunction redact(text) {\n  const raw = text === undefined || text === null ? '' : (typeof text === 'string' ? text : (text.message || JSON.stringify(text)));\n  return String(raw).replace(new RegExp('[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\\\.[A-Za-z]{2,}', 'g'), '[email]').slice(0, 400);\n}\n\n// Interpret the webhook call. A transport error became an item (continue on error);\n// anything else is a 2xx and the work item is considered delivered.\nconst built = $('Build work item').first().json;\nconst response = $input.first().json || {};\nif (response.error !== undefined && response.error !== null) {\n  return [{ json: { eventId: built.eventId, reference: built.reference, ok: false, outcome: 'webhook_failed', error: 'cleaning webhook: ' + redact(response.error) } }];\n}\nreturn [{ json: { eventId: built.eventId, reference: built.reference, ok: true, outcome: 'delivered', transport: 'webhook', action: built.workItem.action } }];\n"
+      },
+      "id": "db79cc6d-eb08-4579-a9aa-59ebc999cb73",
+      "name": "Return result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "When called by the pump": {
+      "main": [
+        [
+          {
+            "node": "Build work item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build work item": {
+      "main": [
+        [
+          {
+            "node": "Cleaning transport",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cleaning transport": {
+      "main": [
+        [
+          {
+            "node": "Skip (transport disabled)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "POST to cleaning webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip (transport disabled)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST to cleaning webhook": {
+      "main": [
+        [
+          {
+            "node": "Return result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Berlin",
+    "errorWorkflow": "A2cTUS2WXAeObiEM"
+  },
+  "tags": [
+    {
+      "name": "bolagio"
+    }
+  ],
+  "id": "Ofnr3ItMsitTJQ6b",
+  "active": false,
+  "pinData": {}
+}

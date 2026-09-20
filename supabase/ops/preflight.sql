@@ -44,6 +44,10 @@ select 'booking_production_hardening (20260920120000)' as migration,
        case when to_regclass('public.bolagio_scheduler_runs') is not null
              and to_regprocedure('bolagio_begin_external_operation(text,bolagio_external_provider,text,uuid,jsonb,boolean)') is not null
             then 'applied' else 'not applied' end as actual;
+select 'platform_completion (20260921120000)' as migration,
+       case when to_regclass('public.bolagio_message_deliveries') is not null
+             and to_regprocedure('bolagio_request_cancellation(uuid,text,text,boolean,integer,text)') is not null
+            then 'applied' else 'not applied' end as actual;
 
 \echo ''
 \echo '── 4. Supabase migration history (if the CLI has been used) ────────────'

@@ -42,8 +42,27 @@ do $$ begin
   perform pg_temp.v_assert(to_regprocedure('bolagio_begin_external_operation(text,bolagio_external_provider,text,uuid,jsonb,boolean)') is not null, 'bolagio_begin_external_operation has the 6-argument signature');
   perform pg_temp.v_assert(to_regprocedure('bolagio_begin_external_operation(text,bolagio_external_provider,text,uuid,jsonb)') is null, 'the old 5-argument bolagio_begin_external_operation is gone');
   perform pg_temp.v_assert(to_regprocedure('bolagio_record_payment_capture(text,bolagio_payment_provider,text,text,integer,bpchar,text)') is not null, 'bolagio_record_payment_capture exists');
-  perform pg_temp.v_assert(to_regprocedure('bolagio_sync_turnovers(integer)') is not null, 'bolagio_sync_turnovers exists');
-  perform pg_temp.v_assert(to_regprocedure('bolagio_emit_guest_events(integer,integer,integer)') is not null, 'bolagio_emit_guest_events exists');
+  perform pg_temp.v_assert(to_regprocedure('bolagio_sync_turnovers(integer,timestamptz)') is not null, 'bolagio_sync_turnovers has the clock parameter');
+  perform pg_temp.v_assert(to_regprocedure('bolagio_emit_guest_events(integer,integer,integer,timestamptz)') is not null, 'bolagio_emit_guest_events has the clock parameter');
+  -- Platform completion (2026-09-21)
+  perform pg_temp.v_assert(to_regclass('public.bolagio_message_deliveries') is not null, 'bolagio_message_deliveries exists');
+  perform pg_temp.v_assert(to_regclass('public.bolagio_turnover_events') is not null, 'bolagio_turnover_events exists');
+  perform pg_temp.v_assert(to_regclass('public.bolagio_integration_health') is not null, 'bolagio_integration_health exists');
+  perform pg_temp.v_assert(to_regclass('public.bolagio_invoice_sequences') is not null, 'bolagio_invoice_sequences exists');
+  perform pg_temp.v_assert(exists (select 1 from information_schema.columns where table_name='bolagio_booking_intents' and column_name='refund_state'), 'bolagio_booking_intents.refund_state exists');
+  perform pg_temp.v_assert(exists (select 1 from information_schema.columns where table_name='bolagio_units' and column_name='prearrival_days'), 'bolagio_units.prearrival_days exists');
+  perform pg_temp.v_assert(to_regprocedure('bolagio_request_cancellation(uuid,text,text,boolean,integer,text)') is not null, 'bolagio_request_cancellation exists');
+  perform pg_temp.v_assert(to_regprocedure('bolagio_record_refund_outcome(uuid,text,text,integer,text,text,text)') is not null, 'bolagio_record_refund_outcome exists');
+  perform pg_temp.v_assert(to_regprocedure('bolagio_begin_message_delivery(text,text,text,text,text,text,text,text,uuid,integer,integer)') is not null, 'bolagio_begin_message_delivery exists');
+  perform pg_temp.v_assert(to_regprocedure('bolagio_set_turnover_status(uuid,text,text,text)') is not null, 'bolagio_set_turnover_status exists');
+  perform pg_temp.v_assert(exists (select 1 from pg_constraint where conname='bolagio_refund_completed_evidence'), 'refund_completed requires provider evidence (constraint present)');
+  perform pg_temp.v_assert(exists (select 1 from pg_constraint where conname='bolagio_refund_requires_authorization'), 'a refund requires an authorised cancellation (constraint present)');
+  perform pg_temp.v_assert(not exists (
+    select 1 from bolagio_booking_intents where refund_state = 'completed' and (refund_id is null or refunded_amount_cents <= 0)), 'no completed refund without evidence');
+  perform pg_temp.v_assert(not exists (
+    select 1 from bolagio_booking_intents where status in ('releasing','released','cancelled')
+      and payment_status in ('paid','partially_refunded','disputed') and cancellation_authorized_by is null
+      and cancellation_requested_at is not null), 'no released paid booking without an authorised cancellation');
   perform pg_temp.v_assert(to_regprocedure('bolagio_record_scheduler_run(text,timestamptz,boolean,jsonb,text,text)') is not null, 'bolagio_record_scheduler_run exists');
   -- Transition semantics
   perform pg_temp.v_assert(bolagio_payment_transition_allowed('denied','paid'), 'denied -> paid is legal');

@@ -311,7 +311,7 @@ export default async function SystemPage() {
       </Section>
 
       <p className="bc-meta mt-10" style={{ fontSize: 12 }}>
-        Not instrumented in this version: channel-manager and payment-provider reachability (no live call is made from here), and automation-platform health beyond what the outbox and its claim timestamps show.
+        No live call is made from this page. Provider reachability is shown as the last observed success, failure, verified webhook, claim and acknowledgement under Integration signals; a signal never observed is reported as such and never as healthy.
       </p>
     </>
   );

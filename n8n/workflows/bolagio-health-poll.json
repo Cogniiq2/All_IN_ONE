@@ -1,0 +1,98 @@
+{
+  "name": "BoLaGio · Health Poll",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "acfe5b6a-9d63-4bb4-9dad-69291f1a62ee",
+      "name": "Every 5 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// ═══ BoLaGio internal API client — identical in every \"BoLaGio ·\" workflow ═══\n// HMAC-SHA256 over \"v1:<unix seconds>:<raw body>\" (docs/n8n-booking-contract.md §2).\n// The body string is built once, signed, and sent unchanged. A GET signs \"\".\n// Requires: NODE_FUNCTION_ALLOW_BUILTIN to include \"crypto\", env access in Code nodes.\nconst crypto = require('crypto');\nconst helpers = this.helpers;\n\nfunction bolagioConfig() {\n  const site = String($env.BOLAGIO_SITE_URL || '').replace(new RegExp('/+$'), '');\n  const secret = String($env.BOLAGIO_N8N_INTERNAL_SECRET || '');\n  if (!new RegExp('^https?://').test(site)) throw new Error('BOLAGIO_SITE_URL is not set (expected https://host without trailing slash)');\n  if (!secret) throw new Error('BOLAGIO_N8N_INTERNAL_SECRET is not set');\n  return { site, secret };\n}\n\nfunction bolagioSignature(secret, timestamp, rawBody) {\n  return 'v1=' + crypto.createHmac('sha256', secret).update('v1:' + timestamp + ':' + rawBody).digest('hex');\n}\n\nasync function bolagioRequest(method, path, rawBody) {\n  const config = bolagioConfig();\n  const body = method === 'GET' ? '' : String(rawBody);\n  const timestamp = String(Math.floor(Date.now() / 1000));\n  const headers = {\n    'x-bolagio-timestamp': timestamp,\n    'x-bolagio-signature': bolagioSignature(config.secret, timestamp, body),\n    accept: 'application/json',\n  };\n  const options = {\n    method: method,\n    url: config.site + path,\n    headers: headers,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n    timeout: 20000,\n  };\n  if (method !== 'GET') {\n    headers['content-type'] = 'application/json';\n    options.body = body;\n    options.json = false;\n  }\n  const response = await helpers.httpRequest(options);\n  const status = Number(response.statusCode);\n  let data = response.body;\n  if (typeof data === 'string') {\n    if (data.length === 0) data = null;\n    else { try { data = JSON.parse(data); } catch (err) { data = { raw: data.slice(0, 200) }; } }\n  }\n  if (data === undefined) data = null;\n  return { status: status, data: data };\n}\n\nfunction bolagioExpect(result, path) {\n  if (result.status === 401) throw new Error('BoLaGio ' + path + ': 401 (secret mismatch, clock skew or re-serialised body)');\n  if (result.status < 200 || result.status >= 300) throw new Error('BoLaGio ' + path + ': HTTP ' + result.status);\n  return result.data;\n}\n// ═══ end of shared client ═══\n// Error text never carries guest data: e-mail addresses are masked, length capped.\nfunction redact(text) {\n  const raw = text === undefined || text === null ? '' : (typeof text === 'string' ? text : (text.message || JSON.stringify(text)));\n  return String(raw).replace(new RegExp('[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\\\.[A-Za-z]{2,}', 'g'), '[email]').slice(0, 400);\n}\n\n// Poll the operational verdict and alert only on CHANGE. State lives in the\n// workflow's static data (persisted for production executions, not manual runs):\n//   activeCodes        sorted \"LEVEL:code\" entries for CRITICAL/HIGH alerts last seen\n//   alerting           whether an alert for active codes is currently outstanding\n//   failures           consecutive polls that produced no verdict (503 / unreachable)\n//   unreachableAlerted whether the \"no verdict\" alert has been sent\nconst state = $getWorkflowStaticData('global');\nconst health = state.bolagioHealth || { activeCodes: [], alerting: false, failures: 0, unreachableAlerted: false };\nconst FAILURES_BEFORE_ALERT = 2;\nconst output = [];\n\nfunction emit(level, code, title, detail, environment, reference) {\n  output.push({ json: { alert: { level: level, code: code, title: title, detail: detail, environment: environment, reference: reference || null } } });\n}\n\nlet result = null;\nlet transportError = null;\ntry {\n  result = await bolagioRequest('GET', '/api/internal/health', '');\n} catch (err) {\n  transportError = redact(err);\n}\n\nconst verdict = result && result.status === 200 && result.data && Array.isArray(result.data.alerts) ? result.data : null;\n\nif (!verdict) {\n  health.failures += 1;\n  const why = transportError\n    ? 'unreachable: ' + transportError\n    : (result && result.status === 401 ? 'HTTP 401: signature refused' : 'HTTP ' + String(result ? result.status : 'none') + ': no verdict');\n  if (health.failures >= FAILURES_BEFORE_ALERT && !health.unreachableAlerted) {\n    health.unreachableAlerted = true;\n    emit('CRITICAL', 'HEALTH_NO_VERDICT', 'Health endpoint produced no verdict', why + ' (' + String(health.failures) + ' consecutive polls)', $env.BOLAGIO_ENVIRONMENT || 'unknown');\n  }\n  state.bolagioHealth = health;\n  return output;\n}\n\nconst environment = String(verdict.environment || $env.BOLAGIO_ENVIRONMENT || 'unknown');\nconst counts = verdict.counts || {};\nconst countText = 'counts CRITICAL=' + String(counts.CRITICAL || 0) + ' HIGH=' + String(counts.HIGH || 0) + ' MEDIUM=' + String(counts.MEDIUM || 0);\n\nif (health.failures > 0 || health.unreachableAlerted) {\n  if (health.unreachableAlerted) emit('MEDIUM', 'HEALTH_VERDICT_RESTORED', 'Health endpoint answering again', countText, environment);\n  health.failures = 0;\n  health.unreachableAlerted = false;\n}\n\nconst active = verdict.alerts.filter(function (a) { return a && (a.level === 'CRITICAL' || a.level === 'HIGH'); });\nconst codes = Array.from(new Set(active.map(function (a) { return String(a.level) + ':' + String(a.code); }))).sort();\nconst previous = Array.isArray(health.activeCodes) ? health.activeCodes : [];\nconst appeared = codes.filter(function (c) { return !previous.includes(c); });\n\nif (appeared.length > 0) {\n  const level = appeared.some(function (c) { return c.startsWith('CRITICAL:'); }) ? 'CRITICAL' : 'HIGH';\n  const lines = appeared.map(function (c) {\n    const parts = c.split(':');\n    const a = active.find(function (x) { return String(x.level) === parts[0] && String(x.code) === parts.slice(1).join(':'); }) || {};\n    const refs = Array.isArray(a.references) ? a.references.slice(0, 5).join(', ') : '';\n    return c + (a.count ? ' ×' + String(a.count) : '') + (a.title ? ' — ' + String(a.title) : '') + (refs ? ' [' + refs + ']' : '');\n  });\n  emit(level, 'HEALTH_ALERTS', 'New ' + level + ' condition on ' + environment, lines.join('\\n') + '\\n' + countText, environment);\n  health.alerting = true;\n} else if (codes.length === 0 && health.alerting) {\n  emit('MEDIUM', 'HEALTH_ALL_CLEAR', 'All CRITICAL/HIGH conditions cleared on ' + environment, countText, environment);\n  health.alerting = false;\n}\n\nhealth.activeCodes = codes;\nstate.bolagioHealth = health;\nreturn output;\n"
+      },
+      "id": "54dfcbde-d6df-41f3-be2d-dfbc95165b99",
+      "name": "Poll health and diff state",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "Ms3RTuwUWzoCaAdr"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "e631dba1-0dcb-4a5e-8233-2b6bb4c583ca",
+      "name": "Operational Alert",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        200
+      ],
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Every 5 minutes": {
+      "main": [
+        [
+          {
+            "node": "Poll health and diff state",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll health and diff state": {
+      "main": [
+        [
+          {
+            "node": "Operational Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Berlin",
+    "errorWorkflow": "A2cTUS2WXAeObiEM"
+  },
+  "tags": [
+    {
+      "name": "bolagio"
+    }
+  ],
+  "id": "G6nT09jY98fjeRBP",
+  "active": false,
+  "pinData": {}
+}

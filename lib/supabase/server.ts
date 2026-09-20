@@ -32,9 +32,23 @@ export function supabaseAdmin(): SupabaseClient {
 
   cached = createClient(url, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
-    global: { headers: { 'x-application-name': 'bolagio-booking' } },
+    global: { headers: { 'x-application-name': 'bolagio-booking' }, fetch: uncachedFetch },
   });
   return cached;
+}
+
+/**
+ * Every PostgREST call bypasses the Next.js Data Cache.
+ *
+ * Inside the server runtime `fetch` is Next's patched fetch, and a GET to the
+ * same PostgREST URL can be answered from the Data Cache even in a route
+ * handler declared `force-dynamic`. For a calendar that would mean a night
+ * shown free after it was held; for the status route, a payment shown
+ * pending after it settled. Booking data is never cacheable: say so on every
+ * request rather than trust a segment option to propagate.
+ */
+export function uncachedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  return fetch(input, { ...init, cache: 'no-store' });
 }
 
 /** True when the booking backend has somewhere to write. Checked before use. */

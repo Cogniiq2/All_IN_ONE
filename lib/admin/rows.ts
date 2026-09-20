@@ -68,6 +68,16 @@ export interface IntentRow {
   paid_amount_cents: number | null;
   paid_currency: string | null;
   refunded_amount_cents: number | null;
+  /** Cancellation and refund columns (platform-completion migration). Absent on older schemas. */
+  cancellation_requested_at?: string | null;
+  cancellation_requested_by?: string | null;
+  cancellation_reason?: string | null;
+  cancellation_authorized_by?: string | null;
+  cancellation_completed_at?: string | null;
+  refund_state?: string | null;
+  refund_required_cents?: number | null;
+  refund_id?: string | null;
+  refund_last_error?: string | null;
   hold_expires_at: string | null;
   lock_expires_at: string | null;
   last_failure_code: string | null;
@@ -194,6 +204,69 @@ export interface AuditRow {
   created_at: string;
 }
 
+export interface TurnoverRow {
+  id: string;
+  unit_id: string;
+  intent_id: string;
+  departure: string;
+  window_start: string;
+  window_end: string;
+  next_arrival: string | null;
+  same_day: boolean;
+  status: string;
+  assigned_to: string | null;
+  note: string | null;
+  started_at: string | null;
+  done_at: string | null;
+  done_by: string | null;
+  created_at: string;
+  updated_at: string;
+  /** Joined for display. */
+  reference: string | null;
+  unit_slug: string;
+}
+
+export interface TurnoverEventRow {
+  id: string;
+  turnover_id: string;
+  from_status: string | null;
+  to_status: string;
+  actor: string;
+  note: string | null;
+  created_at: string;
+}
+
+export interface MessageDeliveryRow {
+  id: string;
+  reference: string;
+  kind: string;
+  sequence: number;
+  channel: string;
+  locale: string;
+  template_id: string | null;
+  template_version: string | null;
+  destination_masked: string | null;
+  status: string;
+  retryable: boolean;
+  attempts: number;
+  max_attempts: number;
+  next_attempt_at: string | null;
+  provider: string | null;
+  provider_message_id: string | null;
+  last_error: string | null;
+  sent_at: string | null;
+  failed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IntegrationHealthRow {
+  provider: string;
+  signal: string;
+  observed_at: string;
+  detail: string | null;
+}
+
 export interface IntentQuery {
   statuses?: readonly BookingState[] | null;
   paymentStatuses?: readonly PaymentState[] | null;
@@ -209,6 +282,8 @@ export interface IntentQuery {
   attentionOnly?: boolean;
   /** Restrict to rows with any payment activity. */
   paymentActivity?: boolean;
+  /** Restrict to rows whose refund saga is in one of these states. */
+  refundStates?: readonly string[] | null;
   sort?: 'check_in' | 'check_out' | 'updated_at' | 'created_at' | 'quoted_total_cents' | 'paid_at';
   dir?: 'asc' | 'desc';
   offset?: number;
@@ -236,6 +311,11 @@ export interface RowSource {
   audit(limit: number): Promise<AuditRow[]>;
   /** The last run per scheduled job, from the heartbeat table. Empty when nothing has ever run. */
   schedulerStatus(): Promise<SchedulerStatusRow[]>;
+  turnovers(query: { statuses?: readonly string[]; departureFrom?: string; departureTo?: string; intentId?: string; limit?: number }): Promise<TurnoverRow[]>;
+  turnoverEvents(turnoverId: string): Promise<TurnoverEventRow[]>;
+  messageDeliveries(query: { reference?: string; statuses?: readonly string[]; limit?: number }): Promise<MessageDeliveryRow[]>;
+  /** Last observation per (provider, signal). Empty rows mean "never observed", never "healthy". */
+  integrationHealth(): Promise<IntegrationHealthRow[]>;
 }
 
 /** The statuses `bolagio_ops_attention` lists, mirrored for the list filter. */

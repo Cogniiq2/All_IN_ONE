@@ -1,10 +1,10 @@
 /**
- * The navigation, as data. Two groups, seven destinations, nothing that does
+ * The navigation, as data. Two groups, nine destinations, nothing that does
  * not exist yet. A module is added here when it has genuine value, not
  * before.
  */
 
-export type NavIcon = 'overview' | 'calendar' | 'bookings' | 'operations' | 'properties' | 'payments' | 'system';
+export type NavIcon = 'overview' | 'calendar' | 'bookings' | 'operations' | 'cleaning' | 'automations' | 'properties' | 'payments' | 'system';
 
 export interface NavItem {
   href: string;
@@ -34,6 +34,8 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Operations',
     items: [
       { href: '/admin/operations', label: 'Attention', icon: 'operations', match: startsWith('/admin/operations') },
+      { href: '/admin/cleaning', label: 'Cleaning', icon: 'cleaning', match: startsWith('/admin/cleaning') },
+      { href: '/admin/automations', label: 'Automations', icon: 'automations', match: startsWith('/admin/automations') },
       { href: '/admin/properties', label: 'Properties', icon: 'properties', match: startsWith('/admin/properties') },
       { href: '/admin/payments', label: 'Payments', icon: 'payments', match: startsWith('/admin/payments') },
       { href: '/admin/system', label: 'System', icon: 'system', match: startsWith('/admin/system') },

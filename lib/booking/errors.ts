@@ -68,6 +68,12 @@ export const OPS_CODES = {
   PAYMENT_ORPHAN: 1,
   PAYMENT_REFUNDED: 3,
   PAYMENT_DISPUTED: 1,
+  /** A refund call whose outcome we could not determine. Read the order before anything. */
+  PAYMENT_REFUND_UNCERTAIN: 1,
+  /** The provider refused the refund. A person decides. */
+  PAYMENT_REFUND_FAILED: 2,
+  /** A second, different refund on one capture. Money moved twice. */
+  PAYMENT_REFUND_DUPLICATE: 1,
 
   /* ── Booking lifecycle ────────────────────────────────────────────────── */
 
@@ -83,6 +89,8 @@ export const OPS_CODES = {
   BOOKING_LEASE_HELD_FOR_PAYMENT: 2,
   /** A reserving booking with no Beds24 booking id. */
   BOOKING_MISSING_EXTERNAL_HOLD: 2,
+  /** A cancellation was requested and its release has not completed. */
+  CANCELLATION_RELEASE_PENDING: 3,
 
   /* ── Queues ───────────────────────────────────────────────────────────── */
 

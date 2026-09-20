@@ -19,9 +19,18 @@ database, not in the worker's clock.
 | `cleaning.required` | a turnover row is **created** for a confirmed departure | stay | reference, unitSlug, departure, nextArrival, sameDay |
 | `guest.prearrival_ready` | check-in is ≤ 3 days away (and not past) | booking | reference, unitSlug, dates, daysUntilArrival |
 | `guest.checkin_ready` | check-in day | booking | reference, unitSlug, dates |
-| `review.requested` | 1 day after check-out, within a 14-day window | booking | reference, unitSlug, dates |
+| `guest.checkout_ready` | `checkout_notice_days` before check-out (default 1; 0 = the departure day) | booking | reference, unitSlug, dates |
+| `review.requested` | `review_delay_days` after check-out, within `review_window_days` | booking | reference, unitSlug, dates |
+| `invoice.required` | once per confirmed, paid, direct booking, on the first operations pass after confirmation (not date-bound: an invoice is owed at confirmation) | booking | reference, unitSlug, amountCents, currency, paidAt, confirmedAt |
+| `cleaning.rescheduled` / `cleaning.cancelled` | a turnover's departure moved / its stay left `confirmed` | stay | as `cleaning.required`, plus `previousDeparture` on a reschedule |
+| `booking.cancellation_requested` | `bolagio_request_cancellation` on a booking that may hold inventory | booking | reference, status, refundState, authorized |
+| `payment.refunded` | a refund recorded (saga, webhook or by hand) | booking | reference, amountCents, currency, partial, refundId |
 
-Timing constants: `guestOperationsTiming()` in `lib/booking/property-config.ts`.
+Timing: per unit in `bolagio_units` (`prearrival_days`, `checkout_notice_days`,
+`review_delay_days`, `review_window_days`), falling back to the defaults of
+`bolagio_emit_guest_events()`; `guestOperationsTiming()` in
+`lib/booking/property-config.ts` carries the worker-side defaults. Every
+"today" is the unit's local date, DST included (`tests/dates-dst.test.ts`).
 Emission: `bolagio_emit_guest_events()` from the operations pass
 (`lib/booking/operations.ts`), after every reconcile. The dedup ledger
 `bolagio_guest_events (intent_id, kind)` is written in the same transaction as
@@ -48,12 +57,13 @@ day, `window_end` is check-in time the same day; `next_arrival` is the next
 confirmed check-in on the unit and `same_day` says whether the room is needed
 that afternoon.
 
-Status: `required` → `done` (with `done_at`, `done_by`) or `void`. **No UI or
-action sets `done` yet.** That needs a product decision: who marks it (a
-cleaner on a phone? an operator?), whether a photo or a checklist is required,
-and whether a missed same-day turnover blocks the arrival. Until then the
-table is the deterministic fact "this needs cleaning by 14:00", and
-`cleaning.required` is the durable trigger n8n can route to whoever cleans.
+Status: `required` → `in_progress` → `done` (with `done_at`, `done_by`), or
+`void` when the stay leaves `confirmed`; a done turnover **reopens** when its
+departure moves. Operators change status and assignee on `/admin/cleaning`
+(`bolagio_set_turnover_status`, `bolagio_assign_turnover`), every change
+audited in `bolagio_turnover_events`. `cleaning.required` remains the
+durable trigger n8n routes to whoever cleans (`n8n/workflows/bolagio-cleaning-routing.json`).
+See `docs/cleaning-operations.md`.
 
 Scale: 20–50 units is one indexed scan per pass; the unique `intent_id`
 prevents double work; date changes update rather than duplicate.
@@ -61,5 +71,6 @@ prevents double work; date changes update rather than duplicate.
 ## 5. Deliberately not built
 
 Access codes, a messaging inbox, a cleaner app, checklists, maintenance
-tickets, review-platform integration. Each is a product decision with legal
+tickets, review-platform integration, a photo or checklist requirement before
+`done`, and blocking an arrival on a missed turnover. Each is a product decision with legal
 or vendor dependencies; the events above are the contract they plug into.

@@ -22,7 +22,7 @@ import 'server-only';
  * ══════════════════════════════════════════════════════════════════════════
  */
 
-import { recordCapture, transitionIntent, type CaptureOutcome } from '@/lib/booking/commands';
+import { recordCapture, recordRefundOutcome, transitionIntent, type CaptureOutcome } from '@/lib/booking/commands';
 import { requireDirectBooking, BookingError, requireIntent } from '@/lib/booking/service';
 import { finalizeBooking } from '@/lib/booking/finalization';
 import type { BookingLogger } from '@/lib/booking/logger';
@@ -589,6 +589,27 @@ export async function processPaymentEvent(
 
     case 'refunded':
     case 'partially_refunded': {
+      /*
+       * Our own refund, arriving as evidence. If the ledger says a refund is
+       * pending, its outcome was lost, or one was DECIDED and not yet executed
+       * (done by hand at the provider while execution is gated off), the
+       * provider's refund id and amount settle it — through the same command
+       * the saga uses, so the two can never disagree. The command refuses when
+       * no cancellation was authorised, which is what makes anything else
+       * somebody's dashboard refund: see below.
+       */
+      if ((intent.refundState === 'pending' || intent.refundState === 'unknown' || intent.refundState === 'completed' || intent.refundState === 'required') && event.captureId && event.amountCents) {
+        // On PAYMENT.CAPTURE.REFUNDED the resource IS the refund; its id is the refund id.
+        const settled = await recordRefundOutcome(
+          intent.id,
+          { outcome: 'completed', refundId: event.captureId, amountCents: event.amountCents, source: 'webhook' },
+          logger
+        );
+        // Recorded, or the same evidence again: nothing more to do. A second,
+        // DIFFERENT refund on one capture was queued for a person by the command.
+        if (settled.ok) return 'applied';
+        if (settled.code === 'PAYMENT_REFUND_DUPLICATE') return 'escalated';
+      }
       /*
        * A refund does not cancel a reservation. Whether the guest still has
        * their stay is a business decision — a partial refund for a shortened

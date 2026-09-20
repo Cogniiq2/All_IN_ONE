@@ -156,6 +156,13 @@ Deno.serve(async (request: Request): Promise<Response> => {
     return new Response(null, { status: 500 });
   }
 
+  if (verification === 'verified') {
+    // Observability only; a failure here must not fail the ingest.
+    await supabase
+      .rpc('bolagio_observe_integration', { p_provider: 'paypal', p_signal: 'last_verified_webhook', p_detail: eventType })
+      .then(() => undefined, () => undefined);
+  }
+
   console.log(
     JSON.stringify({
       scope: 'paypal-webhook',

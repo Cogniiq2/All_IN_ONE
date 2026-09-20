@@ -158,9 +158,29 @@ export function BookingModal() {
   const bookable = Boolean(calendar && !calendar.unsourced) && !upcoming;
   const days: InventoryDay[] = calendar?.days ?? [];
 
-  // Adopt whatever the hero bar and detail view already know, on each open.
+  // In bookable mode only executable providers are offered, so the selection
+  // must be one of them: a hold that ends on the success screen without a
+  // payment route would be a booking nobody pays for.
   useEffect(() => {
-    if (!open) return;
+    if (!bookable) return;
+    if (!METHODS.find((m) => m.id === method)?.handoff) {
+      const first = METHODS.find((m) => m.handoff);
+      if (first) setMethod(first.id);
+    }
+  }, [bookable, method]);
+
+  // Adopt whatever the hero bar and detail view already know, on each open —
+  // and ONLY on open. `book()` and `requestBooking()` write the chosen stay
+  // back to the shared context mid-flight; re-running this reset then would
+  // throw the guest back to step one with a hold already taken.
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (!open) {
+      wasOpen.current = false;
+      return;
+    }
+    if (wasOpen.current) return;
+    wasOpen.current = true;
     setGuests(clampGuestsFor(stay.guests, maxGuests) ?? 2);
     setDates({ arrival: stay.arrival, departure: stay.departure });
     setStep(1);
@@ -326,6 +346,20 @@ export function BookingModal() {
       });
 
       setReference(intent.reference);
+
+      /*
+       * The server priced the stay again, live, before holding it. If that
+       * price differs from the one on screen, the guest must see the new
+       * total and press the button again — never pay an amount they were not
+       * shown. The hold stands; pressing again replays the same attempt.
+       */
+      if (intent.totalCents !== null && intent.totalCents !== quote.totalCents) {
+        setQuote({ ...quote, totalCents: intent.totalCents, components: intent.components.length > 0 ? intent.components : quote.components });
+        setNotice({ code: 'quote_expired' });
+        setStatus('idle');
+        return;
+      }
+
       track('booking_started', {
         unitSlug: unit.slug,
         nights: intent.nights,
@@ -536,8 +570,13 @@ export function BookingModal() {
                       reference={reference}
                       onSettled={(result) => {
                         // What the SERVER says, not what PayPal told the
-                        // browser. The confirmation screen reads the status.
+                        // browser. The confirmation screen reads the status:
+                        // only a server-reported `confirmed` fills the
+                        // confirmed stay; `paid` and the rest stay honest.
                         setSettledStatus(result.status);
+                        if (result.status === 'confirmed' && dates.arrival && dates.departure) {
+                          setConfirmed({ arrival: dates.arrival, departure: dates.departure });
+                        }
                         setStatus('success');
                         setDirection(1);
                       }}
@@ -614,6 +653,10 @@ export function BookingModal() {
  */
 function toNotice(cause: unknown): { code: BookingErrorCode; meta?: Record<string, number | string | boolean> } {
   if (cause instanceof BookingRequestError) return { code: cause.code, meta: cause.meta };
+  // The PayPal SDK itself could not be loaded or rendered: the hold stands,
+  // nothing was charged, and the copy for a payment page that would not open
+  // says exactly that.
+  if (cause instanceof Error && /^paypal_sdk_/.test(cause.message)) return { code: 'payment_handoff_failed' };
   return { code: 'unexpected' };
 }
 
