@@ -44,3 +44,7 @@ from `bolagio_booking_intents` and the provider payloads.
 Each needs the periods above confirmed first; then the mechanism is a
 migration adding a `pseudonymised_at` column and a scheduled function, with
 its own runbook and rollback.
+
+## Finance tables
+
+The finance subledger (`bolagio_finance_*`, `bolagio_minibar_*`) is classified in `lib/retention/policy.ts` (`financeClasses()`) and is **never purged** by the retention job: statutory periods of 8 and 10 years apply and restart while an assessment is open. See `docs/finance/retention.md`.

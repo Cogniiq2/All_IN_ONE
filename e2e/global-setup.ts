@@ -8,6 +8,7 @@
  */
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { createWriteStream, mkdirSync } from 'node:fs';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -107,8 +108,11 @@ export default async function globalSetup(): Promise<void> {
   const server = spawn(process.execPath, [path.join(ROOT, 'node_modules', 'next', 'dist', 'bin', 'next'), 'start', '-p', String(PORT), '-H', '127.0.0.1'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
   child = server;
   const log: string[] = [];
-  server.stdout?.on('data', (d) => log.push(String(d)));
-  server.stderr?.on('data', (d) => log.push(String(d)));
+  // The whole server output is kept for a failing run (e2e/.artifacts/server.log).
+  mkdirSync(path.dirname(E2E.stateFile), { recursive: true });
+  const serverLog = createWriteStream(path.join(path.dirname(E2E.stateFile), 'server.log'), { flags: 'w' });
+  server.stdout?.on('data', (d) => { log.push(String(d)); serverLog.write(d); });
+  server.stderr?.on('data', (d) => { log.push(String(d)); serverLog.write(d); });
   try {
     await waitFor(`${E2E.app}/api/booking/availability?unit=schulstrasse-i`, 60_000);
   } catch (cause) {
@@ -118,6 +122,7 @@ export default async function globalSetup(): Promise<void> {
   await fetch(`${E2E.paypal}/__sim/config`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ webhookTarget: `${E2E.app}/api/webhooks/paypal`, webhookId: 'WH-SIM-ID', autoWebhook: 'immediate' }) });
 
   // Workers are separate processes: hand them what they need through a file.
+  mkdirSync(path.dirname(E2E.stateFile), { recursive: true });
   writeFileSync(E2E.stateFile, JSON.stringify({ ...E2E, databaseUrl: stack.DATABASE_URL, pid: server.pid }), 'utf8');
   process.env.E2E_BASE_URL = E2E.app;
 

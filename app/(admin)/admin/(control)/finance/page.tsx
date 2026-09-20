@@ -41,7 +41,7 @@ export default async function FinanceOverviewPage() {
     <>
       <PageHeader
         eyebrow="Finance"
-        title={allClear ? 'Everything reconciled' : `${o.inbox.length} item${o.inbox.length === 1 ? '' : 's'} require attention`}
+        title={allClear ? 'Everything reconciled' : `${o.inbox.length} item${o.inbox.length === 1 ? ' requires' : 's require'} attention`}
         description={<span className="inline-flex flex-wrap items-center gap-1.5">{chips.map((c) => <span key={c.label} className="bc-badge ghost" data-tone={c.tone}>{c.label}</span>)}<span className="bc-meta">· {o.inboxCounts.critical} critical · {o.inboxCounts.high} high · {o.inboxCounts.elevated + o.inboxCounts.watch} lower</span></span>}
         actions={<RefreshControl loadedAt={result.loadedAt} every={120} />}
       />

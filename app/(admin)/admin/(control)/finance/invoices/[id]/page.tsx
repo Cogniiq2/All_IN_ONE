@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { formatInvoiceNumber } from '@/lib/invoicing/contract';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { currentOperator } from '@/lib/admin/auth';
@@ -17,7 +18,7 @@ export default async function InvoicePage({ params }: { params: { id: string } }
   if (!result.ok) return <><PageHeader eyebrow="Finance" title="Invoice" /><ErrorNotice title="The invoice could not be loaded.">{result.error}</ErrorNotice></>;
   if (!result.data) notFound();
   const { invoice: i, lines, requirements, config } = result.data;
-  const number = i.number ? `${i.series}-${String(i.number).padStart(5, '0')}` : null;
+  const number = i.number ? formatInvoiceNumber(i.series!, i.number) : null;
   const mayReview = can(operator?.role, 'finance.review') && !operator?.preview;
   const blockers = requirements.filter((r) => !r.ok);
   const draftLines = lines.map((l) => ({ lineNo: l.line_no, description: l.description, quantity: l.quantity, category: l.category, taxCode: l.tax_code, rateBp: l.rate_bp, netCents: l.net_cents, vatCents: l.vat_cents, grossCents: l.gross_cents }));

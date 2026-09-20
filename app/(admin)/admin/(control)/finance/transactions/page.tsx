@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { loadTransactions, unitNamer } from '@/lib/finance/queries';
+import { currentOperator } from '@/lib/admin/auth';
+import { can } from '@/lib/admin/permissions';
 import { one, pageOf, qs, type Params } from '@/lib/finance/params';
 import { KIND_LABEL, CHANNEL_LABEL } from '@/lib/finance/presentation';
 import { categoryLabel } from '@/lib/finance/categories';
@@ -28,7 +30,8 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
     sort: (one(searchParams, 'sort', 20) as 'booked_desc' | 'booked_asc' | 'amount_desc' | 'amount_asc' | null) ?? 'booked_desc',
   };
   const asset = one(searchParams, 'asset', 20);
-  const result = await loadTransactions({ ...filters, page, pageSize: PAGE_SIZE });
+  const [result, operator] = await Promise.all([loadTransactions({ ...filters, page, pageSize: PAGE_SIZE }), currentOperator()]);
+  const mayEdit = can(operator?.role, 'finance.edit') && !operator?.preview;
   const hrefFor = (p: number) => `/admin/finance/transactions${qs({ ...Object.fromEntries(Object.entries(searchParams).map(([k, v]) => [k, Array.isArray(v) ? v[0] : v])), page: p > 1 ? p : null })}`;
   const active = Object.entries(filters).filter(([k, v]) => v && k !== 'sort').length;
 
@@ -60,7 +63,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
           <button type="submit" className="bc-btn sm">Filter</button>
           {active > 0 && <Link href="/admin/finance/transactions" className="bc-btn quiet sm">Clear {active}</Link>}
           {asset && <span className="bc-badge ghost" data-tone="caution">Asset filter applies on the detail; use category Furniture / Equipment</span>}
-          <Link href="/admin/finance/expenses/new" className="bc-btn sm ml-auto">Post an expense</Link>
+          {mayEdit && <Link href="/admin/finance/expenses/new" className="bc-btn sm ml-auto">Post an expense</Link>}
         </div>
       </form>
 

@@ -40,6 +40,7 @@ app/                      App Router routes. Each route: page.tsx (server, metad
   (admin)/admin/          BoLaGio Control — the internal operations interface.
                           Own layout + scoped stylesheet; auth in (control)/layout.tsx.
                           Never linked from the public site. See docs/admin-control.md.
+    (control)/finance/    Finance & Tax operating system (docs/finance/*.md)
   globals.css             Design tokens (HSL custom properties) + base layer
   sitemap.ts, robots.ts, icon.tsx, apple-icon.tsx, opengraph-image.tsx, not-found.tsx
   _archive/               Private folder — NOT routed, not compiled into the site
@@ -58,6 +59,8 @@ lib/
   config/environment.ts   local|preview|staging|production, fail-closed contradiction checks
   booking/                the booking core (see docs/architecture.md)
   ops/                    external-operation ledger, alert derivation
+  finance/                Finance & Tax domain: money, periods, tax engines, reconciliation,
+                          reports, imports, invoices, commands, actions, queries (docs/finance/)
   content/apartments.ts   Property data — single source of truth
   content/brand.ts        Brand, contact, SITE_URL, ENQUIRY_ENDPOINT, PAYMENT_ENABLED
   content/media.ts        Image registry (paths + alt text). Components never hardcode paths.
@@ -81,7 +84,8 @@ Legal and public routes already exist — preserve them.
 
 Internal (authenticated, noindex, not in the sitemap): `/admin` · `/admin/calendar` ·
 `/admin/bookings` · `/admin/bookings/[reference]` · `/admin/operations` · `/admin/properties` ·
-`/admin/payments` · `/admin/system` · `/admin/login`.
+`/admin/payments` · `/admin/system` · `/admin/login` · `/admin/finance` and its 17 sections
+(Finance & Tax — see `docs/finance/architecture.md`; never linked from the public site).
 
 ### Commands
 

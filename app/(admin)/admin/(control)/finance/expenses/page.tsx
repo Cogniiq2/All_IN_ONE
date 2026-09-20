@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { loadExpenses, unitNamer } from '@/lib/finance/queries';
+import { currentOperator } from '@/lib/admin/auth';
+import { can } from '@/lib/admin/permissions';
 import { presetsFor, rangeOf, type Params } from '@/lib/finance/params';
 import { categoryLabel } from '@/lib/finance/categories';
 import { INPUT_VAT_LABEL } from '@/lib/finance/presentation';
@@ -12,10 +14,11 @@ export const metadata: Metadata = { title: 'Expenses' };
 
 export default async function ExpensesPage({ searchParams }: { searchParams: Params }) {
   const range = rangeOf(searchParams, 'mtd');
-  const result = await loadExpenses(range);
+  const [result, operator] = await Promise.all([loadExpenses(range), currentOperator()]);
+  const mayEdit = can(operator?.role, 'finance.edit') && !operator?.preview;
   return (
     <>
-      <PageHeader eyebrow="Finance" title="Expenses" description="What was spent, net, by service date. Input VAT counts only where its deductibility is decided; a document is expected on every supplier invoice." actions={<span className="flex flex-wrap gap-2"><Link href="/admin/finance/expenses/new" className="bc-btn sm primary">Post an expense</Link><ExportButton kind="expense_ledger" from={range.from} to={range.to} label="Export" /></span>} />
+      <PageHeader eyebrow="Finance" title="Expenses" description="What was spent, net, by service date. Input VAT counts only where its deductibility is decided; a document is expected on every supplier invoice." actions={<span className="flex flex-wrap gap-2">{mayEdit && <Link href="/admin/finance/expenses/new" className="bc-btn sm primary">Post an expense</Link>}<ExportButton kind="expense_ledger" from={range.from} to={range.to} label="Export" /></span>} />
       <RangeForm action="/admin/finance/expenses" from={range.from} to={range.to} presets={presetsFor()} />
       {!result.ok ? <ErrorNotice title="Expenses could not be loaded.">{result.error}</ErrorNotice> : (
         <>

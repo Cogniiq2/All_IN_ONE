@@ -8,7 +8,7 @@ import { ACCEPTED_MIME, RETENTION_CLASSES, detectStructuredFormat, retainUntil, 
 import { eInvoiceGate, isDomesticB2B, toEInvoiceModel } from '@/lib/finance/e-invoice';
 import { datevGate, proposeDatevRows } from '@/lib/finance/export/datev';
 import type { CategoryRow } from '@/lib/finance/rows';
-import { line, tx } from './engines.test';
+import { line, tx } from './factories';
 
 /* ---------- CSV ---------- */
 

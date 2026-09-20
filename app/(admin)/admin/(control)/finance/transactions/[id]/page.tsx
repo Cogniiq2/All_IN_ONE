@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { formatInvoiceNumber } from '@/lib/invoicing/contract';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { currentOperator } from '@/lib/admin/auth';
@@ -152,7 +153,7 @@ export default async function TransactionPage({ params }: { params: { id: string
 
           {d.invoices.length > 0 && (
             <Section title="Guest invoice" id="invoice">
-              <div className="bc-rows">{d.invoices.map((i) => <Link key={i.id} href={`/admin/finance/invoices/${i.id}`} className="bc-row bc-row-link" style={{ gridTemplateColumns: 'minmax(0,1fr) auto' }}><span>{i.number ? `${i.series}-${String(i.number).padStart(5, '0')}` : 'Draft'} <StateBadge table="invoice" value={i.status} ghost /></span><Money cents={i.gross_cents} /></Link>)}</div>
+              <div className="bc-rows">{d.invoices.map((i) => <Link key={i.id} href={`/admin/finance/invoices/${i.id}`} className="bc-row bc-row-link" style={{ gridTemplateColumns: 'minmax(0,1fr) auto' }}><span>{i.number ? formatInvoiceNumber(i.series!, i.number) : 'Draft'} <StateBadge table="invoice" value={i.status} ghost /></span><Money cents={i.gross_cents} /></Link>)}</div>
             </Section>
           )}
 

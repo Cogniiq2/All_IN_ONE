@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { formatInvoiceNumber } from '@/lib/invoicing/contract';
 import Link from 'next/link';
 import { currentOperator } from '@/lib/admin/auth';
 import { can } from '@/lib/admin/permissions';
@@ -30,7 +31,7 @@ export default async function InvoicesPage() {
             <div className="bc-rows">
               {inv.rows.map((i) => (
                 <Link key={i.id} href={`/admin/finance/invoices/${i.id}`} className="bc-row bc-row-link" style={{ gridTemplateColumns: 'minmax(0,1fr) auto auto' }}>
-                  <span className="min-w-0"><div style={{ fontWeight: 600 }}>{i.number ? `${i.series}-${String(i.number).padStart(5, '0')}` : 'Draft'} <span className="bc-meta">· {i.kind === 'credit_note' ? 'credit note' : 'invoice'} · {i.recipient_company ?? i.recipient_name}</span></div><div className="bc-meta">{i.booking_reference ? <span className="bc-ref">{i.booking_reference}</span> : '—'} · {i.service_from} – {i.service_to} · <When value={i.issued_at ?? i.created_at} /></div></span>
+                  <span className="min-w-0"><div style={{ fontWeight: 600 }}>{i.number ? formatInvoiceNumber(i.series!, i.number) : 'Draft'} <span className="bc-meta">· {i.kind === 'credit_note' ? 'credit note' : 'invoice'} · {i.recipient_company ?? i.recipient_name}</span></div><div className="bc-meta">{i.booking_reference ? <span className="bc-ref">{i.booking_reference}</span> : '—'} · {i.service_from} – {i.service_to} · <When value={i.issued_at ?? i.created_at} /></div></span>
                   <span className="flex gap-1"><StateBadge table="invoice" value={i.status} /><StateBadge table="payment" value={i.payment_state} ghost /></span>
                   <Money cents={i.gross_cents} />
                 </Link>

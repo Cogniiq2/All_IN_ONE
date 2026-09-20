@@ -356,7 +356,9 @@ function move(m: Partial<MinibarMovementRow> & { product_id: string; movement: s
     const code = requireTaxCode(p.tax_code);
     const t = post({ kind: 'revenue', booked_on: d(off), service_from: d(off), service_to: d(off), description: `Minibar ${p.name}`, channel: ref.startsWith('BLG') ? 'direct' : 'booking_com', booking_intent_id: intent, booking_reference: ref, unit_id: unit, source_type: 'minibar', source_system: 'minibar', source_reference: `${ref}:${p.sku}`, document_state: 'not_required', payment_state: charge === 'paid' ? 'paid' : 'unpaid', reconciliation_state: charge === 'paid' ? 'matched' : 'unmatched' }, [
       { category: 'minibar_sales', taxCode: p.tax_code, gross: p.selling_price_cents * qty, description: `${p.name} × ${qty}`, quantity: qty, productId: p.id },
-      { category: 'minibar_cogs', taxCode: 'DE_OUTSIDE_SCOPE', net: -p.purchase_cost_cents * qty, description: `COGS ${p.name} × ${qty}`, quantity: qty, productId: p.id, inputVat: 'not_applicable' },
+    ]);
+    post({ kind: 'cogs', booked_on: d(off), service_from: d(off), service_to: d(off), description: `Minibar COGS ${p.name}`, channel: ref.startsWith('BLG') ? 'direct' : 'booking_com', booking_intent_id: intent, booking_reference: ref, unit_id: unit, source_type: 'minibar', source_system: 'minibar', source_reference: `${ref}:${p.sku}:cogs`, document_state: 'not_required', payment_state: 'not_applicable', reconciliation_state: 'not_applicable' }, [
+      { category: 'minibar_cogs', taxCode: 'DE_OUTSIDE_SCOPE', net: p.purchase_cost_cents * qty, description: `COGS ${p.name} × ${qty}`, quantity: qty, productId: p.id, inputVat: 'not_applicable' },
     ]);
     void code;
     move({ product_id: pid, movement: 'sale', quantity: -qty, occurred_on: d(off), unit_id: unit, booking_intent_id: intent, booking_reference: ref, charge_state: charge, transaction_id: t.id });

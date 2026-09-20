@@ -10,7 +10,7 @@ import { present } from '@/lib/finance/presentation';
 import { EXPORT_LABEL, ledgerCsv, vatReportCsv, type ExportKind } from '@/lib/finance/export/builders';
 import { computeVatPosition } from '@/lib/finance/tax/vat';
 import type { AccountRow, CashMonthlyRow, PlMonthlyRow, StayRow, UnitMonthlyRow } from '@/lib/finance/rows';
-import { line, pay, tx } from './engines.test';
+import { line, pay, tx } from './factories';
 
 const plRow = (over: Partial<PlMonthlyRow>): PlMonthlyRow => ({ period_key: '2026-03', pl_group: 'revenue', category: 'accommodation_revenue', unit_id: 'u-1', channel: 'direct', revenue_net_cents: 0, expense_net_cents: 0, net_cents: 0, gross_cents: 0, transactions: 1, ...over });
 

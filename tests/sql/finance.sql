@@ -307,7 +307,8 @@ begin
   perform t_assert((select on_hand from bolagio_minibar_stock where product_id = pid) = 22, 'and reduces stock');
   perform t_assert((select gross_cents from bolagio_finance_transaction_lines where transaction_id = tx and line_no = 1) = 500, 'revenue line is 2 × 2.50 gross');
   perform t_assert((select vat_cents from bolagio_finance_transaction_lines where transaction_id = tx and line_no = 1) = 80, 'at 19 % (500 − round(500/1.19)=420 → 80)');
-  perform t_assert((select net_cents from bolagio_finance_transaction_lines where transaction_id = tx and line_no = 2) = -90, 'COGS line is 2 × 0.45 as a negative revenue-side line');
+  perform t_assert((select gross_cents from bolagio_finance_transactions where id = tx) = 500, 'the revenue transaction gross is the guest charge (COGS is not netted into it)');
+  perform t_assert((select net_cents from bolagio_finance_transactions where kind = 'cogs' and source_system = 'minibar' and source_reference = 'BLG-TEST01:WATER-05:cogs') = 90, 'COGS is its own cogs transaction: 2 × 0.45 as a positive cost');
   r := bolagio_minibar_record_movement(jsonb_build_object('product_id', pid, 'movement', 'sale', 'quantity', -2, 'occurred_on', '2026-09-05', 'source_reference', 'BLG-TEST01:WATER-05'), 'ops@example.com');
   perform t_assert((r->>'created')::boolean = false and (select on_hand from bolagio_minibar_stock where product_id = pid) = 22, 'the same sale key posts nothing twice');
   failed := false;

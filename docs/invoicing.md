@@ -67,3 +67,7 @@ completion report.
    fires at confirmation; the accountant may prefer departure).
 6. Storage and retention of the document (10 years, § 147 AO) — see
    `docs/data-retention.md`.
+
+## Guest invoices in Finance
+
+The Finance & Tax section issues guest invoices and credit notes through a fail-closed § 14 UStG gate, reusing this module's series and gapless numbering (`allocateInvoiceNumber`, `formatInvoiceNumber`). See `docs/finance/invoices.md`.

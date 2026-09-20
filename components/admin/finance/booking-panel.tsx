@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { formatInvoiceNumber } from '@/lib/invoicing/contract';
 import type { QueryResult } from '@/lib/admin/dto';
 import type { BookingFinancePanel as Panel } from '@/lib/finance/queries';
 import { KIND_LABEL } from '@/lib/finance/presentation';
@@ -33,7 +34,7 @@ export function BookingFinancePanel({ result }: { result: QueryResult<Panel> }) 
       {f.invoices.map((i) => (
         <Link key={i.id} href={`/admin/finance/invoices/${i.id}`} className="flex flex-wrap items-center gap-2 link-quiet" style={{ padding: '6px 0' }}>
           <span className="bc-badge ghost" data-tone="neutral">{i.kind === 'credit_note' ? 'Credit note' : 'Invoice'}</span>
-          <span>{i.number ? `${i.series}-${String(i.number).padStart(5, '0')}` : 'Draft'}</span>
+          <span>{i.number ? formatInvoiceNumber(i.series!, i.number) : 'Draft'}</span>
           <StateBadge table="invoice" value={i.status} ghost />
           <span className="ml-auto"><Money cents={i.gross_cents} /></span>
         </Link>

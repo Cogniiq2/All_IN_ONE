@@ -1,0 +1,54 @@
+# Revenue
+
+## Sources
+
+| Source | How it enters | Idempotency key |
+|---|---|---|
+| Direct stays (website, PayPal) | `ingestBookingFacts` reads `bolagio_booking_intents` after every operations pass | `booking:<intent id>` |
+| Booking.com stays | reservation statement import (experimental adapter) or manual posting | `bcom:<book number>` |
+| Minibar | `bolagio_minibar_record_movement` (sale) | `<booking>:<sku>` or the caller's key |
+| Manual / corporate | expense/revenue forms | `manual:<hash>` |
+
+## Recognition rule (configurable policy, documented)
+
+Accommodation revenue is recognised on the **check-out date** (`booked_on = service_to`), with the
+stay as the service period. Rationale: the supply is complete at departure; the month in which the
+guest leaves carries the revenue; the cash fact (capture at booking time, payout weeks later) keeps
+its own date. The P&L screen says explicitly that profit is not cash.
+
+The stages that count as a revenue fact are `confirmed`, `paid`, `paid_unfinalized`, `finalizing`,
+`finalization_failed` (`REVENUE_RECOGNISING_STATUSES`); a pending or cancelled intent posts nothing.
+
+## Components → lines
+
+Each quote component becomes a line. Tax category mapping (`taxCodeForComponent`):
+
+| Quote category | Tax code | Classification |
+|---|---|---|
+| `accommodation` | `DE_ACCOMMODATION_REDUCED` (7 %, § 12 Abs. 2 Nr. 11 UStG) | auto_verified |
+| `service` (cleaning fee, etc.) | `DE_ANCILLARY_REVIEW` | needs_review — the Aufteilungsgebot (§ 12 Abs. 2 Nr. 11 S. 2) taxes services that do not directly serve the letting at 19 %; whether a mandatory final cleaning fee is part of the accommodation supply or a separate service is an adviser decision, so the system does not decide it |
+| `city_tax` | `DE_REVIEW_REQUIRED` | needs_review (Bavaria prohibits municipal accommodation taxes; a value here is unexpected) |
+| `deposit` | `DE_OUTSIDE_SCOPE` | not revenue |
+
+Gross is split into net and VAT with half-up rounding; the header equals the sum of lines.
+
+## Channels
+
+`direct`, `booking_com`, `airbnb`, `manual`, `other`. Booking.com commission is a separate
+`commission` transaction (kind `commission`, category `ota_commission`) so gross revenue, commission
+and net proceeds are all visible; the payout is a cash fact that the R6 rule bundles against the
+stays.
+
+## Refunds
+
+A completed refund (`refund_state = completed`, provider refund id present) posts a `refund`
+transaction with **negative** lines allocated pro-rata over the original lines (largest remainder),
+dated on the refund completion date, plus an outgoing payment keyed by the refund id. An amount
+above the original stay is capped and flagged `needs_review`. The original revenue row stays as
+posted: corrections are rows, never edits.
+
+## Screens
+
+`/admin/finance/revenue` — by channel, by unit, nights, ADR, occupancy, refunds, with drill-downs to
+transactions and to `/admin/finance/properties`. Nights and occupancy come from the booking core's
+paid-side stays, never from the ledger.

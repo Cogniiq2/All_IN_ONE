@@ -58,25 +58,31 @@ do $$ begin
   perform pg_temp.v_assert(exists (select 1 from pg_constraint where conname='bolagio_refund_completed_evidence'), 'refund_completed requires provider evidence (constraint present)');
   perform pg_temp.v_assert(exists (select 1 from pg_constraint where conname='bolagio_refund_requires_authorization'), 'a refund requires an authorised cancellation (constraint present)');
   -- Finance foundation (2026-09-22)
-  perform pg_temp.v_assert(to_regclass('public.bolagio_finance_transactions') is not null, 'bolagio_finance_transactions exists');
-  perform pg_temp.v_assert(to_regclass('public.bolagio_finance_transaction_lines') is not null, 'bolagio_finance_transaction_lines exists');
-  perform pg_temp.v_assert(to_regclass('public.bolagio_finance_payments') is not null, 'bolagio_finance_payments exists');
-  perform pg_temp.v_assert(to_regclass('public.bolagio_finance_documents') is not null, 'bolagio_finance_documents exists');
-  perform pg_temp.v_assert(to_regclass('public.bolagio_finance_tax_periods') is not null, 'bolagio_finance_tax_periods exists');
-  perform pg_temp.v_assert(to_regclass('public.bolagio_minibar_movements') is not null, 'bolagio_minibar_movements exists');
-  perform pg_temp.v_assert(to_regclass('public.bolagio_finance_vat_monthly') is not null, 'bolagio_finance_vat_monthly view exists');
-  perform pg_temp.v_assert(to_regprocedure('bolagio_finance_post_transaction(jsonb,jsonb,text)') is not null, 'bolagio_finance_post_transaction exists');
-  perform pg_temp.v_assert(to_regprocedure('bolagio_finance_reverse_transaction(uuid,text,text,date)') is not null, 'bolagio_finance_reverse_transaction exists');
-  perform pg_temp.v_assert(to_regprocedure('bolagio_finance_set_period_status(text,text,text,boolean,text)') is not null, 'bolagio_finance_set_period_status exists');
-  perform pg_temp.v_assert((select count(*) from bolagio_finance_tax_codes where code in ('DE_ACCOMMODATION_REDUCED','DE_STANDARD','DE_REVERSE_CHARGE','DE_REVIEW_REQUIRED')) = 4, 'the core tax codes are seeded');
-  perform pg_temp.v_assert(exists (select 1 from bolagio_finance_tax_rates where tax_type = 'gewst_hebesatz'), 'a trade-tax Hebesatz row exists (review flag tells whether it is confirmed)');
-  perform pg_temp.v_assert(not exists (select 1 from bolagio_finance_transactions where gross_cents <> net_cents + vat_cents), 'no transaction violates gross = net + VAT');
-  perform pg_temp.v_assert(not exists (
-    select 1 from bolagio_finance_transactions t
-    join (select transaction_id, sum(net_cents) n, sum(vat_cents) v, sum(gross_cents) g from bolagio_finance_transaction_lines group by 1) s on s.transaction_id = t.id
-    where t.net_cents <> s.n or t.vat_cents <> s.v or t.gross_cents <> s.g), 'every header total equals the sum of its lines');
-  perform pg_temp.v_assert(not exists (select 1 from bolagio_finance_transactions where status = 'reversed' and reversed_by is null), 'every reversed transaction names its reversal');
-  perform pg_temp.v_assert(not exists (select 1 from bolagio_finance_transaction_lines where tax_code = 'DE_REVIEW_REQUIRED' and classification not in ('needs_review','suggested')), 'no review-required line is marked verified');
+  -- Conditional: the ops check verifies intermediate states in which 20260922 is rolled back.
+  if to_regclass('public.bolagio_finance_transactions') is not null then
+    perform pg_temp.v_assert(to_regclass('public.bolagio_finance_transactions') is not null, 'bolagio_finance_transactions exists');
+    perform pg_temp.v_assert(to_regclass('public.bolagio_finance_transaction_lines') is not null, 'bolagio_finance_transaction_lines exists');
+    perform pg_temp.v_assert(to_regclass('public.bolagio_finance_payments') is not null, 'bolagio_finance_payments exists');
+    perform pg_temp.v_assert(to_regclass('public.bolagio_finance_documents') is not null, 'bolagio_finance_documents exists');
+    perform pg_temp.v_assert(to_regclass('public.bolagio_finance_tax_periods') is not null, 'bolagio_finance_tax_periods exists');
+    perform pg_temp.v_assert(to_regclass('public.bolagio_minibar_movements') is not null, 'bolagio_minibar_movements exists');
+    perform pg_temp.v_assert(to_regclass('public.bolagio_finance_vat_monthly') is not null, 'bolagio_finance_vat_monthly view exists');
+    perform pg_temp.v_assert(to_regprocedure('bolagio_finance_post_transaction(jsonb,jsonb,text)') is not null, 'bolagio_finance_post_transaction exists');
+    perform pg_temp.v_assert(to_regprocedure('bolagio_finance_reverse_transaction(uuid,text,text,date)') is not null, 'bolagio_finance_reverse_transaction exists');
+    perform pg_temp.v_assert(to_regprocedure('bolagio_finance_set_period_status(text,text,text,boolean,text)') is not null, 'bolagio_finance_set_period_status exists');
+    perform pg_temp.v_assert((select count(*) from bolagio_finance_tax_codes where code in ('DE_ACCOMMODATION_REDUCED','DE_STANDARD','DE_REVERSE_CHARGE','DE_REVIEW_REQUIRED')) = 4, 'the core tax codes are seeded');
+    perform pg_temp.v_assert(exists (select 1 from bolagio_finance_tax_rates where tax_type = 'gewst_hebesatz'), 'a trade-tax Hebesatz row exists (review flag tells whether it is confirmed)');
+    perform pg_temp.v_assert(not exists (select 1 from bolagio_finance_transactions where gross_cents <> net_cents + vat_cents), 'no transaction violates gross = net + VAT');
+    perform pg_temp.v_assert(not exists (
+      select 1 from bolagio_finance_transactions t
+      join (select transaction_id, sum(net_cents) n, sum(vat_cents) v, sum(gross_cents) g from bolagio_finance_transaction_lines group by 1) s on s.transaction_id = t.id
+      where t.net_cents <> s.n or t.vat_cents <> s.v or t.gross_cents <> s.g), 'every header total equals the sum of its lines');
+    perform pg_temp.v_assert(not exists (select 1 from bolagio_finance_transactions where status = 'reversed' and reversed_by is null), 'every reversed transaction names its reversal');
+    perform pg_temp.v_assert(not exists (select 1 from bolagio_finance_transaction_lines where tax_code = 'DE_REVIEW_REQUIRED' and classification not in ('needs_review','suggested')), 'no review-required line is marked verified');
+    raise notice 'ok — finance (20260922) verified';
+  else
+    raise notice 'finance (20260922) is not applied: finance assertions skipped';
+  end if;
   perform pg_temp.v_assert(not exists (
     select 1 from bolagio_booking_intents where refund_state = 'completed' and (refund_id is null or refunded_amount_cents <= 0)), 'no completed refund without evidence');
   perform pg_temp.v_assert(not exists (
@@ -108,6 +114,10 @@ do $$ begin
   perform pg_temp.v_assert(not has_function_privilege('anon', 'bolagio_booking_transition(uuid,bolagio_booking_status,bolagio_booking_status,text,jsonb,text,text,jsonb)', 'execute'), 'anon cannot execute bolagio_booking_transition');
   perform pg_temp.v_assert(not has_function_privilege('authenticated', 'bolagio_record_payment_capture(text,bolagio_payment_provider,text,text,integer,bpchar,text)', 'execute'), 'authenticated cannot execute bolagio_record_payment_capture');
   perform pg_temp.v_assert(has_function_privilege('service_role', 'bolagio_begin_external_operation(text,bolagio_external_provider,text,uuid,jsonb,boolean)', 'execute'), 'service_role can execute bolagio_begin_external_operation');
+  perform pg_temp.v_assert(not exists (
+    select 1 from information_schema.role_routine_grants
+    where routine_schema = 'public' and (routine_name like 'bolagio\_finance\_%' or routine_name like 'bolagio\_minibar\_%')
+      and grantee in ('PUBLIC', 'anon', 'authenticated') and privilege_type = 'EXECUTE'), 'no finance function is executable by PUBLIC, anon or authenticated');
   -- Data integrity
   perform pg_temp.v_assert(not exists (
     select 1 from bolagio_booking_intents where payment_capture_id is not null group by payment_capture_id having count(*) > 1), 'no capture id is shared by two bookings');

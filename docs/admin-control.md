@@ -26,6 +26,7 @@ to Beds24 or PayPal from a browser.
 | `/admin/properties` | Unit registry, mapping ids, cache freshness, today's state. Read-only. |
 | `/admin/payments` | Local payment records beside their bookings; recent webhook events. |
 | `/admin/system` | Measured health, queues, recent jobs/operations/outbox, operator audit. |
+| `/admin/finance` … | **Finance & Tax** (17 sections: overview, inbox, revenue, expenses, transactions, documents, VAT, taxes, P&L, cash flow, properties, reconciliation, minibar, invoices, imports, accountant, settings). Requires `finance.view`. See `docs/finance/architecture.md`. |
 
 Every `/admin` response carries `X-Robots-Tag: noindex, nofollow, noarchive`,
 `Cache-Control: no-store`, a strict `Content-Security-Policy`
@@ -104,6 +105,12 @@ interface has no browser-side Supabase client.
 | Change a turnover's status or assignee | | ✓ | ✓ |
 | Requeue a failed delivery or dead-lettered event | | ✓ | ✓ |
 | Manage operators (reserved; no UI yet) | | | ✓ |
+| Read finance (`finance.view`) | ✓ | ✓ | ✓ |
+| Post expenses, upload documents, record minibar, stage/commit imports (`finance.edit`) | | ✓ | ✓ |
+| Reclassify, reverse, confirm matches, hand a period to review (`finance.review`) | | ✓ | ✓ |
+| Export ledgers and reports (`finance.export`) | | ✓ | ✓ |
+| Accountant path: lock periods and lines, record tax stages, notices, adjustments (`finance.tax_review`) | | | ✓ |
+| Finance policy, rates, counterparties, accounts (`finance.configure`) | | | ✓ |
 
 Defined in `lib/admin/permissions.ts`; checked server-side in every action.
 

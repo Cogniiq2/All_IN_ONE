@@ -1609,12 +1609,6 @@ begin
       'line_no', 1, 'category', 'minibar_sales', 'description', v_p.name || ' × ' || (-v_qty), 'quantity', -v_qty,
       'tax_code', v_p.tax_code, 'rate_bp', v_code.rate_bp, 'net_cents', v_net, 'vat_cents', v_vat, 'gross_cents', v_gross,
       'unit_id', p_move->>'unit_id', 'minibar_product_id', v_p.id, 'classification', case when v_code.review_required then 'needs_review' else 'auto_verified' end));
-    if v_cogs > 0 then
-      v_lines := v_lines || jsonb_build_object(
-        'line_no', 2, 'category', 'minibar_cogs', 'description', 'COGS ' || v_p.name || ' × ' || (-v_qty), 'quantity', -v_qty,
-        'tax_code', 'DE_OUTSIDE_SCOPE', 'rate_bp', 0, 'net_cents', -v_cogs, 'vat_cents', 0, 'gross_cents', -v_cogs,
-        'input_vat_treatment', 'not_applicable', 'unit_id', p_move->>'unit_id', 'minibar_product_id', v_p.id, 'classification', 'auto_verified');
-    end if;
     v_tx := bolagio_finance_post_transaction(jsonb_build_object(
       'kind', 'revenue', 'booked_on', v_occurred, 'service_from', v_occurred, 'service_to', v_occurred, 'currency', 'EUR',
       'description', 'Minibar ' || v_p.name, 'channel', coalesce(p_move->>'channel', 'direct'),
@@ -1623,6 +1617,21 @@ begin
       'review_state', case when v_code.review_required then 'needs_review' else 'auto_verified' end,
       'document_state', 'not_required', 'payment_state', case v_charge when 'paid' then 'paid' when 'included' then 'not_applicable' when 'written_off' then 'not_applicable' else 'unpaid' end,
       'reconciliation_state', case when v_charge in ('paid','unpaid') then 'unmatched' else 'not_applicable' end), v_lines, p_actor);
+    -- The cost of the goods sold is its own fact (kind `cogs`, positive cost):
+    -- the revenue transaction keeps the guest charge as its gross, so a
+    -- payment can match it, and the P&L view sums the cost as a cost.
+    if v_cogs > 0 then
+      perform bolagio_finance_post_transaction(jsonb_build_object(
+        'kind', 'cogs', 'booked_on', v_occurred, 'service_from', v_occurred, 'service_to', v_occurred, 'currency', 'EUR',
+        'description', 'Minibar COGS ' || v_p.name, 'channel', coalesce(p_move->>'channel', 'direct'),
+        'booking_intent_id', p_move->>'booking_intent_id', 'booking_reference', p_move->>'booking_reference', 'unit_id', p_move->>'unit_id',
+        'source_type', 'minibar', 'source_system', 'minibar', 'source_reference', v_key || ':cogs',
+        'review_state', 'auto_verified', 'document_state', 'not_required', 'payment_state', 'not_applicable', 'reconciliation_state', 'not_applicable'),
+        jsonb_build_array(jsonb_build_object(
+          'line_no', 1, 'category', 'minibar_cogs', 'description', 'COGS ' || v_p.name || ' × ' || (-v_qty), 'quantity', -v_qty,
+          'tax_code', 'DE_OUTSIDE_SCOPE', 'rate_bp', 0, 'net_cents', v_cogs, 'vat_cents', 0, 'gross_cents', v_cogs,
+          'input_vat_treatment', 'not_applicable', 'unit_id', p_move->>'unit_id', 'minibar_product_id', v_p.id, 'classification', 'auto_verified')), p_actor);
+    end if;
   end if;
   insert into bolagio_minibar_movements (product_id, movement, quantity, unit_cost_cents, unit_price_cents, unit_id, booking_intent_id, booking_reference,
     charge_state, occurred_on, transaction_id, corrects_id, note, recorded_by)
@@ -1793,11 +1802,11 @@ on conflict (code) do nothing;
 -- seeded review_required so the adviser confirms each year before it is used.
 insert into bolagio_finance_tax_rates (tax_type, jurisdiction, rate_bp, effective_from, effective_to, legal_reference, source_url, review_required, note) values
   ('kst', 'DE', 1500, '2008-01-01', '2027-12-31', '§ 23 Abs. 1 KStG', 'https://www.gesetze-im-internet.de/kstg_1977/__23.html', false, null),
-  ('kst', 'DE', 1400, '2028-01-01', '2028-12-31', '§ 23 Abs. 1 KStG i.d.F. Investitionssofortprogramm 2025', 'https://www.gesetze-im-internet.de/kstg_1977/__23.html', true, 'scheduled step-down; confirm before use'),
-  ('kst', 'DE', 1300, '2029-01-01', '2029-12-31', '§ 23 Abs. 1 KStG i.d.F. Investitionssofortprogramm 2025', 'https://www.gesetze-im-internet.de/kstg_1977/__23.html', true, 'scheduled step-down; confirm before use'),
-  ('kst', 'DE', 1200, '2030-01-01', '2030-12-31', '§ 23 Abs. 1 KStG i.d.F. Investitionssofortprogramm 2025', 'https://www.gesetze-im-internet.de/kstg_1977/__23.html', true, 'scheduled step-down; confirm before use'),
-  ('kst', 'DE', 1100, '2031-01-01', '2031-12-31', '§ 23 Abs. 1 KStG i.d.F. Investitionssofortprogramm 2025', 'https://www.gesetze-im-internet.de/kstg_1977/__23.html', true, 'scheduled step-down; confirm before use'),
-  ('kst', 'DE', 1000, '2032-01-01', null, '§ 23 Abs. 1 KStG i.d.F. Investitionssofortprogramm 2025', 'https://www.gesetze-im-internet.de/kstg_1977/__23.html', true, 'scheduled step-down; confirm before use'),
+  ('kst', 'DE', 1400, '2028-01-01', '2028-12-31', '§ 23 Abs. 1 KStG i.d.F. Investitionssofortprogramm 2025', 'https://www.gesetze-im-internet.de/kstg_1977/__23.html', true, 'step-down enacted by the Gesetz für ein steuerliches Investitionssofortprogramm of 14.07.2025 (BGBl. 2025 I, published 18.07.2025); kept review-flagged until the adviser confirms it for the estimate year'),
+  ('kst', 'DE', 1300, '2029-01-01', '2029-12-31', '§ 23 Abs. 1 KStG i.d.F. Investitionssofortprogramm 2025', 'https://www.gesetze-im-internet.de/kstg_1977/__23.html', true, 'step-down enacted by the Gesetz für ein steuerliches Investitionssofortprogramm of 14.07.2025 (BGBl. 2025 I, published 18.07.2025); kept review-flagged until the adviser confirms it for the estimate year'),
+  ('kst', 'DE', 1200, '2030-01-01', '2030-12-31', '§ 23 Abs. 1 KStG i.d.F. Investitionssofortprogramm 2025', 'https://www.gesetze-im-internet.de/kstg_1977/__23.html', true, 'step-down enacted by the Gesetz für ein steuerliches Investitionssofortprogramm of 14.07.2025 (BGBl. 2025 I, published 18.07.2025); kept review-flagged until the adviser confirms it for the estimate year'),
+  ('kst', 'DE', 1100, '2031-01-01', '2031-12-31', '§ 23 Abs. 1 KStG i.d.F. Investitionssofortprogramm 2025', 'https://www.gesetze-im-internet.de/kstg_1977/__23.html', true, 'step-down enacted by the Gesetz für ein steuerliches Investitionssofortprogramm of 14.07.2025 (BGBl. 2025 I, published 18.07.2025); kept review-flagged until the adviser confirms it for the estimate year'),
+  ('kst', 'DE', 1000, '2032-01-01', null, '§ 23 Abs. 1 KStG i.d.F. Investitionssofortprogramm 2025', 'https://www.gesetze-im-internet.de/kstg_1977/__23.html', true, 'step-down enacted by the Gesetz für ein steuerliches Investitionssofortprogramm of 14.07.2025 (BGBl. 2025 I, published 18.07.2025); kept review-flagged until the adviser confirms it for the estimate year'),
   ('soli', 'DE', 550, '1998-01-01', null, '§ 4 Satz 1 SolzG 1995 (5,5 % of the KSt)', 'https://www.gesetze-im-internet.de/solzg_1995/__4.html', false, null),
   ('gewst_messzahl', 'DE', 350, '2008-01-01', null, '§ 11 Abs. 2 GewStG', 'https://www.gesetze-im-internet.de/gewstg/__11.html', false, null),
   -- The Bayreuth Hebesatz is seeded as review_required: the value must be
@@ -1867,7 +1876,12 @@ begin
     execute format('revoke all on function %s from public, anon, authenticated', fn);
     execute format('grant execute on function %s to service_role', fn);
   end loop;
-  -- The immutable key helper keeps the PUBLIC default (no table access), as
-  -- the shared-project verification allows for IMMUTABLE predicates.
+  -- Every remaining finance function (trigger functions, the immutable key
+  -- helper) loses the PUBLIC execute default too: browser roles can call
+  -- nothing in this domain. Idempotent.
+  for fn in select p.oid::regprocedure::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+            where n.nspname = 'public' and (p.proname like 'bolagio\_finance\_%' or p.proname like 'bolagio\_minibar\_%') loop
+    execute format('revoke all on function %s from public, anon, authenticated', fn);
+  end loop;
   execute 'grant execute on function bolagio_finance_period_key(date) to service_role';
 end $$;
