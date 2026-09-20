@@ -2495,3 +2495,13 @@ a.bc-figure:hover {
     padding: 0;
   }
 }
+
+/* Mini tables scroll inside their card on narrow screens instead of widening the page. */
+@media (max-width: 720px) {
+  .bc-mini-table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}

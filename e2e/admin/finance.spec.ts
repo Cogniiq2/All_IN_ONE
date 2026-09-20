@@ -13,7 +13,7 @@ import { FINANCE_SECTIONS } from '../../components/admin/shell/nav-items';
 const HEADINGS: Record<string, string> = {
   '/admin/finance': 'Finance', '/admin/finance/inbox': 'Finance inbox', '/admin/finance/revenue': 'Revenue', '/admin/finance/expenses': 'Expenses',
   '/admin/finance/transactions': 'Transactions', '/admin/finance/documents': 'Documents', '/admin/finance/vat': 'VAT', '/admin/finance/taxes': 'Taxes',
-  '/admin/finance/profit-loss': 'Profit & loss', '/admin/finance/cash-flow': 'Cash flow', '/admin/finance/properties': 'Properties',
+  '/admin/finance/profit-loss': 'Profit & loss', '/admin/finance/cash-flow': 'Cash flow', '/admin/finance/properties': 'Property profitability',
   '/admin/finance/reconciliation': 'Reconciliation', '/admin/finance/minibar': 'Minibar', '/admin/finance/invoices': 'Invoices',
   '/admin/finance/imports': 'Imports', '/admin/finance/accountant': 'Accountant', '/admin/finance/settings': 'Settings',
 };
@@ -90,7 +90,7 @@ test('F03 · an operator posts an expense through the form; the ledger, the line
   await page.getByLabel('Category').first().selectOption('cleaning');
   await page.getByLabel('Tax code').first().selectOption('DE_STANDARD');
   await page.getByLabel('Net €').first().fill('100,00');
-  await page.getByLabel('VAT €').first().fill('19,00');
+  await expect(page.getByLabel('VAT €').first()).toHaveValue('19,00'); // derived from net and code by the form
   await page.getByRole('button', { name: 'Post expense' }).click();
   await expect(page.getByText('Posted.')).toBeVisible();
   const id = sql(`select id from bolagio_finance_transactions where supplier_invoice_no = 'RN-2026-0042'`);
@@ -99,7 +99,7 @@ test('F03 · an operator posts an expense through the form; the ledger, the line
   expect(sql(`select category || '|' || tax_code || '|' || classification from bolagio_finance_transaction_lines where transaction_id = '${id}'`)).toBe('cleaning|DE_STANDARD|reviewed');
   expect(sql(`select outcome || '|' || operator_email from bolagio_admin_audit_log where action = 'finance.expense.post'`)).toBe(`ok|${email}`);
   await page.getByRole('link', { name: 'Open the transaction →' }).click();
-  await expect(page.getByRole('heading', { level: 1, name: 'Transaction' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /Cleaning March/ })).toBeVisible();
   // The same invoice cannot be posted twice from the form either.
   await page.goto('/admin/finance/expenses/new');
   await page.getByLabel('Supplier', { exact: true }).fill('Reinigung Nord GmbH');
@@ -109,7 +109,6 @@ test('F03 · an operator posts an expense through the form; the ledger, the line
   await page.getByLabel('Category').first().selectOption('cleaning');
   await page.getByLabel('Tax code').first().selectOption('DE_STANDARD');
   await page.getByLabel('Net €').first().fill('100,00');
-  await page.getByLabel('VAT €').first().fill('19,00');
   await page.getByRole('button', { name: 'Post expense' }).click();
   await expect(page.getByText(/already posted/)).toBeVisible();
   expect(sql(`select count(*) from bolagio_finance_transactions where supplier_invoice_no = 'RN-2026-0042'`)).toBe('1');
@@ -121,7 +120,7 @@ test('F04 · on a transaction an operator reclassifies a line with a reason and 
   await page.goto('/admin/finance/inbox');
   await expect(page.getByText(/Missing document · Reinigung Nord GmbH/)).toBeVisible();
   await page.goto(`/admin/finance/transactions/${id}`);
-  await expect(page.getByRole('heading', { level: 1, name: 'Transaction' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /Reinigung Nord GmbH RN-7/ })).toBeVisible();
 
   await page.getByRole('tab', { name: 'Classify a line' }).click();
   await page.getByLabel('Category').selectOption('laundry');
@@ -149,27 +148,31 @@ test('F04 · on a transaction an operator reclassifies a line with a reason and 
 });
 
 test('F05 · an administrator moves a clean period to reviewed and then locks it; an operator cannot; the lock holds in the database', async ({ page, context }) => {
-  postExpenseViaDb('2024-02-10', 'Stadtwerke Bayreuth', 'SW-2024-02', 5000, 950, 'electricity');
+  const d = new Date(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - 10);
+  const key = d.toISOString().slice(0, 7);
+  const label = d.toLocaleString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  postExpenseViaDb(`${key}-10`, 'Stadtwerke Bayreuth', `SW-${key}`, 5000, 950, 'electricity');
   await operatorSession(context, 'operator');
   await page.goto('/admin/finance/accountant');
   await expect(page.getByRole('heading', { level: 1, name: 'Accountant' })).toBeVisible();
-  await expect(page.getByText('2024-02')).toBeVisible();
+  const row = () => page.getByRole('row', { name: new RegExp(label) });
+  await expect(row()).toBeVisible();
   await expect(page.getByRole('button', { name: 'Mark reviewed' })).toHaveCount(0);
 
   await context.clearCookies();
   const { email } = await operatorSession(context, 'admin');
   await page.goto('/admin/finance/accountant');
-  await page.getByRole('button', { name: 'Mark reviewed' }).first().click();
+  await row().getByRole('button', { name: 'Mark reviewed' }).click();
   await expect(page.getByText('Period is now accountant reviewed.')).toBeVisible();
-  expect(sql(`select status || '|' || status_by from bolagio_finance_periods where period_key = '2024-02'`)).toBe(`accountant_reviewed|${email}`);
-  page.once('dialog', (d) => d.accept());
-  await page.getByRole('button', { name: /^Lock/ }).first().click();
+  expect(sql(`select status || '|' || status_by from bolagio_finance_periods where period_key = '${key}'`)).toBe(`accountant_reviewed|${email}`);
+  page.once('dialog', (dlg) => dlg.accept());
+  await row().getByRole('button', { name: /^Lock/ }).click();
   await expect(page.getByText('Period is now locked.')).toBeVisible();
-  expect(sql(`select status from bolagio_finance_periods where period_key = '2024-02'`)).toBe('locked');
+  expect(sql(`select status from bolagio_finance_periods where period_key = '${key}'`)).toBe('locked');
   expect(sql(`select count(*) from bolagio_admin_audit_log where action = 'finance.period.status' and operator_email = '${email}'`)).toBe('2');
   // The lock is enforced by the database, not the screen.
   let refused = false;
-  try { postExpenseViaDb('2024-02-20', 'Late Supplier', 'LATE-1', 100, 19); } catch { refused = true; }
+  try { postExpenseViaDb(`${key}-20`, 'Late Supplier', 'LATE-1', 100, 19); } catch { refused = true; }
   expect(refused).toBe(true);
 });
 
