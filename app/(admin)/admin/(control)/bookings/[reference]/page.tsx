@@ -22,6 +22,8 @@ import { operatorPaidCancellationEnabled } from '@/lib/booking/config';
 import { loadDeliveriesForBooking, loadTurnoversForBooking } from '@/lib/admin/queries';
 import { adminMode } from '@/lib/admin/config';
 import { KIND_LABEL } from '@/components/admin/automations/delivery-list';
+import { loadFinanceForBooking } from '@/lib/finance/queries';
+import { BookingFinancePanel } from '@/components/admin/finance/booking-panel';
 
 export async function generateMetadata({ params }: { params: { reference: string } }): Promise<Metadata> {
   return { title: isBookingReference(params.reference) ? params.reference : 'Booking' };
@@ -76,6 +78,7 @@ export default async function BookingDetailPage({ params }: { params: { referenc
   const mayReconcile = can(operator?.role, 'reconcile_booking') && !operator?.preview;
   const guestName = b.guest ? `${b.guest.firstName} ${b.guest.lastName}`.trim() : null;
   const turnovers = await loadTurnoversForBooking(b.id);
+  const finance = await loadFinanceForBooking(b.id);
 
   // Cancellation: which case this booking is, and whether THIS operator on
   // THIS deployment may start it. The server action re-derives all of it.
@@ -233,6 +236,12 @@ export default async function BookingDetailPage({ params }: { params: { referenc
                   Turnover after departure: {turnovers.data.map((t) => `${t.status.replace('_', ' ')}${t.assignedTo ? ` (${t.assignedTo})` : ''}`).join(', ')}. <a href="/admin/cleaning" className="link-quiet">Cleaning board</a>
                 </p>
               )}
+            </div>
+          </Section>
+
+          <Section title="Finance" meta={<span>booking, payment and invoice are three facts — <a href="/admin/finance" className="link-quiet">Finance →</a></span>} id="finance">
+            <div className="pt-3">
+              <BookingFinancePanel result={finance} />
             </div>
           </Section>
 

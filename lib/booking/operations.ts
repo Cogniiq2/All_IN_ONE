@@ -31,15 +31,31 @@ import type { BookingLogger } from '@/lib/booking/logger';
 export interface OperationsReport {
   turnovers: TurnoverSyncReport;
   guestEvents: GuestEventReport;
+  /** Finance ingestion summary, or null when finance is not applied / failed (recorded in its own signal). */
+  finance: { scanned: number; revenuePosted: number; paymentsRecorded: number; refundsPosted: number; matches: number; errors: number } | null;
 }
 
 export async function runOperationsPass(logger: BookingLogger): Promise<OperationsReport> {
   const turnovers = await syncTurnovers();
   const guestEvents = await emitGuestEvents(guestOperationsTiming());
+  /*
+   * Finance CONSUMES the facts above. It runs last, after the booking work is
+   * done and reported, and its failure never fails the pass: the finance
+   * heartbeat (`bolagio_integration_health`, provider `finance`) says when it
+   * last succeeded, and the Finance health card reports a stale one.
+   */
+  let finance: OperationsReport['finance'] = null;
+  try {
+    const { ingestBookingFacts } = await import('@/lib/finance/commands');
+    const r = await ingestBookingFacts({ actor: 'system:operations-pass' });
+    finance = { scanned: r.scanned, revenuePosted: r.revenuePosted, paymentsRecorded: r.paymentsRecorded, refundsPosted: r.refundsPosted, matches: r.matches, errors: r.errors.length };
+  } catch (cause) {
+    logger.warn('finance.ingest', { outcome: 'failed', errorCode: cause instanceof Error ? cause.name : 'unknown' });
+  }
   logger.info('operations.pass', {
     count: turnovers.created + turnovers.updated + turnovers.voided,
     resolution: `turnovers created=${turnovers.created} updated=${turnovers.updated} voided=${turnovers.voided}; ` +
       `events prearrival=${guestEvents.prearrival} checkin=${guestEvents.checkin} review=${guestEvents.review}`,
   });
-  return { turnovers, guestEvents };
+  return { turnovers, guestEvents, finance };
 }

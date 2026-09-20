@@ -7,6 +7,8 @@ import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { ALL_NAV_ITEMS } from '@/components/admin/shell/nav-items';
 import { Icon } from '@/components/admin/shell/nav-icon';
 import { searchBookingsAction } from '@/lib/admin/actions';
+import { searchFinanceAction, type FinanceHit } from '@/lib/finance/search-action';
+import { FINANCE_SECTIONS } from '@/components/admin/shell/nav-items';
 import type { BookingSummaryDto } from '@/lib/admin/dto';
 import { formatStay } from '@/lib/admin/format';
 import { bookingStatePresentation } from '@/lib/admin/presentation';
@@ -29,6 +31,7 @@ export function CommandPalette({ properties }: { properties: PropertyEntry[] }) 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<BookingSummaryDto[]>([]);
+  const [financeHits, setFinanceHits] = useState<FinanceHit[]>([]);
   const [searching, startSearch] = useTransition();
   const latest = useRef(0);
 
@@ -47,6 +50,7 @@ export function CommandPalette({ properties }: { properties: PropertyEntry[] }) 
     if (!open) {
       setQuery('');
       setResults([]);
+      setFinanceHits([]);
     }
   }, [open]);
 
@@ -54,13 +58,17 @@ export function CommandPalette({ properties }: { properties: PropertyEntry[] }) 
     const q = query.trim();
     if (q.length < 2) {
       setResults([]);
+      setFinanceHits([]);
       return;
     }
     const id = ++latest.current;
     const timer = setTimeout(() => {
       startSearch(async () => {
-        const res = await searchBookingsAction(q);
-        if (id === latest.current) setResults(res.ok ? res.items : []);
+        const [res, fin] = await Promise.all([searchBookingsAction(q), searchFinanceAction(q)]);
+        if (id === latest.current) {
+          setResults(res.ok ? res.items : []);
+          setFinanceHits(fin.ok ? fin.items : []);
+        }
       });
     }, 180);
     return () => clearTimeout(timer);
@@ -114,6 +122,18 @@ export function CommandPalette({ properties }: { properties: PropertyEntry[] }) 
                   </Command.Group>
                 )}
 
+                {financeHits.length > 0 && (
+                  <Command.Group heading="Finance">
+                    {financeHits.map((h) => (
+                      <Command.Item key={h.href} value={`finance ${h.label} ${h.hint}`} onSelect={() => go(h.href)}>
+                        <Icon name="transactions" />
+                        <span className="truncate">{h.label}</span>
+                        <span className="bc-cmd-hint">{h.hint}</span>
+                      </Command.Item>
+                    ))}
+                  </Command.Group>
+                )}
+
                 <Command.Group heading="Go to">
                   {ALL_NAV_ITEMS.map((item) => (
                     <Command.Item key={item.href} value={`go ${item.label}`} onSelect={() => go(item.href)}>
@@ -124,6 +144,19 @@ export function CommandPalette({ properties }: { properties: PropertyEntry[] }) 
                   <Command.Item value="go to today calendar" onSelect={() => go('/admin/calendar')}>
                     <Icon name="calendar" />
                     <span>Calendar — today</span>
+                  </Command.Item>
+                </Command.Group>
+
+                <Command.Group heading="Finance sections">
+                  {FINANCE_SECTIONS.filter((s) => !['/admin/finance', '/admin/finance/inbox', '/admin/finance/transactions', '/admin/finance/taxes', '/admin/finance/accountant'].includes(s.href)).map((s) => (
+                    <Command.Item key={s.href} value={`open finance ${s.label}`} onSelect={() => go(s.href)}>
+                      <Icon name="finance" />
+                      <span>Finance — {s.label}</span>
+                    </Command.Item>
+                  ))}
+                  <Command.Item value="post an expense new" onSelect={() => go('/admin/finance/expenses/new')}>
+                    <Icon name="transactions" />
+                    <span>Post an expense</span>
                   </Command.Item>
                 </Command.Group>
 

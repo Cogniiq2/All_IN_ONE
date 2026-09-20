@@ -140,6 +140,7 @@ export async function startHarness(overrides: Record<string, string> = {}): Prom
                   bolagio_admin_audit_log, bolagio_unit_inventory_days, bolagio_message_deliveries,
                   bolagio_integration_health, bolagio_turnover_events;
          update bolagio_units set is_bookable = (slug = 'schulstrasse-i');`);
+    execFileSync('psql', [databaseUrl, '-q', '-v', 'ON_ERROR_STOP=1', '-f', path.join(ROOT, 'tests', 'sql', 'finance-reset.sql')], { encoding: 'utf8' });
     await paypal.reset();
     await paypal.config({ webhookTarget: `${app}/api/webhooks/paypal`, webhookId: 'WH-SIM-ID', autoWebhook: 'immediate' });
     await beds24.reset();

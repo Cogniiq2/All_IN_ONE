@@ -49,6 +49,9 @@ select 'platform_completion (20260921120000)' as migration,
              and to_regprocedure('bolagio_request_cancellation(uuid,text,text,boolean,integer,text)') is not null
             then 'applied' else 'not applied' end as actual;
 
+select 'finance_foundation (20260922120000)' as migration,
+       case when to_regclass('public.bolagio_finance_transactions') is not null and to_regprocedure('bolagio_finance_post_transaction(jsonb,jsonb,text)') is not null then 'applied' else 'not applied' end as actual;
+
 \echo ''
 \echo '── 4. Supabase migration history (if the CLI has been used) ────────────'
 do $$

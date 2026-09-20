@@ -39,6 +39,7 @@ MIGRATIONS=(
   supabase/migrations/20260919120000_admin_operators.sql
   supabase/migrations/20260920120000_booking_production_hardening.sql
   supabase/migrations/20260921120000_platform_completion.sql
+  supabase/migrations/20260922120000_finance_foundation.sql
 )
 
 echo "── preflight on an empty database (must not error) ──"
@@ -51,6 +52,13 @@ echo "── seed ──"
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/seed/bolagio_booking_units.sql
 echo "── verify ──"
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/ops/verify.sql 2>&1 | grep -E "ok —|FAILED|passed" | tail -3
+echo "── rollback 20260922 (finance) in one transaction, then re-apply it twice (idempotent) ──"
+psql "$TEST" -1 -v ON_ERROR_STOP=1 -q -f supabase/ops/rollback_20260922.sql
+psql "$TEST" -Atc "select case when to_regclass('public.bolagio_finance_transactions') is null and to_regclass('public.bolagio_booking_intents') is not null then 'ok — 20260922 rolled back, booking core intact' else 'ERROR: finance rollback incomplete' end;"
+psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260922120000_finance_foundation.sql
+psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260922120000_finance_foundation.sql
+psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/ops/verify.sql 2>&1 | grep -E "FAILED|passed" | tail -1
+psql "$TEST" -1 -v ON_ERROR_STOP=1 -q -f supabase/ops/rollback_20260922.sql
 echo "── rollback 20260921 (single transaction), then re-apply 20260920 to restore its functions ──"
 psql "$TEST" -1 -v ON_ERROR_STOP=1 -q -f supabase/ops/rollback_20260921.sql
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260920120000_booking_production_hardening.sql
@@ -64,10 +72,11 @@ psql "$TEST" -1 -v ON_ERROR_STOP=1 -q -f supabase/ops/rollback_20260921.sql
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260920120000_booking_production_hardening.sql
 psql "$TEST" -1 -v ON_ERROR_STOP=1 -q -f supabase/ops/rollback_20260920.sql
 psql "$TEST" -Atc "select case when to_regclass('public.bolagio_turnovers') is null then 'ok — rolled back' else 'ERROR: still present' end;"
-echo "── re-apply 20260920 and 20260921 (idempotent) ──"
+echo "── re-apply 20260920, 20260921 and 20260922 (idempotent) ──"
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260920120000_booking_production_hardening.sql
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260920120000_booking_production_hardening.sql
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260921120000_platform_completion.sql
+psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260922120000_finance_foundation.sql
 echo "── verify again ──"
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/ops/verify.sql 2>&1 | grep -E "FAILED|passed" | tail -1
 psql "$DATABASE_URL" -q -c "drop database if exists bolagio_ops_check;"

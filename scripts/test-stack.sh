@@ -70,6 +70,7 @@ MIGRATIONS=(
   supabase/migrations/20260919120000_admin_operators.sql
   supabase/migrations/20260920120000_booking_production_hardening.sql
   supabase/migrations/20260921120000_platform_completion.sql
+  supabase/migrations/20260922120000_finance_foundation.sql
 )
 
 admin_url() { echo "postgres://postgres@/postgres?host=$(realpath "$SOCK")&port=$PG_PORT"; }
@@ -215,8 +216,10 @@ do $$ begin
   if to_regclass('public.bolagio_message_deliveries') is not null then execute 'truncate bolagio_message_deliveries'; end if;
   if to_regclass('public.bolagio_integration_health') is not null then execute 'truncate bolagio_integration_health'; end if;
   if to_regclass('public.bolagio_turnover_events') is not null then execute 'truncate bolagio_turnover_events'; end if;
+  end if;
 end $$;
 SQL
+  psql "$DB" -q -v ON_ERROR_STOP=1 -f tests/sql/finance-reset.sql
   echo "stack reset"
 }
 

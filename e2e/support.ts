@@ -85,6 +85,7 @@ export async function resetAll(): Promise<void> {
                 bolagio_admin_audit_log, bolagio_unit_inventory_days, bolagio_message_deliveries,
                 bolagio_integration_health, bolagio_turnover_events, bolagio_operators;
        update bolagio_units set is_bookable = (slug = 'schulstrasse-i');`);
+  execFileSync('psql', [state().databaseUrl, '-q', '-v', 'ON_ERROR_STOP=1', '-f', path.join(__dirname, '..', 'tests', 'sql', 'finance-reset.sql')], { encoding: 'utf8' });
   await sims.paypal.reset();
   await sims.paypal.config({ webhookTarget: `${state().app}/api/webhooks/paypal`, webhookId: 'WH-SIM-ID', autoWebhook: 'immediate' });
   await sims.beds24.reset();

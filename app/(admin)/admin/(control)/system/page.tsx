@@ -7,6 +7,7 @@ import { codeTitle } from '@/lib/admin/presentation';
 import { PageHeader, Section, HealthBadge, ErrorNotice, JobBadge, OperationBadge, When, Notice } from '@/components/admin/primitives';
 import { RefreshControl } from '@/components/admin/shell/refresh-control';
 import { RunPassButton } from '@/components/admin/system/run-pass-button';
+import { loadFinanceHealth } from '@/lib/finance/queries';
 
 export const metadata: Metadata = { title: 'System' };
 
@@ -23,7 +24,7 @@ const QUEUE_LABEL: Record<string, string> = {
  * green. Configuration appears as states, never as values.
  */
 export default async function SystemPage() {
-  const [health, queues, jobs, outbox, operations, audit, operator, alerts] = await Promise.all([
+  const [health, queues, jobs, outbox, operations, audit, operator, alerts, finance] = await Promise.all([
     loadSystemHealth(),
     loadQueues(),
     loadRecentJobs(12),
@@ -32,6 +33,7 @@ export default async function SystemPage() {
     loadAudit(20),
     currentOperator(),
     loadAlerts(),
+    loadFinanceHealth(),
   ]);
   const mayRun = can(operator?.role, 'run_reconciliation_pass') && !operator?.preview;
 
@@ -77,7 +79,7 @@ export default async function SystemPage() {
         <ErrorNotice title="System health could not be loaded.">{health.error}</ErrorNotice>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
-          {health.data.map((s) => (
+          {[...health.data, { key: 'finance', title: 'Finance', status: finance.status, summary: finance.summary, facts: finance.facts }].map((s) => (
             <article key={s.key} className="bc-panel" style={{ padding: '16px 18px' }} aria-labelledby={`sys-${s.key}`}>
               <div className="flex items-start justify-between gap-3">
                 <h2 id={`sys-${s.key}`} className="bc-h2">

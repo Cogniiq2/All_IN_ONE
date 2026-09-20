@@ -38,7 +38,7 @@ import {
   type TurnoverDto,
   type TurnoverEventDto,
 } from '@/lib/admin/dto';
-import { collectAttention, OUTBOX_BACKLOG_MS, PAYMENT_EVENT_STUCK_MS } from '@/lib/admin/attention';
+import { collectAttention, LEVEL_ORDER, OUTBOX_BACKLOG_MS, PAYMENT_EVENT_STUCK_MS } from '@/lib/admin/attention';
 import { deriveAlerts, SCHEDULER_INTERVAL_MS, type AlertReport } from '@/lib/ops/alerts';
 import { closedRanges, nightsCovered } from '@/lib/admin/calendar';
 import { ageMs, guestListLabel } from '@/lib/admin/format';
@@ -517,7 +517,14 @@ export async function loadAttention(now: Date = new Date()): Promise<QueryResult
     // explanation and links onward; the job stays visible on the detail page.
     const listed = new Set(items.filter((i) => i.category === 'booking').map((i) => i.reference));
     const deduped = items.filter((i) => !(i.category === 'reconciliation' && i.reference && listed.has(i.reference)));
-    return { items: deduped, degraded };
+    // Finance crosses over with its critical/high items only (mismatches,
+    // unreconciled refunds, overdue tax deadlines, failed imports). A finance
+    // read failure degrades the list; it never fails the operations screens.
+    const { loadFinanceAttention } = await import('@/lib/finance/attention');
+    const finance = await loadFinanceAttention(now);
+    if (finance.degraded) degraded.push('finance');
+    const merged = [...deduped, ...finance.items].sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level]);
+    return { items: merged, degraded };
   });
 }
 
@@ -1063,7 +1070,10 @@ export async function loadAlerts(now: Date = new Date()): Promise<QueryResult<Al
       loadAttention(now),
       completionAlertInputs(source, now),
     ]);
+    const { loadFinanceAttention } = await import('@/lib/finance/attention');
+    const finance = await loadFinanceAttention(now);
     return deriveAlerts({
+      finance: finance.alerts,
       now,
       queues,
       databaseReachable: reachable,

@@ -57,6 +57,8 @@ export interface AlertInput {
   refunds?: { required: number; pending: number; unknown: number; failed: number; references: string[] } | null;
   /** Integration signals; `null` when the health table could not be read. */
   integrations?: IntegrationSignalDto[] | null;
+  /** Finance exceptions (lib/finance/attention.ts); `null` when finance could not be read, `undefined` on a caller that has no finance. */
+  finance?: { mismatches: number; failedImports: number; overdueDeadlines: number; dueSoonDeadlines: number; reserveCoverage: number | null; reserveGapCents: number; unmatchedRefunds: number; missingDocumentsOverdue: number; lastIngestionAt: string | null } | null;
 }
 
 export interface AlertReport {
@@ -400,6 +402,23 @@ export function deriveAlerts(input: AlertInput): AlertReport {
       detail: `Direct booking is refused until corrected: ${refusals.map((f) => f.code).join(', ')}.`,
       count: refusals.length,
     });
+  }
+
+  /* ── Finance ────────────────────────────────────────────────────────── */
+  if (input.finance === undefined) {
+    // a caller without finance has nothing to say here
+  } else if (input.finance === null) {
+    notInstrumented.push('finance');
+  } else {
+    const f = input.finance;
+    if (f.mismatches > 0) alerts.push({ level: 'CRITICAL', code: 'FINANCE_PAYMENT_MISMATCH', title: 'Finance: payment does not match its revenue or expense', detail: 'A linked payment differs from the posted amount. Money and the ledger disagree until a person records the correction.', count: f.mismatches });
+    if (f.overdueDeadlines > 0) alerts.push({ level: 'CRITICAL', code: 'TAX_DEADLINE_OVERDUE', title: 'Tax deadline overdue', detail: 'A VAT, corporation-tax or trade-tax date (planning or official) has passed without a recorded stage or payment. Confirm with the adviser.', count: f.overdueDeadlines });
+    if (f.unmatchedRefunds > 0) alerts.push({ level: 'HIGH', code: 'FINANCE_REFUND_UNRECONCILED', title: 'Refund posted without an outgoing payment', detail: 'Either the money has not left or the provider statement is not imported.', count: f.unmatchedRefunds });
+    if (f.failedImports > 0) alerts.push({ level: 'HIGH', code: 'FINANCE_IMPORT_FAILED', title: 'Finance import failed', detail: 'A statement import did not complete. Facts from it are missing from the ledger.', count: f.failedImports });
+    if (f.reserveCoverage !== null && f.reserveCoverage < 0.25) alerts.push({ level: 'HIGH', code: 'TAX_RESERVE_UNDERFUNDED', title: 'Tax reserve severely underfunded', detail: `Declared reserve covers ${Math.round(f.reserveCoverage * 100)} % of the estimated remaining tax liabilities (gap ${(f.reserveGapCents / 100).toFixed(2)} EUR).` });
+    if (f.missingDocumentsOverdue > 0) alerts.push({ level: 'MEDIUM', code: 'FINANCE_DOCUMENTS_MISSING', title: 'Expenses without documents beyond 45 days', detail: 'Input VAT on them is not deductible until the invoices are linked.', count: f.missingDocumentsOverdue });
+    if (f.lastIngestionAt === null) notInstrumented.push('finance ingestion (never run)');
+    else if (now.getTime() - Date.parse(f.lastIngestionAt) > 24 * 60 * 60_000) alerts.push({ level: 'MEDIUM', code: 'FINANCE_INGESTION_STALE', title: 'Finance ingestion has not run for 24 h', detail: 'Booking facts are not reaching the ledger. The reconcile schedule runs it; check the scheduler.' });
   }
 
   alerts.sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level] || a.code.localeCompare(b.code));

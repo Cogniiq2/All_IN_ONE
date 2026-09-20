@@ -1,7 +1,7 @@
 import type { NavIcon } from '@/components/admin/shell/nav-items';
 
 /**
- * Nine line icons on one 24-unit grid, 1.6 stroke, round joins. Drawn here
+ * Fifteen line icons on one 24-unit grid, 1.6 stroke, round joins. Drawn here
  * rather than pulled from an icon set so their weight, optical size and
  * alignment are one decision, not seven.
  */
@@ -77,6 +77,46 @@ export function Icon({ name, className }: { name: NavIcon; className?: string })
       return (
         <svg {...common}>
           <path d="M4 12h3l2.5-6 3 12 2.5-6H20" />
+        </svg>
+      );
+    case 'finance':
+      return (
+        <svg {...common}>
+          <path d="M4 19h16M6 19V11M10 19V7M14 19v-8M18 19V5" />
+        </svg>
+      );
+    case 'inbox':
+      return (
+        <svg {...common}>
+          <path d="M4 13V6.5A1.5 1.5 0 0 1 5.5 5h13A1.5 1.5 0 0 1 20 6.5V13" />
+          <path d="M4 13h4l1.5 3h5L16 13h4v5.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5z" />
+        </svg>
+      );
+    case 'transactions':
+      return (
+        <svg {...common}>
+          <path d="M4 8h13l-3-3M20 16H7l3 3" />
+        </svg>
+      );
+    case 'taxes':
+      return (
+        <svg {...common}>
+          <path d="M6 4.5h12v15l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5-2 1.5z" />
+          <path d="M9 9h6M9 12.5h6M9 16h3" />
+        </svg>
+      );
+    case 'reports':
+      return (
+        <svg {...common}>
+          <path d="M4 18 9.5 11l4 4L20 7" />
+          <path d="M15.5 7H20v4.5" />
+        </svg>
+      );
+    case 'accountant':
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="8.5" />
+          <path d="m8.5 12.5 2.5 2.5 4.5-5" />
         </svg>
       );
   }

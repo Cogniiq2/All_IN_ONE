@@ -212,7 +212,59 @@ export const RETENTION_CLASSES: readonly RetentionClass[] = [
     legalBasisHint: 'Art. 6(1)(c) GDPR',
     mechanism: 'manual, documented',
   },
+
+  /* ── Finance foundation (2026-09-22). Accounting records: § 147 AO governs; nothing deletes. ── */
+  ...financeClasses(),
 ];
+
+/**
+ * Finance tables. Two rules apply to all of them: they are accounting
+ * records or their evidence (§ 147 AO / § 257 HGB — 8 years for vouchers and
+ * invoices, 10 years for books and annual accounts, from the end of the
+ * calendar year), and they hold NO guest personal data by design: a revenue
+ * row carries the booking reference, an invoice carries the recipient the
+ * law requires on it (§ 14 Abs. 4 Nr. 1 UStG), nothing else.
+ */
+function financeClasses(): RetentionClass[] {
+  const voucher = `8 years from the end of the calendar year (§ 147 Abs. 1 Nr. 4, Abs. 3 AO as amended 2025); planning date — ${NEEDS}`;
+  const books = `10 years from the end of the calendar year (§ 147 Abs. 1 Nr. 1, Abs. 3 AO; § 257 HGB) — ${NEEDS}`;
+  const reference = 'Master/reference data; kept while in use, historic rows kept for reproducibility of past figures.';
+  const c = (table: string, category: DataCategory, purpose: string, proposedRetention: string, personalColumns: string[] = [], legalBasisHint = 'Art. 6(1)(c) GDPR with § 147 AO'): RetentionClass => ({
+    table, category, purpose, personalColumns, proposedRetention, legalBasisHint, mechanism: 'manual, documented',
+  });
+  return [
+    c('bolagio_finance_tax_codes', 'configuration', 'Effective-dated VAT tax codes the ledger lines reference.', reference),
+    c('bolagio_finance_categories', 'configuration', 'Management P&L categories and the proposed DATEV mapping.', reference),
+    c('bolagio_finance_tax_rates', 'configuration', 'Effective-dated KSt/Soli/GewSt rates and the Bayreuth Hebesatz.', reference),
+    c('bolagio_finance_policy', 'configuration', 'Effective-dated finance/tax policy (filing frequency, reserve policy).', reference),
+    c('bolagio_finance_periods', 'transaction_evidence', 'Accounting periods and their lock state; part of the audit trail of the books.', books),
+    c('bolagio_finance_counterparties', 'configuration', 'Suppliers, OTAs, providers, authorities and their classification defaults. Business entities, not persons.', `As long as the business relationship plus the retention of the vouchers that name them — ${NEEDS}`),
+    c('bolagio_finance_accounts', 'configuration', 'Money accounts (bank, PayPal, cash); IBAN masked.', reference),
+    c('bolagio_finance_import_batches', 'transaction_evidence', 'Provenance of imported statements: file name, hash, counts.', voucher),
+    c('bolagio_finance_import_rows', 'transaction_evidence', 'Staged rows of an import, kept as the raw source of what was posted.', `${voucher}; raw rows of REJECTED batches may be removed after review — ${NEEDS}`),
+    c('bolagio_finance_documents', 'transaction_evidence', 'Registry of invoices, statements, notices and contracts (hash, type, retention class).', `Per retention_class on the row: invoices/vouchers 8 years, annual accounts/notices/contracts 10 years, letters 6 years — ${NEEDS}`),
+    c('bolagio_finance_document_links', 'transaction_evidence', 'Which document evidences which record.', voucher),
+    c('bolagio_finance_transactions', 'transaction_evidence', 'The economic facts: revenue, expenses, refunds, commissions, with provenance to their source.', books),
+    c('bolagio_finance_transaction_lines', 'transaction_evidence', 'Lines of the economic facts: category, tax code, net/VAT/gross, allocation.', books),
+    c('bolagio_finance_overrides', 'security_audit', 'Every manual and accountant override: old value, new value, reason, actor.', books, ['actor'], 'Art. 6(1)(c) GDPR (GoBD traceability); the actor is an operator, not a guest'),
+    c('bolagio_finance_payments', 'transaction_evidence', 'Cash facts: money that moved on an account, by provider reference.', books),
+    c('bolagio_finance_reconciliations', 'transaction_evidence', 'Explicit matches between facts, with rule and reason.', books),
+    c('bolagio_finance_invoices', 'transaction_evidence', 'Guest invoices and credit notes with the recipient the law requires on them.', `${voucher} (§ 14b Abs. 1 UStG: 8 years) — ${NEEDS}`, ['recipient_name', 'recipient_address', 'recipient_company', 'recipient_vat_id'], 'Art. 6(1)(c) GDPR with § 14b UStG'),
+    c('bolagio_finance_invoice_lines', 'transaction_evidence', 'Lines of guest invoices.', voucher),
+    c('bolagio_finance_tax_periods', 'transaction_evidence', 'One row per tax type and period with its status.', books),
+    c('bolagio_finance_tax_estimates', 'transaction_evidence', 'Append-only stages of each tax figure with the calculation basis.', books),
+    c('bolagio_finance_tax_adjustments', 'transaction_evidence', 'Accountant-entered adjustments to the tax basis.', books),
+    c('bolagio_finance_tax_notices', 'transaction_evidence', 'Official tax notices and their assessed amounts.', books),
+    c('bolagio_finance_tax_notice_dues', 'transaction_evidence', 'Due dates and amounts from tax notices.', books),
+    c('bolagio_finance_tax_payments', 'transaction_evidence', 'Tax payments made, by type and period.', books),
+    c('bolagio_finance_reserves', 'operational_telemetry', 'Cash declared as reserved by management, as of a date.', `Historic declarations kept for the management record; 3 years proposed — ${NEEDS}`),
+    c('bolagio_finance_assets', 'transaction_evidence', 'Asset candidates and confirmed fixed assets.', `${books}; for the life of the asset plus 10 years — ${NEEDS}`),
+    c('bolagio_finance_exports', 'security_audit', 'Audit of every export: kind, period, generator version, hash. No file content.', books),
+    c('bolagio_minibar_products', 'configuration', 'Minibar product catalogue with tax code and prices.', reference),
+    c('bolagio_minibar_movements', 'transaction_evidence', 'Stock movements; sales are the source of minibar revenue facts.', books),
+    c('bolagio_finance_turnover_costs', 'operational_telemetry', 'Expected cleaning cost per turnover, linked to the actual invoice line when it arrives.', `As long as the turnover record (24 months proposed) — ${NEEDS}`),
+  ];
+}
 
 export function retentionClassFor(table: string): RetentionClass | undefined {
   return RETENTION_CLASSES.find((c) => c.table === table);

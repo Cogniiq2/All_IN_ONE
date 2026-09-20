@@ -168,5 +168,8 @@ export function previewCredentialsMatch(email: string, password: string): boolea
  * quietly open a write path in the demo.
  */
 export function previewAllows(capability: Capability): boolean {
-  return capability === 'view';
+  // The two READ capabilities, and nothing that writes. `finance.view` is a
+  // read like `view`; every finance write (`finance.edit`, `.review`,
+  // `.tax_review`, `.export`, `.configure`) is refused here regardless of role.
+  return capability === 'view' || capability === 'finance.view';
 }

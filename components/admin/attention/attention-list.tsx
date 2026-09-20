@@ -9,6 +9,7 @@ const CATEGORY: Record<string, string> = {
   reconciliation: 'Reconciliation',
   payment_inbox: 'Payment inbox',
   outbox: 'Automation',
+  finance: 'Finance',
 };
 
 function fact(value: boolean | 'unknown', yes: string, no: string): { text: string; tone: string } {

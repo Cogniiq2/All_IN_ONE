@@ -58,6 +58,8 @@ export type BookingLogEvent =
   | 'webhook.paypal'
   | 'webhook.beds24'
   | 'operations.pass'
+  /** The finance subledger ingestion that follows an operations pass. */
+  | 'finance.ingest'
   | 'scheduler.heartbeat'
   | 'config.validation'
   | 'health.read';

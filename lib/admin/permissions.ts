@@ -6,6 +6,14 @@
  * a client component, a cookie claim or a query string.
  *
  * Roles mirror the `role` check constraint on `bolagio_operators`.
+ *
+ * Finance capabilities are a separate family. The role model is deliberately
+ * NOT widened with a fourth role: `viewer` reads (operations and finance),
+ * `operator` works the finance desk (post, classify, reconcile, export) and
+ * `admin` additionally holds the accountant path (lock, filed/assessed
+ * stages, policy). Should a real Steuerberater login be needed, the clean
+ * step is a role `accountant` granted exactly the `finance.*` family — the
+ * capability names are already the seam.
  */
 
 export const OPERATOR_ROLES = ['viewer', 'operator', 'admin'] as const;
@@ -27,12 +35,27 @@ export type Capability =
   /** Requeue a failed guest-message delivery or a dead-lettered automation event. */
   | 'requeue_automation'
   /** Reserved: manage the operator allowlist. No UI exists for it yet. */
-  | 'manage_operators';
+  | 'manage_operators'
+  /* ── Finance (docs/finance/architecture.md §access) ─────────────────── */
+  /** Read every finance screen (read-only, like `view`). Tighten by removing it from `viewer` if a read-only operations role must not see money. */
+  | 'finance.view'
+  /** Post expenses, upload documents, record minibar movements, run ingestion, import statements, link documents. */
+  | 'finance.edit'
+  /** Classify: tax code, category, input VAT, allocation, asset state; accept/reject reconciliation suggestions; move a period to review. */
+  | 'finance.review'
+  /** The accountant path: lock lines and periods, record reviewed/filed/assessed/paid tax stages, tax adjustments, unlock. */
+  | 'finance.tax_review'
+  /** Generate exports and management reports. */
+  | 'finance.export'
+  /** Change finance policy (filing frequency, Hebesatz rows, reserve policy, counterparty rules). */
+  | 'finance.configure';
 
 const GRANTS: Readonly<Record<OperatorRole, readonly Capability[]>> = {
-  viewer: ['view'],
-  operator: ['view', 'reconcile_booking', 'run_reconciliation_pass', 'cancel_unpaid_booking', 'manage_cleaning', 'requeue_automation'],
-  admin: ['view', 'reconcile_booking', 'run_reconciliation_pass', 'cancel_unpaid_booking', 'cancel_paid_booking', 'manage_cleaning', 'requeue_automation', 'manage_operators'],
+  viewer: ['view', 'finance.view'],
+  operator: ['view', 'reconcile_booking', 'run_reconciliation_pass', 'cancel_unpaid_booking', 'manage_cleaning', 'requeue_automation',
+    'finance.view', 'finance.edit', 'finance.review', 'finance.export'],
+  admin: ['view', 'reconcile_booking', 'run_reconciliation_pass', 'cancel_unpaid_booking', 'cancel_paid_booking', 'manage_cleaning', 'requeue_automation', 'manage_operators',
+    'finance.view', 'finance.edit', 'finance.review', 'finance.tax_review', 'finance.export', 'finance.configure'],
 };
 
 export function isOperatorRole(value: unknown): value is OperatorRole {

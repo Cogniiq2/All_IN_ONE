@@ -34,7 +34,9 @@ export type AttentionCategory =
   | 'external_operation'
   | 'reconciliation'
   | 'payment_inbox'
-  | 'outbox';
+  | 'outbox'
+  /** Critical/high finance exceptions crossing into the global area (lib/finance/attention.ts). */
+  | 'finance';
 
 export interface AttentionItem {
   /** Stable within a page load; used as a React key and for de-duplication. */
