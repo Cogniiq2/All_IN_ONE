@@ -188,19 +188,6 @@ export function n8nReplayWindowSeconds(): number {
   return intEnv('N8N_REPLAY_WINDOW_SECONDS', 300, 30, 900);
 }
 
-/**
- * The secret on the reconciliation / maintenance endpoint.
- *
- * ── What this no longer is ───────────────────────────────────────────────
- * It used to authenticate a caller claiming a payment had succeeded. It does
- * not any more, and nothing does: payment truth comes from a PayPal
- * signature-verified event or an authoritative server-side capture, never from
- * a caller's assertion behind a static string. See docs/booking-core-audit.md §2.1.
- */
-export function bookingCallbackSecret(): string | undefined {
-  return env('BOOKING_CALLBACK_SECRET');
-}
-
 /** The secret the scheduled inventory sync presents. */
 export function inventorySyncSecret(): string | undefined {
   return env('BOOKING_SYNC_SECRET');
