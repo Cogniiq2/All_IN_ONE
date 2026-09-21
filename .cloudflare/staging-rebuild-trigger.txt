@@ -1,0 +1,3 @@
+Trigger file for Cloudflare staging rebuild.
+Created on 2026-09-21 to trigger a fresh build from claude/bolagio-final-integration-review.
+No runtime behavior depends on this file.
