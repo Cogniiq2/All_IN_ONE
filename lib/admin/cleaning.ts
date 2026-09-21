@@ -10,7 +10,7 @@
  * ══════════════════════════════════════════════════════════════════════════
  */
 
-import type { TurnoverAttention, TurnoverDto, TurnoverEventDto } from '@/lib/admin/dto';
+import type { ReservationDto, TurnoverAttention, TurnoverDto, TurnoverEventDto } from '@/lib/admin/dto';
 import type { TurnoverEventRow, TurnoverRow } from '@/lib/admin/rows';
 import { getRentalUnit } from '@/lib/content/apartments';
 
@@ -71,6 +71,22 @@ export function toTurnoverEventDto(row: TurnoverEventRow): TurnoverEventDto {
 
 export interface CleaningBoard {
   today: string;
+  /**
+   * Departures of CHANNEL reservations inside the horizon, each of which needs
+   * a turnover, ordered soonest first.
+   *
+   * ── Why this is a separate list and not a turnover ───────────────────────
+   * A `bolagio_turnovers` row is derived by the database from a CONFIRMED
+   * direct booking, and emits a `cleaning.required` event into the outbox that
+   * the automation platform acts on. Deriving turnovers from imported
+   * Booking.com history would fire that event for every stay already in the
+   * account — real messages, for cleanings long since done. So this release
+   * SHOWS the channel departures an operator must plan for, and does not
+   * manufacture work orders or automations for them. Extending
+   * `bolagio_sync_turnovers` to canonical reservations is the deliberate
+   * follow-up; see docs/beds24-reservations.md §Cleaning.
+   */
+  channelDepartures: ReservationDto[];
   /** Open turnovers whose window has closed, oldest first. */
   overdue: TurnoverDto[];
   /** Open turnovers departing today, same-day changeovers first. */
@@ -91,7 +107,12 @@ function byUrgency(a: TurnoverDto, b: TurnoverDto): number {
   return ra - rb || Number(b.sameDay) - Number(a.sameDay) || a.windowStart.localeCompare(b.windowStart) || a.unitName.localeCompare(b.unitName);
 }
 
-export function buildCleaningBoard(rows: TurnoverRow[], today: string, now: Date): CleaningBoard {
+export function buildCleaningBoard(
+  rows: TurnoverRow[],
+  today: string,
+  now: Date,
+  channelDepartures: ReservationDto[] = []
+): CleaningBoard {
   const all = rows.map((r) => toTurnoverDto(r, today, now));
   const open = all.filter((t) => isOpen(t.status));
   const overdue = open.filter((t) => t.attention === 'overdue').sort((a, b) => a.windowEnd.localeCompare(b.windowEnd));
@@ -103,6 +124,11 @@ export function buildCleaningBoard(rows: TurnoverRow[], today: string, now: Date
     .slice(0, 20);
   return {
     today,
+    // Only stays that actually occupy the unit leave a room to clean, and only
+    // departures from today onwards are still work. Soonest first.
+    channelDepartures: channelDepartures
+      .filter((r) => r.occupies && r.checkOut >= today)
+      .sort((a, b) => a.checkOut.localeCompare(b.checkOut) || a.unitName.localeCompare(b.unitName)),
     overdue,
     dueToday,
     upcoming,

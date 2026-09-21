@@ -1762,6 +1762,33 @@
   border-style: dotted;
 }
 
+/* A CHANNEL RESERVATION — a Booking.com, Airbnb or manual stay imported from
+   the channel manager. It occupies the unit exactly as a confirmed direct
+   booking does, so it reads as solid; it is the warm accent rather than ink,
+   because BoLaGio holds no payment for it and the two must not be confused at
+   a glance. */
+.bc-bar[data-kind='channel_stay'] {
+  background: hsl(var(--bc-accent-wash));
+  color: hsl(var(--bc-accent));
+  border-color: hsl(var(--bc-accent) / 0.5);
+  font-weight: 500;
+}
+
+/* Cancelled at the channel. Kept on the grid — an operator has to see that
+   the nights came back — but visibly spent: quiet, struck through, no weight. */
+.bc-bar[data-kind='channel_cancelled'] {
+  background: hsl(var(--bc-surface-2));
+  color: hsl(var(--bc-text-2));
+  border-color: hsl(var(--bc-line-strong));
+  border-style: dashed;
+  opacity: 0.62;
+}
+
+.bc-bar[data-kind='channel_cancelled'] .bc-bar-text {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
 .bc-bar[data-kind='channel'] {
   background: repeating-linear-gradient(
     135deg,

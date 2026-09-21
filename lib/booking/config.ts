@@ -269,6 +269,61 @@ export function inventoryMonths(): number {
   return intEnv('BOOKING_INVENTORY_MONTHS', 18, 1, 36);
 }
 
+/* ── Reservation import ────────────────────────────────────────────────── */
+
+/**
+ * How far BACK the canonical reservation import reaches on a full backfill.
+ *
+ * Twelve months by default: far enough to carry a full season of Booking.com
+ * history into the local record, bounded so a backfill cannot become an
+ * account-wide scan. The forward edge is `inventoryMonths()` — the same
+ * horizon the availability cache already holds, so the two never disagree
+ * about how far the calendar goes.
+ */
+export function reservationBackfillMonths(): number {
+  return intEnv('BOOKING_RESERVATION_BACKFILL_MONTHS', 12, 1, 60);
+}
+
+/**
+ * How wide one provider query may be, in days.
+ *
+ * The import splits its horizon into windows of this size. Smaller windows
+ * mean more requests and fewer rows each; larger ones risk a provider result
+ * cap silently truncating a page. Ninety days is small enough that the page
+ * limit in `readReservations` is never approached for a two-unit property.
+ */
+export function reservationWindowDays(): number {
+  return intEnv('BOOKING_RESERVATION_WINDOW_DAYS', 90, 7, 365);
+}
+
+/**
+ * Which provider statuses the import asks for, or nothing.
+ *
+ * ── Why this is unset by default ─────────────────────────────────────────
+ * Whether `GET /bookings` accepts a `status` filter on THIS account is not
+ * established (docs/beds24-contract.md §1 lists the booking read as UNKNOWN,
+ * and the environment this repository is developed in cannot reach the Beds24
+ * documentation). An unrecognised query parameter is usually ignored, but a
+ * REJECTED one would fail the whole import — so nothing is sent unless an
+ * operator, having verified the account's behaviour, sets it.
+ *
+ * Unset therefore means "whatever the provider returns by default". Because
+ * the import never deletes and never infers a cancellation from absence, that
+ * default is safe: the worst case is that a cancellation is learned from the
+ * webhook (which re-reads the booking by id) rather than from the sweep.
+ *
+ * Set to e.g. `new,request,confirmed,cancelled,black` once verified.
+ */
+export function reservationStatusFilter(): string[] | undefined {
+  const raw = env('BEDS24_RESERVATION_STATUSES');
+  if (!raw) return undefined;
+  const values = raw
+    .split(',')
+    .map((v) => v.trim().toLowerCase())
+    .filter((v) => /^[a-z]{2,20}$/.test(v));
+  return values.length > 0 ? values : undefined;
+}
+
 /**
  * How long a live quote stays honest.
  *

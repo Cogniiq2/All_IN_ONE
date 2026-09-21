@@ -4,6 +4,7 @@ import { can } from '@/lib/admin/permissions';
 import { loadCleaningBoard } from '@/lib/admin/queries';
 import { formatLongDay } from '@/lib/admin/format';
 import { PageHeader, Section, ErrorNotice, Metric } from '@/components/admin/primitives';
+import { ReservationList } from '@/components/admin/reservations/reservation-rows';
 import { RefreshControl } from '@/components/admin/shell/refresh-control';
 import { TurnoverGroup } from '@/components/admin/cleaning/turnover-list';
 
@@ -33,7 +34,7 @@ export default async function CleaningPage() {
       <PageHeader
         eyebrow="Operations"
         title="Cleaning"
-        description={`${formatLongDay(b.today)} · turnovers derived from confirmed departures inside the sixty-day horizon.`}
+        description={`${formatLongDay(b.today)} · turnovers from confirmed direct departures, and channel departures from the reservation import, inside the sixty-day horizon.`}
         actions={<RefreshControl loadedAt={board.loadedAt} every={120} />}
       />
 
@@ -64,6 +65,34 @@ export default async function CleaningPage() {
 
       <Section title="Recently closed" id="recent">
         <TurnoverGroup items={b.recent} empty="Nothing closed in the last two weeks." mayManage={mayManage} />
+      </Section>
+
+      {/*
+        The channel side of the work.
+
+        Every departure here leaves a room to clean, exactly as a direct
+        booking's does. They are listed rather than turned into turnover
+        records because a turnover emits a cleaning event the automation
+        platform acts on, and manufacturing one for every Booking.com stay
+        already in the account would fire real messages for cleanings long
+        since done. Planning first; work orders when the derivation is
+        extended deliberately.
+      */}
+      <Section
+        title="Channel departures"
+        meta={<span>from imported reservations · no work order, no automation</span>}
+        id="channel-departures"
+      >
+        <div className="mt-4">
+          <ReservationList
+            items={b.channelDepartures}
+            empty="No channel departure in the next sixty days."
+          />
+          <p className="bc-meta mt-3" style={{ fontSize: 12 }}>
+            These come from the read-only reservation import. They do not create turnover records and trigger nothing; assign them
+            the way you do today until turnovers are derived from channel stays as well.
+          </p>
+        </div>
       </Section>
 
       <p className="bc-meta mt-10" style={{ fontSize: 12 }}>

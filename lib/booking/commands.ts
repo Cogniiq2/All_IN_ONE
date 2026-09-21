@@ -462,7 +462,7 @@ export async function failReconciliationJob(id: string, errorText: string): Prom
 
 /* ── Scheduler heartbeat ───────────────────────────────────────────────── */
 
-export type SchedulerJob = 'reconcile' | 'inventory_sync' | 'operations';
+export type SchedulerJob = 'reconcile' | 'inventory_sync' | 'operations' | 'reservation_sync';
 
 /**
  * Record one scheduled invocation, whatever its outcome.

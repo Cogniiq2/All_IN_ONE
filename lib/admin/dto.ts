@@ -260,18 +260,92 @@ export interface UnitDto {
 
 /* ── Calendar ──────────────────────────────────────────────────────────── */
 
+/**
+ * A stay on the calendar, from either record.
+ *
+ * `kind` says WHICH record, and it is not cosmetic: an `intent` is a direct
+ * booking with a BoLaGio reference, a payment state and a detail page; a
+ * `reservation` is a stay that exists at the channel manager, with a provider
+ * booking id, a channel, and no payment of ours. Nothing may read `status`
+ * without checking `kind` first — the two vocabularies do not overlap.
+ */
 export interface CalendarReservationDto {
+  /** A BLG reference for a direct booking; the provider booking id otherwise. */
   reference: string;
+  kind: 'intent' | 'reservation';
+  /** The record page, or null when there is none — a channel reservation has no BoLaGio record. */
+  href: string | null;
   unitSlug: string;
   checkIn: IsoDate;
   checkOut: IsoDate;
   nights: number;
+  /** A BookingState for an intent; the reservation status CLASS for a reservation. */
   status: string;
   paymentStatus: string;
   source: string;
   guestLabel: string | null;
   adults: number;
   children: number;
+  /** The provider's own status word, verbatim. Reservations only. */
+  providerStatus?: string;
+  /** The channel's own confirmation number, where the provider supplies one. */
+  channelReference?: string | null;
+  /** Whether this stay occupies the unit. Cancelled and requested stays do not. */
+  occupies: boolean;
+}
+
+/* ── Canonical reservations ────────────────────────────────────────────── */
+
+/**
+ * One imported reservation, as a board shows it.
+ *
+ * No guest email and no phone number: the row source does not select them, so
+ * they cannot appear here. The raw provider payload has no route into this
+ * type at all.
+ */
+export interface ReservationDto {
+  id: string;
+  externalBookingId: string;
+  provider: string;
+  unitSlug: string;
+  unitName: string;
+  source: string;
+  /** What the provider actually called the channel. Shown when the source is unknown. */
+  sourceRaw: string | null;
+  channelReference: string | null;
+  /** The provider's own status word, verbatim. */
+  providerStatus: string;
+  /** active | provisional | cancelled | blocked | unknown. */
+  statusClass: string;
+  occupies: boolean;
+  checkIn: IsoDate;
+  checkOut: IsoDate;
+  nights: number;
+  guestLabel: string | null;
+  guestCountry: string | null;
+  adults: number | null;
+  children: number | null;
+  guests: number | null;
+  currency: string | null;
+  /** Gross as the provider states it. NOT accounting revenue — see docs/beds24-reservations.md. */
+  totalCents: number | null;
+  bookedAt: string | null;
+  modifiedAt: string | null;
+  cancelledAt: string | null;
+  /** The BoLaGio reference, when this reservation is one of our own direct bookings. */
+  directReference: string | null;
+  lastSyncedAt: string;
+}
+
+export interface ReservationBoard {
+  items: ReservationDto[];
+  total: number;
+  counts: {
+    active: number;
+    cancelled: number;
+    other: number;
+    bySource: Record<string, number>;
+  };
 }
 
 export interface ChannelClosureDto {

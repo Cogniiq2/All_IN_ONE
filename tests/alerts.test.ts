@@ -28,6 +28,10 @@ function quiet(over: Partial<AlertInput> = {}): AlertInput {
       { job: 'reconcile', started_at: ago(70_000), finished_at: ago(60_000), ok: true, report: null, error: null, worker: null },
       { job: 'operations', started_at: ago(60_000), finished_at: ago(60_000), ok: true, report: null, error: null, worker: null },
       { job: 'inventory_sync', started_at: ago(600_000), finished_at: ago(600_000), ok: true, report: null, error: null, worker: null },
+      // The canonical reservation import. Same two-hour expectation as the
+      // inventory sync: a job that has never run is "not instrumented", never
+      // healthy, so a quiet system has to have one recorded.
+      { job: 'reservation_sync', started_at: ago(600_000), finished_at: ago(600_000), ok: true, report: null, error: null, worker: null },
     ],
     attention: [],
     configFindings: [],
@@ -136,9 +140,12 @@ describe('MEDIUM and the unknown', () => {
       })
     );
     const overdue = report.alerts.filter((a) => a.code === 'SCHEDULER_OVERDUE');
-    expect(overdue).toHaveLength(3);
+    expect(overdue).toHaveLength(4);
     expect(overdue.find((a) => a.title.includes('operations'))?.level).toBe('MEDIUM');
     expect(overdue.find((a) => a.title.includes('reconcile'))?.level).toBe('HIGH');
+    // The reservation import going quiet means the board stops learning about
+    // new Booking.com stays; that is worth the higher level.
+    expect(overdue.find((a) => a.title.includes('reservation sync'))?.level).toBe('HIGH');
   });
 
   it('a scheduler that never ran is NOT overdue — it is unmeasured', () => {

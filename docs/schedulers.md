@@ -1,6 +1,6 @@
 # Schedulers
 
-Two secured routes do all scheduled work. Neither depends on n8n, a browser or
+Three secured routes do all scheduled work. Neither depends on n8n, a browser or
 the other.
 
 | Job | Route | Interval | Heartbeat name | What it does |
@@ -8,8 +8,9 @@ the other.
 | reconcile | `POST /api/booking/reconcile` `{ "limit": 25 }` | every 3 min | `reconcile` | drain the verified payment inbox → sweep for stuck bookings → work the queue most-severe first |
 | operations | same request, after the reconcile | (same) | `operations` | derive turnovers from confirmed stays; emit time-driven guest events once |
 | inventory sync | `POST /api/booking/sync` | every 30 min | `inventory_sync` | release holds whose lease (plus grace) ran out and have no payment evidence; refresh the availability cache from Beds24 |
+| reservation import | `POST /api/booking/reservations/sync` | every 20 min | `reservation_sync` | read Beds24's reservations (GET only) into `bolagio_reservations`: Booking.com, Airbnb, manual. Never writes to Beds24. See docs/beds24-reservations.md |
 
-Both routes take `x-bolagio-signature: <BOOKING_SYNC_SECRET>` — a plain shared
+All three take `x-bolagio-signature: <BOOKING_SYNC_SECRET>` — a plain shared
 secret, because they carry no data and no authority: a forged call can only
 make the system do its ordinary maintenance.
 
@@ -54,10 +55,22 @@ select cron.schedule('bolagio-inventory-sync', '*/30 * * * *', $$
     body    := '{}'::jsonb,
     timeout_milliseconds := 120000);
 $$);
+
+-- Run the FIRST reservation import by hand before scheduling it: that run is
+-- the backfill (twelve months back through the booking horizon) and is the
+-- slow one. Every run after it is an idempotent refresh of the same horizon.
+select cron.schedule('bolagio-reservation-sync', '*/20 * * * *', $$
+  select net.http_post(
+    url     := current_setting('app.site_url') || '/api/booking/reservations/sync',
+    headers := jsonb_build_object('content-type','application/json',
+                                  'x-bolagio-signature', current_setting('app.booking_sync_secret')),
+    body    := '{}'::jsonb,
+    timeout_milliseconds := 120000);
+$$);
 ```
 
 Verify: `select * from cron.job;` then, after ten minutes,
-`select * from bolagio_scheduler_status;` shows all three jobs.
+`select * from bolagio_scheduler_status;` shows all four jobs.
 
 Concurrency: two overlapping passes are safe. Jobs, inbox rows and outbox rows
 are claimed with `for update skip locked`; turnovers and guest events are

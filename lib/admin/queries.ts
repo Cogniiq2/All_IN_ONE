@@ -37,6 +37,8 @@ import {
   type MessageDeliveryDto,
   type TurnoverDto,
   type TurnoverEventDto,
+  type ReservationDto,
+  type ReservationBoard,
 } from '@/lib/admin/dto';
 import { collectAttention, LEVEL_ORDER, OUTBOX_BACKLOG_MS, PAYMENT_EVENT_STUCK_MS } from '@/lib/admin/attention';
 import { deriveAlerts, SCHEDULER_INTERVAL_MS, type AlertReport } from '@/lib/ops/alerts';
@@ -44,12 +46,12 @@ import { closedRanges, nightsCovered } from '@/lib/admin/calendar';
 import { ageMs, guestListLabel } from '@/lib/admin/format';
 import { PAGE_SIZE, statesFor, type BookingListFilter } from '@/lib/admin/filters';
 import { AdminUnconfiguredError, rowSource } from '@/lib/admin/source';
-import type { IntentRow, JobRow, OperationRow, OutboxRow, PaymentEventRow, SchedulerStatusRow, UnitRow } from '@/lib/admin/rows';
+import type { IntentRow, JobRow, OperationRow, OutboxRow, PaymentEventRow, ReservationQuery, ReservationRow, SchedulerStatusRow, UnitRow } from '@/lib/admin/rows';
 import { buildCleaningBoard, OPEN_TURNOVER_STATUSES, toTurnoverDto, toTurnoverEventDto, type CleaningBoard } from '@/lib/admin/cleaning';
 import { buildAutomationsBoard, integrationSignals, type AutomationsBoard } from '@/lib/admin/automations';
 import { propertyTodayIso } from '@/lib/admin/format';
 import { reservesInventory } from '@/lib/booking/states';
-import { isBookingState } from '@/lib/admin/presentation';
+import { isBookingState, reservationOccupies } from '@/lib/admin/presentation';
 
 /* ── Error shaping ─────────────────────────────────────────────────────── */
 
@@ -150,6 +152,107 @@ function toSummary(row: IntentRow, unitNames: Map<string, string>): BookingSumma
     confirmedAt: row.confirmed_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+/* ── Canonical reservations ────────────────────────────────────────────── */
+
+/**
+ * One imported reservation → the shape a board shows.
+ *
+ * Nothing is interpreted beyond `occupies`, which is the single rule every
+ * count on every screen depends on: a cancelled or merely requested stay does
+ * not occupy the unit. The provider's own status word travels alongside, so
+ * an operator can always see what Beds24 actually said.
+ */
+function toReservationDto(row: ReservationRow, unitNames: Map<string, string>): ReservationDto {
+  return {
+    id: row.id,
+    externalBookingId: row.external_booking_id,
+    provider: row.provider,
+    unitSlug: row.unit_slug,
+    unitName: unitName(row.unit_slug, unitNames.get(row.unit_id) ?? ''),
+    source: row.source,
+    sourceRaw: row.source_raw,
+    channelReference: row.channel_reference,
+    providerStatus: row.provider_status,
+    statusClass: row.status_class,
+    occupies: reservationOccupies(row.status_class),
+    checkIn: row.check_in,
+    checkOut: row.check_out,
+    nights: nightsBetween(row.check_in, row.check_out),
+    guestLabel: guestListLabel(row.guest_first_name, row.guest_last_name),
+    guestCountry: row.guest_country,
+    adults: row.adults,
+    children: row.children,
+    guests: row.number_of_guests ?? (row.adults === null && row.children === null ? null : (row.adults ?? 0) + (row.children ?? 0)),
+    currency: row.currency,
+    totalCents: row.total_amount_cents,
+    bookedAt: row.booked_at,
+    modifiedAt: row.provider_modified_at,
+    cancelledAt: row.provider_cancelled_at,
+    directReference: row.direct_reference,
+    lastSyncedAt: row.last_synced_at,
+  };
+}
+
+/**
+ * The reservation board: what is actually booked, from every channel.
+ *
+ * Cancelled stays are INCLUDED and counted separately. Leaving them out would
+ * make the board disagree with Beds24 the moment a guest cancels, and a
+ * cancellation an operator cannot see is a cancellation they act on too late.
+ */
+export async function loadReservations(query: ReservationQuery = {}): Promise<QueryResult<ReservationBoard>> {
+  return guard(async () => {
+    const source = await rowSource();
+    const names = await unitNameMap();
+    const { rows, total } = await source.reservations({ sort: 'check_in', limit: 200, ...query });
+    const items = rows.map((r) => toReservationDto(r, names));
+    const bySource: Record<string, number> = {};
+    for (const item of items) bySource[item.source] = (bySource[item.source] ?? 0) + 1;
+    return {
+      items,
+      total,
+      counts: {
+        active: items.filter((i) => i.statusClass === 'active').length,
+        cancelled: items.filter((i) => i.statusClass === 'cancelled').length,
+        other: items.filter((i) => i.statusClass !== 'active' && i.statusClass !== 'cancelled').length,
+        bySource,
+      },
+    };
+  });
+}
+
+/**
+ * Reservations as calendar stays.
+ *
+ * A channel reservation has no BoLaGio record page, so `href` is null and the
+ * grid draws a span rather than a link. Its `reference` is the provider
+ * booking id, which is what an operator quotes when they open Beds24.
+ */
+function toCalendarReservation(dto: ReservationDto): CalendarDto['reservations'][number] {
+  return {
+    reference: dto.externalBookingId,
+    kind: 'reservation',
+    // A channel reservation is not a BoLaGio record; there is nothing to open.
+    href: null,
+    unitSlug: dto.unitSlug,
+    checkIn: dto.checkIn,
+    checkOut: dto.checkOut,
+    nights: dto.nights,
+    status: dto.statusClass,
+    // Money for a channel reservation is settled between the guest, the
+    // channel and BoLaGio's payout — never through this system's payment
+    // saga. Saying "not created" would imply a direct payment is pending.
+    paymentStatus: 'not_applicable',
+    source: dto.source,
+    guestLabel: dto.guestLabel,
+    adults: dto.adults ?? 0,
+    children: dto.children ?? 0,
+    providerStatus: dto.providerStatus,
+    channelReference: dto.channelReference,
+    occupies: dto.occupies,
   };
 }
 
@@ -377,9 +480,18 @@ function isExpected(status: string): boolean {
 
 export interface TodayBoard {
   today: string;
+  /** Direct bookings: this website's own, with a payment record and a detail page. */
   arrivals: BookingSummaryDto[];
   departures: BookingSummaryDto[];
   inHouse: BookingSummaryDto[];
+  /**
+   * Channel reservations: Booking.com, Airbnb, manual. Kept in their own
+   * lists rather than merged, because they have no payment state and no
+   * BoLaGio reference, and a board that pretends otherwise invents one.
+   */
+  channelArrivals: ReservationDto[];
+  channelDepartures: ReservationDto[];
+  channelInHouse: ReservationDto[];
 }
 
 export async function loadToday(today: string): Promise<QueryResult<TodayBoard>> {
@@ -392,13 +504,41 @@ export async function loadToday(today: string): Promise<QueryResult<TodayBoard>>
     const all = new Map<string, IntentRow>();
     for (const r of [...rows, ...departing.rows]) all.set(r.id, r);
     const items = Array.from(all.values()).filter((r) => isExpected(r.status)).map((r) => toSummary(r, names));
+
+    /*
+     * The channel side of the door.
+     *
+     * Today's window is widened by one day at each end so a departure today
+     * and an arrival today are both caught by one overlap query. Only
+     * OCCUPYING stays reach the board: a cancelled Booking.com reservation is
+     * not someone arriving, and a requested one is not someone who booked.
+     */
+    const canonical = await source
+      .reservations({ overlaps: { from: addDaysIso(today, -1), to: addDaysIso(today, 2) }, limit: 200, sort: 'check_in' })
+      .catch(() => ({ rows: [] as ReservationRow[], total: 0 }));
+    const direct = new Set(Array.from(all.values()).map((r) => r.beds24_booking_id).filter((id): id is string => Boolean(id)));
+    const channel = canonical.rows
+      .filter((r) => !direct.has(r.external_booking_id))
+      .map((r) => toReservationDto(r, names))
+      .filter((r) => r.occupies);
+
     return {
       today,
       arrivals: items.filter((b) => b.checkIn === today),
       departures: items.filter((b) => b.checkOut === today),
       inHouse: items.filter((b) => b.checkIn < today && b.checkOut > today),
+      channelArrivals: channel.filter((r) => r.checkIn === today),
+      channelDepartures: channel.filter((r) => r.checkOut === today),
+      channelInHouse: channel.filter((r) => r.checkIn < today && r.checkOut > today),
     };
   });
+}
+
+/** One calendar day, without pulling the whole calendar module into this file. */
+function addDaysIso(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
 }
 
 export async function loadUpcoming(today: string, limit = 8): Promise<QueryResult<BookingSummaryDto[]>> {
@@ -417,18 +557,24 @@ export async function loadCalendar(windowStart: string, windowEnd: string, today
     const source = await rowSource();
     const units = await source.units();
     const names = new Map(units.map((u) => [u.id, u.display_name]));
-    const [{ rows }, closed] = await Promise.all([
+    const [{ rows }, closed, canonical] = await Promise.all([
       source.intents({ overlaps: { from: windowStart, to: windowEnd }, limit: 200, sort: 'check_in' }),
       source.inventoryClosed(windowStart, windowEnd).catch(() => []),
+      // A database without the reservation migration applied must not take
+      // the calendar down with it: the channel stays are absent, the direct
+      // ones still draw, and the closures still show what is taken.
+      source.reservations({ overlaps: { from: windowStart, to: windowEnd }, limit: 400, sort: 'check_in' }).catch(() => ({ rows: [], total: 0 })),
     ]);
 
     // Only reserving states are drawn as stays. A draft or a released
     // attempt does not occupy a night and would only clutter the grid.
     const reserving = rows.filter((r) => isBookingState(r.status) && reservesInventory(r.status));
-    const reservations = reserving.map((r) => {
+    const direct: CalendarDto['reservations'] = reserving.map((r) => {
       const s = toSummary(r, names);
       return {
         reference: s.reference,
+        kind: 'intent' as const,
+        href: `/admin/bookings/${encodeURIComponent(s.reference)}`,
         unitSlug: s.unitSlug,
         checkIn: s.checkIn,
         checkOut: s.checkOut,
@@ -439,15 +585,40 @@ export async function loadCalendar(windowStart: string, windowEnd: string, today
         guestLabel: s.guestLabel,
         adults: s.adults,
         children: s.children,
+        occupies: true,
       };
     });
+
+    /*
+     * The two records, merged without double counting.
+     *
+     * A BoLaGio direct booking that has been confirmed exists in BOTH: as the
+     * intent that created it, and as the reservation Beds24 imported back. The
+     * intent is the richer record — it has the payment state and a detail page
+     * — so it wins, and the canonical row for the same provider booking is
+     * dropped rather than drawn as a second bar on the same nights.
+     *
+     * Everything else — Booking.com, Airbnb, manual, unidentified — has no
+     * intent and draws from the canonical record alone. That is the whole
+     * point of the import: those stays used to be anonymous hatched bands.
+     */
+    const directProviderIds = new Set(rows.map((r) => r.beds24_booking_id).filter((id): id is string => Boolean(id)));
+    const channel = canonical.rows
+      .filter((r) => !directProviderIds.has(r.external_booking_id))
+      .filter((r) => !r.direct_intent_id || !reserving.some((i) => i.id === r.direct_intent_id))
+      .map((r) => toCalendarReservation(toReservationDto(r, names)));
+
+    const reservations = [...direct, ...channel];
 
     const closures: CalendarDto['closures'] = [];
     let oldestSync: string | null = null;
     for (const unit of units) {
       const unitClosed = closed.filter((c) => c.unit_id === unit.id);
       if (unitClosed.length === 0) continue;
-      const covered = nightsCovered(reservations.filter((r) => r.unitSlug === unit.slug));
+      // Only occupying stays EXPLAIN a closed night. A cancelled reservation
+      // drawn on the grid explains nothing — if its nights are still closed at
+      // the channel, that is exactly what an operator needs to see.
+      const covered = nightsCovered(reservations.filter((r) => r.unitSlug === unit.slug && r.occupies));
       const syncedAt = unitClosed.reduce<string | null>((o, c) => (!o || c.synced_at < o ? c.synced_at : o), null);
       if (syncedAt && (!oldestSync || syncedAt < oldestSync)) oldestSync = syncedAt;
       for (const span of closedRanges(unitClosed.map((c) => c.date), covered)) {
@@ -623,7 +794,7 @@ export async function loadSystemHealth(now: Date = new Date()): Promise<QueryRes
       let status: HealthSectionDto['status'] = 'healthy';
       let overdue = 0;
       let never = 0;
-      for (const job of ['reconcile', 'inventory_sync', 'operations'] as const) {
+      for (const job of ['reconcile', 'inventory_sync', 'operations', 'reservation_sync'] as const) {
         const last = schedulers?.find((r) => r.job === job);
         if (!last) {
           never += 1;
@@ -972,11 +1143,17 @@ export async function loadCleaningBoard(now: Date = new Date()): Promise<QueryRe
     const source = await rowSource();
     const today = propertyTodayIso(now);
     const since = new Date(now.getTime() - 14 * 86_400_000).toISOString().slice(0, 10);
-    const [open, closed] = await Promise.all([
+    const horizonEnd = addDaysIso(today, 60);
+    const [open, closed, canonical] = await Promise.all([
       source.turnovers({ statuses: OPEN_TURNOVER_STATUSES, limit: 200 }),
       source.turnovers({ statuses: ['done', 'void'], departureFrom: since, limit: 40 }),
+      source
+        .reservations({ checkOutFrom: today, checkOutTo: horizonEnd, sort: 'check_out', limit: 200 })
+        .catch(() => ({ rows: [] as ReservationRow[], total: 0 })),
     ]);
-    return buildCleaningBoard([...open, ...closed], today, now);
+    const names = await unitNameMap();
+    const channelDepartures = canonical.rows.map((r) => toReservationDto(r, names));
+    return buildCleaningBoard([...open, ...closed], today, now, channelDepartures);
   });
 }
 

@@ -26,11 +26,41 @@ import type {
   OutboxRow,
   PaymentEventRow,
   QueueRow,
+  ReservationQuery,
+  ReservationRow,
   RowSource,
   SchedulerStatusRow,
   UnitRow,
 } from '@/lib/admin/rows';
 import { ATTENTION_STATUSES } from '@/lib/admin/rows';
+
+/**
+ * Canonical reservation columns, explicit and short of two things on purpose.
+ *
+ * `raw_provider_snapshot` is never selected: it is the provider's full
+ * payload and has no business leaving the server. Guest email and phone are
+ * never selected either — the boards show who is arriving, and a list of
+ * contact details is a bigger disclosure than any screen here needs.
+ */
+const RESERVATION_COLUMNS =
+  'id, unit_id, provider, external_booking_id, external_property_id, external_room_id,' +
+  ' source, source_raw, channel_reference, provider_status, status_class, check_in, check_out,' +
+  ' adults, children, number_of_guests, guest_first_name, guest_last_name, guest_country,' +
+  ' currency, total_amount_cents, booked_at, provider_modified_at, provider_cancelled_at,' +
+  ' direct_intent_id, imported_at, last_synced_at, last_seen_at,' +
+  ' bolagio_units(slug), bolagio_booking_intents(reference)';
+
+type RawReservation = Omit<ReservationRow, 'unit_slug' | 'direct_reference'> & {
+  bolagio_units?: { slug: string } | { slug: string }[] | null;
+  bolagio_booking_intents?: { reference: string } | { reference: string }[] | null;
+};
+
+function toReservationRow(raw: RawReservation): ReservationRow {
+  const unit = Array.isArray(raw.bolagio_units) ? raw.bolagio_units[0] : raw.bolagio_units;
+  const intent = Array.isArray(raw.bolagio_booking_intents) ? raw.bolagio_booking_intents[0] : raw.bolagio_booking_intents;
+  const { bolagio_units: _u, bolagio_booking_intents: _i, ...rest } = raw;
+  return { ...rest, unit_slug: unit?.slug ?? '', direct_reference: intent?.reference ?? null };
+}
 
 const INTENT_COLUMNS =
   'id, reference, unit_id, check_in, check_out, adults, children,' +
@@ -139,6 +169,32 @@ export function supabaseRowSource(): RowSource {
         .limit(200);
       if (error) throw error;
       return (data ?? []) as unknown as IntentEventRow[];
+    },
+
+    async reservations(query: ReservationQuery) {
+      let q = supabaseAdmin().from('bolagio_reservations').select(RESERVATION_COLUMNS, { count: 'exact' });
+
+      if (query.unitId) q = q.eq('unit_id', query.unitId);
+      if (query.sources && query.sources.length > 0) q = q.in('source', query.sources as string[]);
+      if (query.statusClasses && query.statusClasses.length > 0) q = q.in('status_class', query.statusClasses as string[]);
+      if (query.checkInFrom) q = q.gte('check_in', query.checkInFrom);
+      if (query.checkInTo) q = q.lt('check_in', query.checkInTo);
+      if (query.checkOutFrom) q = q.gte('check_out', query.checkOutFrom);
+      if (query.checkOutTo) q = q.lt('check_out', query.checkOutTo);
+      // Half-open overlap: a stay touches the window when it starts before the
+      // window ends and ends after the window starts. A departure on the first
+      // day of the window is not an occupied night and does not overlap.
+      if (query.overlaps) q = q.lt('check_in', query.overlaps.to).gt('check_out', query.overlaps.from);
+
+      const sort = query.sort ?? 'check_in';
+      q = q.order(sort, { ascending: query.dir !== 'desc', nullsFirst: false });
+      const limit = Math.min(400, Math.max(1, query.limit ?? 200));
+      const offset = Math.max(0, query.offset ?? 0);
+      q = q.range(offset, offset + limit - 1);
+
+      const { data, error, count } = await q;
+      if (error) throw error;
+      return { rows: ((data ?? []) as unknown as RawReservation[]).map(toReservationRow), total: count ?? 0 };
     },
 
     async operations(query) {

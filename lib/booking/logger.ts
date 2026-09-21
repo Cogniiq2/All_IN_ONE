@@ -25,6 +25,8 @@ export type BookingLogEvent =
   /** An unhandled throw inside a route handler. Logged, never returned. */
   | 'route.error'
   | 'inventory.sync'
+  /** The canonical reservation import. Counts, unit slugs and provider ids only. */
+  | 'reservation.sync'
   | 'availability.read'
   | 'beds24.availability'
   | 'beds24.offer'

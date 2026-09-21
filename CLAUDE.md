@@ -57,7 +57,8 @@ lib/
   admin/                  BoLaGio Control: auth, session, permissions, DTOs, queries,
                           presentation, attention model, server actions (see docs/admin-control.md)
   config/environment.ts   local|preview|staging|production, fail-closed contradiction checks
-  booking/                the booking core (see docs/architecture.md)
+  booking/                the booking core (see docs/architecture.md), plus the
+                          canonical reservation import (docs/beds24-reservations.md)
   ops/                    external-operation ledger, alert derivation
   finance/                Finance & Tax domain: money, periods, tax engines, reconciliation,
                           reports, imports, invoices, commands, actions, queries (docs/finance/)

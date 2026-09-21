@@ -141,8 +141,8 @@ describe('BoLaGio migrations create/alter/drop bolagio_ objects only', function 
     return /^2026091\d.*\.sql$/.test(name) || /^2026092\d.*\.sql$/.test(name);
   });
 
-  it('finds the seven migration files', function () {
-    expect(files.length).toBe(7);
+  it('finds the eight migration files', function () {
+    expect(files.length).toBe(8);
   });
 
   // Every DDL head followed by the object name. `if [not] exists` and

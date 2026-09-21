@@ -155,6 +155,17 @@ export type Beds24BookingWriteResponse = Array<{
 export interface Beds24BookingsResponse {
   success?: boolean;
   data?: Beds24Booking[];
+  /**
+   * Pagination, where V2 supplies it. UNVERIFIED, and deliberately not relied
+   * on: the reader stops when a page comes back short or empty, and only uses
+   * this to stop EARLIER. A missing `pages` object therefore costs one extra
+   * request per window, never a missed booking.
+   */
+  count?: number;
+  pages?: {
+    nextPageExists?: boolean;
+    nextPageLink?: string;
+  };
 }
 
 export interface Beds24Booking {
@@ -170,6 +181,52 @@ export interface Beds24Booking {
   referer?: string;
   /** The BoLaGio reference we write on a hold. Echoed back where supported. */
   reference?: string;
+
+  /*
+   * ── Fields the RESERVATION IMPORT reads ─────────────────────────────────
+   *
+   * Every one of them is optional and every one is narrowed defensively in
+   * `reservations.ts`: a booking missing all of them still imports, with the
+   * missing facts left null rather than invented. None of them is read by the
+   * direct-booking saga, so a wrong guess here cannot affect a hold, a
+   * payment or a confirmation.
+   *
+   * UNVERIFIED against this account — the live read validation in
+   * docs/beds24-contract.md §4 has not been run. What IS established is that
+   * the V2 booking object carries `id`, `roomId`, `propertyId`, `status`,
+   * `arrival` and `departure`, because the write response is read through the
+   * same shape today.
+   */
+  /** The channel the booking came from, where V2 names it directly. */
+  channel?: string;
+  /** Older/alternate spellings of the same idea. Read in priority order. */
+  apiSource?: string;
+  apiSourceId?: number | string;
+  bookingSource?: string;
+  source?: string;
+  /** The channel's own confirmation number (a Booking.com reference). */
+  apiReference?: string;
+  channelReference?: string;
+  /** Guest contact. Written by the hold; expected back on a read. */
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  phone?: string;
+  /** ISO-3166 alpha-2 in every form seen; anything else is dropped. */
+  country?: string;
+  /** Occupancy, in the two spellings V2 uses across endpoints. */
+  numAdults?: number | string;
+  numChildren?: number | string;
+  numGuests?: number | string;
+  /** Currency of `price`. */
+  currency?: string;
+  /** Timestamps. Formats vary; anything unparseable is dropped, not guessed. */
+  bookingTime?: string;
+  bookingDate?: string;
+  modifiedTime?: string;
+  modified?: string;
+  cancelTime?: string;
+  cancelledTime?: string;
 }
 
 /**

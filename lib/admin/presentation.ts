@@ -200,10 +200,44 @@ const SOURCE: Readonly<Record<string, { label: string; short: string }>> = {
   booking_com: { label: 'Booking.com', short: 'BDC' },
   airbnb: { label: 'Airbnb', short: 'ABB' },
   manual: { label: 'Manual', short: 'MAN' },
+  // Canonical reservations carry this when the provider gave no evidence of a
+  // channel. It is shown as what it is — not folded into "Direct", which
+  // would attribute someone else's booking to BoLaGio.
+  unknown: { label: 'Channel not identified', short: '—' },
 };
 
 export function sourcePresentation(source: string): { label: string; short: string } {
   return SOURCE[source] ?? { label: 'Unknown', short: '???' };
+}
+
+/* ── Canonical reservation status ──────────────────────────────────────── */
+
+/**
+ * How a CHANNEL reservation's status reads.
+ *
+ * Keyed on `status_class`, the small vocabulary the import derives from the
+ * provider's own status word (`lib/integrations/beds24/reservations.ts`), not
+ * on the provider's word itself — which is kept verbatim on the row and shown
+ * beside the label wherever an operator might need it.
+ *
+ * Deliberately NOT the booking-state vocabulary. A Booking.com stay has no
+ * payment saga and no lease; presenting it as "Confirmed" in the same badge
+ * as a direct booking would suggest BoLaGio holds money for it.
+ */
+const RESERVATION_CLASS: Readonly<Record<string, StatePresentation>> = {
+  active: { label: 'Booked', tone: 'positive', glyph: 'check', summary: 'A real stay at the channel manager. It occupies the unit.' },
+  provisional: { label: 'Requested', tone: 'progress', glyph: 'clock', summary: 'Requested at the channel manager and not accepted. Never counted as a stay.' },
+  cancelled: { label: 'Cancelled', tone: 'muted', glyph: 'dash', summary: 'Cancelled at the channel manager. Kept as history; it occupies nothing.' },
+  blocked: { label: 'Blocked', tone: 'neutral', glyph: 'lock', summary: 'Not a guest: an owner block or maintenance held at the channel manager.' },
+};
+
+export function reservationClassPresentation(statusClass: string): StatePresentation {
+  return RESERVATION_CLASS[statusClass] ?? UNKNOWN;
+}
+
+/** Whether a reservation class occupies the unit. The one rule occupancy depends on. */
+export function reservationOccupies(statusClass: string): boolean {
+  return statusClass === 'active';
 }
 
 /* ── Operations error codes ────────────────────────────────────────────── */

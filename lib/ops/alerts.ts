@@ -73,6 +73,10 @@ export const SCHEDULER_INTERVAL_MS: Readonly<Record<SchedulerStatusRow['job'], n
   reconcile: 15 * 60_000,
   operations: 15 * 60_000,
   inventory_sync: 2 * 60 * 60_000,
+  // The reservation import. The Beds24 webhook refreshes a changed booking
+  // within seconds, so this is the floor under it rather than the only path;
+  // two hours late is worth a look, ten minutes is not.
+  reservation_sync: 2 * 60 * 60_000,
 };
 
 export const INVENTORY_STALE_MS = 6 * 60 * 60_000;
@@ -264,7 +268,7 @@ export function deriveAlerts(input: AlertInput): AlertReport {
     });
   }
 
-  for (const job of ['reconcile', 'inventory_sync', 'operations'] as const) {
+  for (const job of ['reconcile', 'inventory_sync', 'operations', 'reservation_sync'] as const) {
     const last = input.schedulers.find((s) => s.job === job);
     if (!last) {
       notInstrumented.push(`scheduler:${job} (no run recorded)`);
@@ -278,7 +282,7 @@ export function deriveAlerts(input: AlertInput): AlertReport {
         title: `Scheduled ${job.replace('_', ' ')} overdue`,
         detail: `The last run finished ${Math.round(age(last.finished_at, now) / 60_000)} minutes ago; the expected interval is ${Math.round(SCHEDULER_INTERVAL_MS[job] / 60_000)} minutes. Check the scheduler.`,
       });
-    } else if (!last.ok && job !== 'inventory_sync') {
+    } else if (!last.ok && job !== 'inventory_sync' && job !== 'reservation_sync') {
       alerts.push({
         level: 'MEDIUM',
         code: 'SCHEDULER_LAST_RUN_FAILED',

@@ -17,7 +17,9 @@
  *     Beds24 id is ever hardcoded.
  *  4. Invalidates the affected nights in the cache, and asks for a fresh bulk
  *     sync of that unit so the calendar is right again within seconds.
- *  5. QUEUES a reconciliation job when the event concerns a booking of ours.
+ *  5. REFRESHES the canonical reservation by asking Beds24 for that booking,
+ *     by id. The payload is the signal; the fresh read is the state.
+ *  6. QUEUES a reconciliation job when the event concerns a booking of ours.
  *     It does NOT act on what the payload says.
  *
  * ── The change, and why ──────────────────────────────────────────────────
@@ -61,6 +63,7 @@ import {
 } from '@/lib/booking/repository';
 import { queueReconciliation } from '@/lib/booking/commands';
 import { syncInventory } from '@/lib/booking/service';
+import { refreshReservation } from '@/lib/booking/reservation-sync';
 import { mayHoldExternalBooking } from '@/lib/booking/states';
 import { isIsoDate } from '@/lib/booking/stay-rules';
 import type { Beds24WebhookPayload } from '@/lib/integrations/beds24/types';
@@ -70,6 +73,14 @@ export const runtime = 'nodejs';
 
 /** Beds24 actions that mean "the calendar just changed". */
 const INVENTORY_ACTIONS = new Set(['created', 'modified', 'cancelled', 'new', 'booking']);
+
+/**
+ * Actions that mean "a reservation changed", and so warrant a fresh read of
+ * it. Deliberately the same set: every one of them can change a stay, and an
+ * action this list has not met costs a missed refresh, not a wrong one — the
+ * scheduled import still catches it.
+ */
+const RESERVATION_ACTIONS = INVENTORY_ACTIONS;
 
 export async function POST(request: NextRequest) {
   const logger = createLogger(request);
@@ -147,6 +158,29 @@ async function process(
       }
       const unitSlug = await slugForUnit(unitId);
       if (unitSlug) await syncInventory(logger, unitSlug);
+    }
+  }
+
+  /*
+   * The canonical reservation, refreshed from the provider.
+   *
+   * This is where a Booking.com reservation becomes visible to BoLaGio within
+   * seconds rather than at the next scheduled import. The webhook payload is
+   * NOT the source: `refreshReservation` issues a GET for that booking id and
+   * writes what Beds24 actually says. A forged delivery therefore costs one
+   * wasted read and can change nothing — the worst it can do is make the
+   * system re-import a reservation that is already correct.
+   *
+   * An id on a room no enabled mapping covers is skipped, and a provider that
+   * cannot be reached is logged: the scheduled import is the floor under this
+   * and will pick the change up on its next pass.
+   */
+  if (externalId && RESERVATION_ACTIONS.has(action)) {
+    try {
+      const outcome = await refreshReservation(externalId, logger);
+      logger.info('webhook.beds24', { externalId, eventType: action, outcome: outcome ?? 'skipped_unmapped_room' });
+    } catch (cause) {
+      logger.error('webhook.beds24', cause, { externalId, eventType: action, outcome: 'reservation_refresh_failed' });
     }
   }
 

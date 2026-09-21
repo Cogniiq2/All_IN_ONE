@@ -128,6 +128,26 @@ do $$ begin
   perform pg_temp.v_assert(not exists (
     select 1 from bolagio_units where is_bookable and not exists (
       select 1 from bolagio_unit_integrations i where i.unit_id = bolagio_units.id and i.enabled)), 'no bookable unit lacks an enabled provider mapping');
+
+  -- ── Canonical reservations (20260923) ───────────────────────────────────
+  perform pg_temp.v_assert(to_regclass('public.bolagio_reservations') is not null, 'bolagio_reservations exists');
+  perform pg_temp.v_assert(exists (select 1 from pg_type where typname='bolagio_reservation_source'), 'bolagio_reservation_source type exists');
+  perform pg_temp.v_assert(exists (select 1 from pg_type where typname='bolagio_reservation_class'), 'bolagio_reservation_class type exists');
+  perform pg_temp.v_assert(exists (select 1 from pg_indexes where indexname='bolagio_reservations_provider_uq'), 'one row per (provider, external booking id)');
+  perform pg_temp.v_assert(exists (
+    select 1 from information_schema.columns
+    where table_name='bolagio_reservations' and column_name='total_amount_cents' and data_type='integer'), 'reservation amounts are integer cents, never a float');
+  perform pg_temp.v_assert(exists (
+    select 1 from information_schema.columns
+    where table_name='bolagio_reservations' and column_name='stay_range'), 'reservations carry the half-open stay range');
+  -- The scheduler check must ACCEPT the new job and still accept the old ones.
+  perform pg_temp.v_assert(
+    pg_get_constraintdef((select oid from pg_constraint where conname='bolagio_scheduler_runs_job_check')) like '%reservation_sync%',
+    'the scheduler heartbeat accepts reservation_sync');
+  perform pg_temp.v_assert(not exists (
+    select 1 from bolagio_reservations where check_out <= check_in), 'no reservation has a departure at or before its arrival');
+  perform pg_temp.v_assert(not exists (
+    select 1 from bolagio_reservations group by provider, external_booking_id having count(*) > 1), 'no provider booking id appears twice');
 end $$;
 
 \echo ''
@@ -135,4 +155,5 @@ end $$;
 select * from bolagio_ops_queues order by 1,2;
 select job, ok, finished_at, error from bolagio_scheduler_status order by job;
 select count(*) as attention_rows, min(severity) as worst_severity from bolagio_ops_attention;
+select source, status_class, count(*) as reservations from bolagio_reservations group by source, status_class order by 1, 2;
 \echo '════════ verification passed ════════'

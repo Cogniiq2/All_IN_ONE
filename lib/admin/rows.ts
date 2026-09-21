@@ -91,6 +91,70 @@ export interface IntentRow {
   updated_at: string;
 }
 
+/**
+ * One canonical reservation — a stay that EXISTS at the channel manager.
+ *
+ * Distinct from `IntentRow`, which is a direct-booking attempt this website
+ * made. A Booking.com reservation has no BLG reference, no payment state and
+ * no lease; it has a provider booking id and a channel. The two are never
+ * merged into one shape, because every place that treats them as the same
+ * thing has to invent a fact for one of them.
+ *
+ * `raw_provider_snapshot` is deliberately ABSENT. It holds the provider's
+ * full payload, it is server-side only, and it has no way into a DTO because
+ * it has no way into this interface.
+ */
+export interface ReservationRow {
+  id: string;
+  unit_id: string;
+  unit_slug: string;
+  provider: string;
+  external_booking_id: string;
+  external_property_id: string | null;
+  external_room_id: string | null;
+  source: string;
+  source_raw: string | null;
+  channel_reference: string | null;
+  provider_status: string;
+  /** active | provisional | cancelled | blocked | unknown. */
+  status_class: string;
+  check_in: string;
+  check_out: string;
+  adults: number | null;
+  children: number | null;
+  number_of_guests: number | null;
+  guest_first_name: string | null;
+  guest_last_name: string | null;
+  guest_country: string | null;
+  currency: string | null;
+  total_amount_cents: number | null;
+  booked_at: string | null;
+  provider_modified_at: string | null;
+  provider_cancelled_at: string | null;
+  direct_intent_id: string | null;
+  /** Joined for display when the reservation is one of ours. */
+  direct_reference: string | null;
+  imported_at: string;
+  last_synced_at: string;
+  last_seen_at: string;
+}
+
+export interface ReservationQuery {
+  /** Stays overlapping a half-open window. */
+  overlaps?: { from: string; to: string } | null;
+  checkInFrom?: string | null;
+  checkInTo?: string | null;
+  checkOutFrom?: string | null;
+  checkOutTo?: string | null;
+  unitId?: string | null;
+  sources?: readonly string[] | null;
+  statusClasses?: readonly string[] | null;
+  sort?: 'check_in' | 'check_out' | 'last_synced_at';
+  dir?: 'asc' | 'desc';
+  offset?: number;
+  limit?: number;
+}
+
 export interface IntentEventRow {
   id: string;
   intent_id: string;
@@ -185,7 +249,7 @@ export interface InventoryMetaRow {
 }
 
 export interface SchedulerStatusRow {
-  job: 'reconcile' | 'inventory_sync' | 'operations';
+  job: 'reconcile' | 'inventory_sync' | 'operations' | 'reservation_sync';
   started_at: string;
   finished_at: string;
   ok: boolean;
@@ -296,6 +360,13 @@ export interface RowSource {
   intents(query: IntentQuery): Promise<{ rows: IntentRow[]; total: number }>;
   intentByReference(reference: string): Promise<IntentRow | null>;
   intentEvents(intentId: string): Promise<IntentEventRow[]>;
+  /**
+   * Canonical reservations — what is actually booked, from every channel.
+   * Guest email and phone are not selected: the board shows who is arriving,
+   * not how to contact them, and contact details belong on a record page
+   * behind a permission rather than in a list.
+   */
+  reservations(query: ReservationQuery): Promise<{ rows: ReservationRow[]; total: number }>;
   operations(query: { intentId?: string; outcomes?: readonly string[]; limit?: number }): Promise<OperationRow[]>;
   paymentEvents(query: {
     reference?: string;

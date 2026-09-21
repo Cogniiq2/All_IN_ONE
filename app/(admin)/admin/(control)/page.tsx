@@ -6,7 +6,7 @@ import { cachedAttention } from '@/lib/admin/request-cache';
 import { countByLevel } from '@/lib/admin/attention';
 import { addDays, occupancyRatio, relationOn, windowOf } from '@/lib/admin/calendar';
 import { formatIsoDate, formatLongDay, formatRelative, formatStay, percent, pluralNights, propertyTodayIso } from '@/lib/admin/format';
-import { isBookingState } from '@/lib/admin/presentation';
+import { isBookingState, reservationClassPresentation, sourcePresentation } from '@/lib/admin/presentation';
 import { isPaidSide } from '@/lib/booking/states';
 import { PageHeader, Section, Metric, DegradedNotice, ErrorNotice, EmptyState, HealthBadge, BookingStateBadge } from '@/components/admin/primitives';
 import { RefreshControl } from '@/components/admin/shell/refresh-control';
@@ -50,15 +50,26 @@ export default async function OverviewPage() {
   const urgent = items.filter((i) => i.level === 'critical' || i.level === 'high');
 
   const bookableUnits = calendar.ok ? calendar.data.units.filter((u) => u.isBookable) : [];
-  const occupancy =
-    calendar.ok && bookableUnits.length > 0
-      ? occupancyRatio(
-          calendar.data.reservations.filter((r) => isBookingState(r.status) && isPaidSide(r.status) && bookableUnits.some((u) => u.slug === r.unitSlug)),
-          horizon,
-          bookableUnits.length
-        )
-      : null;
-  const upcomingCount = calendar.ok ? calendar.data.reservations.filter((r) => r.status === 'confirmed' && r.checkIn > today).length : null;
+  /*
+   * Occupancy counts every stay that ACTUALLY OCCUPIES a unit, from either
+   * record: a paid-side direct booking, and a channel reservation the import
+   * classified as a real stay. Cancelled and merely requested channel
+   * reservations are excluded by `occupies`, so a cancellation lowers
+   * occupancy the moment it is imported rather than flattering the number.
+   */
+  const occupying = calendar.ok
+    ? calendar.data.reservations.filter(
+        (r) =>
+          bookableUnits.some((u) => u.slug === r.unitSlug) &&
+          (r.kind === 'reservation' ? r.occupies : isBookingState(r.status) && isPaidSide(r.status))
+      )
+    : [];
+  const occupancy = calendar.ok && bookableUnits.length > 0 ? occupancyRatio(occupying, horizon, bookableUnits.length) : null;
+  const upcomingCount = calendar.ok
+    ? calendar.data.reservations.filter(
+        (r) => r.checkIn > today && (r.kind === 'reservation' ? r.occupies : r.status === 'confirmed')
+      ).length
+    : null;
 
   return (
     <>
@@ -117,25 +128,29 @@ export default async function OverviewPage() {
       {/* ── Key figures ──────────────────────────────────────────── */}
       <Section title="Key figures" meta="Derived from records only">
         <div className="bc-metrics mt-4" style={{ ['--cols' as string]: 5 }}>
-          <Metric label="Arrivals today" value={board.ok ? board.data.arrivals.length : ''} unavailable={!board.ok} />
-          <Metric label="Departures today" value={board.ok ? board.data.departures.length : ''} unavailable={!board.ok} />
-          <Metric label="In house" value={board.ok ? board.data.inHouse.length : ''} unavailable={!board.ok} note={board.ok ? 'Paid stays covering tonight' : undefined} />
-          <Metric label="Occupancy · 7 nights" value={percent(occupancy)} unavailable={!calendar.ok || bookableUnits.length === 0} note={bookableUnits.length > 0 ? `${bookableUnits.length} bookable ${bookableUnits.length === 1 ? 'unit' : 'units'}, paid stays` : 'No bookable units'} />
-          <Metric label="Confirmed ahead" value={upcomingCount ?? ''} unavailable={upcomingCount === null} note="Next 31 days" />
+          <Metric label="Arrivals today" value={board.ok ? board.data.arrivals.length + board.data.channelArrivals.length : ''} unavailable={!board.ok} note={board.ok && board.data.channelArrivals.length > 0 ? `${board.data.channelArrivals.length} via a channel` : undefined} />
+          <Metric label="Departures today" value={board.ok ? board.data.departures.length + board.data.channelDepartures.length : ''} unavailable={!board.ok} note={board.ok && board.data.channelDepartures.length > 0 ? `${board.data.channelDepartures.length} via a channel` : undefined} />
+          <Metric label="In house" value={board.ok ? board.data.inHouse.length + board.data.channelInHouse.length : ''} unavailable={!board.ok} note={board.ok ? 'Stays covering tonight, every channel' : undefined} />
+          <Metric label="Occupancy · 7 nights" value={percent(occupancy)} unavailable={!calendar.ok || bookableUnits.length === 0} note={bookableUnits.length > 0 ? `${bookableUnits.length} bookable ${bookableUnits.length === 1 ? 'unit' : 'units'}, every channel` : 'No bookable units'} />
+          <Metric label="Booked ahead" value={upcomingCount ?? ''} unavailable={upcomingCount === null} note="Next 31 days" />
         </div>
       </Section>
 
       {/* ── Today ────────────────────────────────────────────────── */}
-      <Section title="At the door today" meta={<span>Paid stays only — a held, unpaid attempt is not an arrival</span>} id="today">
+      <Section
+        title="At the door today"
+        meta={<span>Real stays only — a held, unpaid direct attempt and a cancelled channel reservation are neither of them an arrival</span>}
+        id="today"
+      >
         {!board.ok ? (
           <div className="mt-4">
             <ErrorNotice title="Today’s board could not be loaded.">{board.error}</ErrorNotice>
           </div>
         ) : (
           <div className="grid gap-6 lg:grid-cols-3 mt-2">
-            <Column title="Arrivals" items={board.data.arrivals} empty="No arrivals today." />
-            <Column title="Departures" items={board.data.departures} empty="No departures today." />
-            <Column title="In house" items={board.data.inHouse} empty="Nobody in house tonight." />
+            <Column title="Arrivals" items={board.data.arrivals} channel={board.data.channelArrivals} empty="No arrivals today." />
+            <Column title="Departures" items={board.data.departures} channel={board.data.channelDepartures} empty="No departures today." />
+            <Column title="In house" items={board.data.inHouse} channel={board.data.channelInHouse} empty="Nobody in house tonight." />
           </div>
         )}
       </Section>
@@ -149,14 +164,19 @@ export default async function OverviewPage() {
         ) : (
           <div className="bc-rows">
             {calendar.data.units.map((unit) => {
-              const stays = calendar.data.reservations.filter((r) => r.unitSlug === unit.slug && isBookingState(r.status) && isPaidSide(r.status));
+              const stays = occupying.filter((r) => r.unitSlug === unit.slug);
               const current = stays.find((r) => relationOn(r, today) === 'in_house');
               const arriving = stays.find((r) => relationOn(r, today) === 'arrival');
               const departing = stays.find((r) => relationOn(r, today) === 'departure');
               const next = stays.filter((r) => r.checkIn > today).sort((a, b) => a.checkIn.localeCompare(b.checkIn))[0];
               const closed = calendar.data.closures.find((c) => c.unitSlug === unit.slug && today >= c.from && today < c.to);
               const preparing = !unit.isBookable && unit.contentStatus !== 'available';
-              const exceptions = calendar.data.reservations.filter((r) => r.unitSlug === unit.slug && r.status !== 'confirmed' && r.checkOut >= today);
+              // Exceptions are a DIRECT-booking notion: an attempt that is not
+              // confirmed and still needs watching. A channel reservation has
+              // no such state and is never counted here.
+              const exceptions = calendar.data.reservations.filter(
+                (r) => r.kind === 'intent' && r.unitSlug === unit.slug && r.status !== 'confirmed' && r.checkOut >= today
+              );
               let state: { label: string; tone: string; detail: string };
               if (preparing) state = { label: 'In preparation', tone: 'muted', detail: 'Not offered for booking.' };
               else if (arriving && departing) state = { label: 'Turnover today', tone: 'progress', detail: `${departing.guestLabel ?? departing.reference} leaves · ${arriving.guestLabel ?? arriving.reference} arrives, ${pluralNights(arriving.nights)}` };
@@ -164,7 +184,7 @@ export default async function OverviewPage() {
               else if (departing) state = { label: 'Departure today', tone: 'neutral', detail: `${departing.guestLabel ?? departing.reference} leaves${next ? ` · next ${formatIsoDate(next.checkIn)}` : ''}` };
               else if (current) state = { label: 'Occupied', tone: 'positive', detail: `${current.guestLabel ?? current.reference} until ${formatIsoDate(current.checkOut)}` };
               else if (closed) state = { label: 'Closed at channel', tone: 'neutral', detail: `Cached availability closed until ${formatIsoDate(closed.to)} — an OTA reservation or a closed night` };
-              else state = { label: 'Available tonight', tone: 'muted', detail: next ? `Next arrival ${formatIsoDate(next.checkIn)} — ${next.guestLabel ?? next.reference}` : 'No confirmed stay in the next 31 days' };
+              else state = { label: 'Available tonight', tone: 'muted', detail: next ? `Next arrival ${formatIsoDate(next.checkIn)} — ${next.guestLabel ?? next.reference}` : 'No booked stay in the next 31 days' };
               return (
                 <div key={unit.slug} className="bc-row" style={{ gridTemplateColumns: 'minmax(140px, 200px) auto minmax(0,1fr) auto' }}>
                   <div>
@@ -228,13 +248,24 @@ export default async function OverviewPage() {
   );
 }
 
-function Column({ title, items, empty }: { title: string; items: import('@/lib/admin/dto').BookingSummaryDto[]; empty: string }) {
+function Column({
+  title,
+  items,
+  channel,
+  empty,
+}: {
+  title: string;
+  items: import('@/lib/admin/dto').BookingSummaryDto[];
+  /** Channel reservations. No BoLaGio record page, so they are rows rather than links. */
+  channel: import('@/lib/admin/dto').ReservationDto[];
+  empty: string;
+}) {
   return (
     <div className="min-w-0">
       <p className="bc-label" style={{ padding: '14px 0 6px' }}>
-        {title} <span className="bc-num" style={{ marginLeft: 6, color: 'hsl(var(--bc-text))' }}>{items.length}</span>
+        {title} <span className="bc-num" style={{ marginLeft: 6, color: 'hsl(var(--bc-text))' }}>{items.length + channel.length}</span>
       </p>
-      {items.length === 0 ? (
+      {items.length + channel.length === 0 ? (
         <p className="bc-meta" style={{ padding: '10px 0' }}>
           {empty}
         </p>
@@ -255,6 +286,27 @@ function Column({ title, items, empty }: { title: string; items: import('@/lib/a
               </div>
             </Link>
           ))}
+          {channel.map((r) => {
+            const state = reservationClassPresentation(r.statusClass);
+            return (
+              <div key={`${r.provider}-${r.externalBookingId}`} className="bc-row-link" style={{ cursor: 'default' }}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate" style={{ fontWeight: 500 }}>
+                      {r.guestLabel ?? r.externalBookingId}
+                    </div>
+                    <div className="bc-meta truncate">
+                      {r.unitName} · {formatStay(r.checkIn, r.checkOut)} · {sourcePresentation(r.source).label}
+                    </div>
+                  </div>
+                  <span className="bc-badge" data-tone={state.tone}>
+                    <i className="bc-glyph" data-glyph={state.glyph} aria-hidden="true" />
+                    {state.label}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

@@ -51,6 +51,27 @@ export const RETENTION_CLASSES: readonly RetentionClass[] = [
     mechanism: 'manual, documented',
   },
   {
+    table: 'bolagio_reservations',
+    category: 'guest_personal_data',
+    purpose:
+      'The canonical record of reservations that exist at the channel manager (Booking.com, Airbnb, manual): who is staying, when, in which unit. Operations, guest communication, check-in and the accounting trail of the stay.',
+    personalColumns: [
+      'guest_first_name',
+      'guest_last_name',
+      'guest_email',
+      'guest_phone',
+      'guest_country',
+      'raw_provider_snapshot (carries the same guest fields as the channel manager sent them)',
+    ],
+    proposedRetention:
+      `10 years from the end of the calendar year of the stay for the commercial/tax record (§ 147 AO, § 257 HGB). ` +
+      `The RAW PROVIDER SNAPSHOT is the shortest-lived part and should be reduced to the mapped columns far sooner — ` +
+      `90 days after the stay is a defensible proposal — because it is kept for diagnosis, not for the record — ${NEEDS}`,
+    legalBasisHint:
+      'Art. 6(1)(b) GDPR (performance of the accommodation contract, to which BoLaGio is a party even where the channel introduced the guest), Art. 6(1)(c) with § 147 AO for the retention. Note: the OTA is a separate controller for its own processing; this is BoLaGio\'s own record.',
+    mechanism: 'manual, documented',
+  },
+  {
     table: 'bolagio_booking_intent_events',
     category: 'transaction_evidence',
     purpose: 'The lifecycle of each reservation, for reconciliation and dispute evidence.',

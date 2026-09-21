@@ -3,6 +3,7 @@ import type { CalendarDto } from '@/lib/admin/dto';
 import { datesIn, relationOn, windowOf } from '@/lib/admin/calendar';
 import { formatIsoDate, weekdayShort } from '@/lib/admin/format';
 import { BookingStateBadge } from '@/components/admin/primitives';
+import { reservationClassPresentation, sourcePresentation } from '@/lib/admin/presentation';
 
 /**
  * The phone's calendar: a day-by-day agenda of arrivals, departures and who
@@ -33,10 +34,10 @@ export function Agenda({ data, days, unitFilter }: { data: CalendarDto; days: nu
             <div className="min-w-0 grid gap-2">
               {quiet && <span className="bc-meta">—</span>}
               {arrivals.map((r) => (
-                <Line key={`a-${r.reference}`} label="Arrival" r={r} unit={unitName(r.unitSlug)} />
+                <Line key={`a-${r.kind}-${r.reference}`} label="Arrival" r={r} unit={unitName(r.unitSlug)} />
               ))}
               {departures.map((r) => (
-                <Line key={`d-${r.reference}`} label="Departure" r={r} unit={unitName(r.unitSlug)} />
+                <Line key={`d-${r.kind}-${r.reference}`} label="Departure" r={r} unit={unitName(r.unitSlug)} />
               ))}
               {inHouse.length > 0 && (
                 <span className="bc-meta">
@@ -53,16 +54,36 @@ export function Agenda({ data, days, unitFilter }: { data: CalendarDto; days: nu
 }
 
 function Line({ label, r, unit }: { label: string; r: CalendarDto['reservations'][number]; unit: string }) {
-  return (
-    <Link href={`/admin/bookings/${encodeURIComponent(r.reference)}`} className="bc-agenda-line">
+  const channel = r.kind === 'reservation';
+  const state = channel ? reservationClassPresentation(r.status) : null;
+  const body = (
+    <>
       <span className="bc-label">{label}</span>
       <span className="min-w-0">
         <span className="truncate" style={{ fontWeight: 500 }}>
           {r.guestLabel ?? r.reference}
         </span>
-        <span className="bc-meta truncate">{unit}</span>
+        <span className="bc-meta truncate">
+          {unit}
+          {channel ? ` · ${sourcePresentation(r.source).label}` : ''}
+        </span>
       </span>
-      <BookingStateBadge state={r.status} />
+      {state ? (
+        <span className="bc-badge" data-tone={state.tone}>
+          <i className="bc-glyph" data-glyph={state.glyph} aria-hidden="true" />
+          {state.label}
+        </span>
+      ) : (
+        <BookingStateBadge state={r.status} />
+      )}
+    </>
+  );
+  // A channel reservation is not a BoLaGio record; there is nowhere to go.
+  return r.href ? (
+    <Link href={r.href} className="bc-agenda-line">
+      {body}
     </Link>
+  ) : (
+    <span className="bc-agenda-line">{body}</span>
   );
 }

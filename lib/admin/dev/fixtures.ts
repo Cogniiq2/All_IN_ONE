@@ -29,6 +29,8 @@ import type {
   OutboxRow,
   PaymentEventRow,
   QueueRow,
+  ReservationQuery,
+  ReservationRow,
   RowSource,
   UnitRow,
 } from '@/lib/admin/rows';
@@ -95,6 +97,63 @@ const SEEDS: Seed[] = [
   { id: 'i-13', ref: 'BLG-V2Q6NM', unit: 'u-s1', in: 22, out: 25, first: 'Nina', last: 'Zimmermann', country: 'DE', total: 45000, status: 'cancelled', payment: 'not_created', created: at(-8, 20, 0), updated: at(-8, 20, 3) },
   { id: 'i-14', ref: 'BLG-P9W3FT', unit: 'u-s2', in: 60, out: 65, adults: 3, first: 'Lukas', last: 'Braun', country: 'DE', total: 76000, status: 'confirmed', payment: 'paid', source: 'manual', beds24: '78120111', beds24Status: 'confirmed', paidAt: at(-1, 15, 0), confirmedAt: at(-1, 15, 5), created: at(-1, 14, 55), updated: at(-1, 15, 5) },
   { id: 'i-15', ref: 'BLG-K5D8JR', unit: 'u-s1', in: 1, out: 2, first: 'Ben', last: 'Lange', country: 'DE', total: 15000, status: 'quote_expired', payment: 'not_created', created: at(-3, 23, 10), updated: at(-3, 23, 35) },
+];
+
+/**
+ * Canonical reservations — the channel side of the board.
+ *
+ * Deliberately the cases an operator has to be able to tell apart at a
+ * glance: a Booking.com stay in house, an Airbnb arrival, a cancelled
+ * Booking.com stay that must NOT count as occupancy, an owner block, and one
+ * whose channel the provider did not identify. Names are placeholders; no
+ * contact detail appears here at all.
+ */
+const RESERVATIONS: ReservationRow[] = [
+  {
+    id: 'r-1', unit_id: 'u-s1', unit_slug: 'schulstrasse-i', provider: 'beds24', external_booking_id: '90000001',
+    external_property_id: '354659', external_room_id: '731147', source: 'booking_com', source_raw: 'Booking.com',
+    channel_reference: '4123456789', provider_status: 'confirmed', status_class: 'active',
+    check_in: day(-2), check_out: day(3), adults: 2, children: 0, number_of_guests: 2,
+    guest_first_name: 'Erika', guest_last_name: 'Mustermann', guest_country: 'DE', currency: 'EUR',
+    total_amount_cents: 162000, booked_at: at(-20, 11), provider_modified_at: at(-20, 11), provider_cancelled_at: null,
+    direct_intent_id: null, direct_reference: null, imported_at: at(-1, 6), last_synced_at: at(0, 6), last_seen_at: at(0, 6),
+  },
+  {
+    id: 'r-2', unit_id: 'u-s2', unit_slug: 'schulstrasse-ii', provider: 'beds24', external_booking_id: '90000002',
+    external_property_id: '354658', external_room_id: '731146', source: 'airbnb', source_raw: 'Airbnb',
+    channel_reference: 'HMABCDEFGH', provider_status: 'confirmed', status_class: 'active',
+    check_in: day(1), check_out: day(6), adults: 1, children: 1, number_of_guests: 2,
+    guest_first_name: 'Max', guest_last_name: 'Mustermann', guest_country: 'AT', currency: 'EUR',
+    total_amount_cents: 148500, booked_at: at(-9, 15), provider_modified_at: at(-9, 15), provider_cancelled_at: null,
+    direct_intent_id: null, direct_reference: null, imported_at: at(-1, 6), last_synced_at: at(0, 6), last_seen_at: at(0, 6),
+  },
+  {
+    id: 'r-3', unit_id: 'u-s1', unit_slug: 'schulstrasse-i', provider: 'beds24', external_booking_id: '90000003',
+    external_property_id: '354659', external_room_id: '731147', source: 'booking_com', source_raw: 'Booking.com',
+    channel_reference: '4987654321', provider_status: 'cancelled', status_class: 'cancelled',
+    check_in: day(8), check_out: day(11), adults: 2, children: 0, number_of_guests: 2,
+    guest_first_name: 'Anna', guest_last_name: 'Beispiel', guest_country: 'DE', currency: 'EUR',
+    total_amount_cents: 97200, booked_at: at(-30, 9), provider_modified_at: at(-2, 9), provider_cancelled_at: at(-2, 9),
+    direct_intent_id: null, direct_reference: null, imported_at: at(-1, 6), last_synced_at: at(0, 6), last_seen_at: at(0, 6),
+  },
+  {
+    id: 'r-4', unit_id: 'u-s2', unit_slug: 'schulstrasse-ii', provider: 'beds24', external_booking_id: '90000004',
+    external_property_id: '354658', external_room_id: '731146', source: 'manual', source_raw: 'manual',
+    channel_reference: null, provider_status: 'black', status_class: 'blocked',
+    check_in: day(14), check_out: day(16), adults: null, children: null, number_of_guests: null,
+    guest_first_name: null, guest_last_name: null, guest_country: null, currency: null,
+    total_amount_cents: null, booked_at: at(-4, 8), provider_modified_at: at(-4, 8), provider_cancelled_at: null,
+    direct_intent_id: null, direct_reference: null, imported_at: at(-1, 6), last_synced_at: at(0, 6), last_seen_at: at(0, 6),
+  },
+  {
+    id: 'r-5', unit_id: 'u-s1', unit_slug: 'schulstrasse-i', provider: 'beds24', external_booking_id: '90000005',
+    external_property_id: '354659', external_room_id: '731147', source: 'unknown', source_raw: 'Web',
+    channel_reference: null, provider_status: 'new', status_class: 'active',
+    check_in: day(20), check_out: day(23), adults: 2, children: 0, number_of_guests: 2,
+    guest_first_name: 'Jamie', guest_last_name: 'Doe', guest_country: null, currency: 'EUR',
+    total_amount_cents: null, booked_at: at(-1, 17), provider_modified_at: at(-1, 17), provider_cancelled_at: null,
+    direct_intent_id: null, direct_reference: null, imported_at: at(-1, 18), last_synced_at: at(0, 6), last_seen_at: at(0, 6),
+  },
 ];
 
 const INTENTS: IntentRow[] = SEEDS.map((s) => {
@@ -340,6 +399,26 @@ export function fixtureRowSource(): RowSource {
       const limit = query.limit ?? 40;
       return { rows: rows.slice(offset, offset + limit).map((r) => ({ ...r })), total: rows.length };
     },
+    async reservations(query: ReservationQuery) {
+      let rows = RESERVATIONS.filter((row) => {
+        if (query.unitId && row.unit_id !== query.unitId) return false;
+        if (query.sources && query.sources.length > 0 && !query.sources.includes(row.source)) return false;
+        if (query.statusClasses && query.statusClasses.length > 0 && !query.statusClasses.includes(row.status_class)) return false;
+        if (query.checkInFrom && row.check_in < query.checkInFrom) return false;
+        if (query.checkInTo && row.check_in >= query.checkInTo) return false;
+        if (query.checkOutFrom && row.check_out < query.checkOutFrom) return false;
+        if (query.checkOutTo && row.check_out >= query.checkOutTo) return false;
+        if (query.overlaps && !(row.check_in < query.overlaps.to && row.check_out > query.overlaps.from)) return false;
+        return true;
+      });
+      const sort = query.sort ?? 'check_in';
+      const dir = query.dir === 'desc' ? -1 : 1;
+      rows = rows.sort((a, b) => (a[sort] === b[sort] ? 0 : (a[sort] > b[sort] ? 1 : -1) * dir));
+      const offset = query.offset ?? 0;
+      const limit = query.limit ?? 200;
+      return { rows: rows.slice(offset, offset + limit).map((r) => ({ ...r })), total: rows.length };
+    },
+
     async intentByReference(reference) {
       const row = INTENTS.find((r) => r.reference === reference);
       return row ? { ...row } : null;
@@ -432,6 +511,7 @@ export function fixtureRowSource(): RowSource {
         { job: 'reconcile', started_at: minutesAgo(1.2), finished_at: minutesAgo(1), ok: true, report: { scanned: 2, resolved: 1, failed: 0, escalated: 1, paymentEvents: 0, queued: 0 }, error: null, worker: 'fixture' },
         { job: 'operations', started_at: minutesAgo(1), finished_at: minutesAgo(1), ok: true, report: { created: 0, updated: 0, voided: 0 }, error: null, worker: 'fixture' },
         { job: 'inventory_sync', started_at: minutesAgo(22), finished_at: minutesAgo(21), ok: true, report: { units: 2, days: 1096, failed: 0, holdsReleased: 0, heldForPayment: 0 }, error: null, worker: 'fixture' },
+        { job: 'reservation_sync', started_at: minutesAgo(13), finished_at: minutesAgo(12), ok: true, report: { fetched: 5, inserted: 0, updated: 5, skipped: 0, malformed: 0, failed: 0, units: 2, requests: 18, truncated: false }, error: null, worker: 'fixture' },
       ];
     },
   };

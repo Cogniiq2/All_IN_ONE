@@ -2,9 +2,9 @@ import Link from 'next/link';
 import type { CalendarDto, CalendarReservationDto } from '@/lib/admin/dto';
 import { datesIn, isWeekend, place, windowOf } from '@/lib/admin/calendar';
 import { formatIsoDate, formatRelative, formatStay, pluralNights, weekdayShort } from '@/lib/admin/format';
-import { bookingStatePresentation, paymentStatePresentation, sourcePresentation } from '@/lib/admin/presentation';
+import { bookingStatePresentation, paymentStatePresentation, reservationClassPresentation, sourcePresentation } from '@/lib/admin/presentation';
 
-type BarKind = 'confirmed' | 'paid_unfinalized' | 'held' | 'caution' | 'critical' | 'unknown';
+type BarKind = 'confirmed' | 'paid_unfinalized' | 'held' | 'caution' | 'critical' | 'unknown' | 'channel_stay' | 'channel_cancelled';
 
 /**
  * The visual vocabulary of a stay on the grid, derived from the canonical
@@ -12,7 +12,15 @@ type BarKind = 'confirmed' | 'paid_unfinalized' | 'held' | 'caution' | 'critical
  * one thing that must never look like a confirmed one, so it is dashed and
  * red; everything in progress is quiet; exceptions are loud and bordered.
  */
-export function barKind(r: Pick<CalendarReservationDto, 'status'>): BarKind {
+export function barKind(r: Pick<CalendarReservationDto, 'status' | 'kind' | 'occupies'>): BarKind {
+  /*
+   * A channel reservation is NOT a booking state. Booking.com stays occupy
+   * the unit exactly as a confirmed direct booking does, so they read as
+   * solid; but they carry no payment of ours, so they get their own kind
+   * rather than borrowing `confirmed`, and a cancelled one is visibly spent
+   * rather than quietly absent.
+   */
+  if (r.kind === 'reservation') return r.occupies ? 'channel_stay' : 'channel_cancelled';
   const p = bookingStatePresentation(r.status);
   if (r.status === 'confirmed') return 'confirmed';
   if (r.status === 'paid_unfinalized' || r.status === 'finalization_failed') return 'paid_unfinalized';
@@ -114,25 +122,50 @@ function UnitLane({
           const p = place(r, window);
           if (!p) return null;
           const kind = barKind(r);
-          const state = bookingStatePresentation(r.status);
+          // Two vocabularies, chosen by which record this stay came from.
+          const state = r.kind === 'reservation' ? reservationClassPresentation(r.status) : bookingStatePresentation(r.status);
           const payment = paymentStatePresentation(r.paymentStatus);
           const label = r.guestLabel ?? r.reference;
           const barWidth = width(p.startCol, p.endCol, p.clippedStart, p.clippedEnd);
+          const ariaLabel =
+            r.kind === 'reservation'
+              ? `${label}, ${sourcePresentation(r.source).label} booking ${r.reference}, ${unit.displayName}, ${formatStay(r.checkIn, r.checkOut)}, ${state.label}`
+              : `${label}, ${r.reference}, ${unit.displayName}, ${formatStay(r.checkIn, r.checkOut)}, ${state.label}, payment ${payment.label}`;
+          const inner = (
+            <>
+              <i className="bc-glyph" data-glyph={state.glyph} aria-hidden="true" />
+              <span className="bc-bar-text">{label}</span>
+              {p.endCol - p.startCol >= 3 && <span className="bc-bar-src">{sourcePresentation(r.source).short}</span>}
+            </>
+          );
           return (
-            <span key={r.reference} className="bc-bar-host" style={{ left: left(p.startCol, p.clippedStart), width: barWidth }}>
-              <Link
-                href={`/admin/bookings/${encodeURIComponent(r.reference)}`}
-                className="bc-bar"
-                data-kind={kind}
-                data-clipped-start={p.clippedStart ? 'true' : undefined}
-                data-clipped-end={p.clippedEnd ? 'true' : undefined}
-                style={{ left: 0, width: '100%' }}
-                aria-label={`${label}, ${r.reference}, ${unit.displayName}, ${formatStay(r.checkIn, r.checkOut)}, ${state.label}, payment ${payment.label}`}
-              >
-                <i className="bc-glyph" data-glyph={state.glyph} aria-hidden="true" />
-                <span className="bc-bar-text">{label}</span>
-                {p.endCol - p.startCol >= 3 && <span className="bc-bar-src">{sourcePresentation(r.source).short}</span>}
-              </Link>
+            <span key={`${r.kind}-${r.reference}`} className="bc-bar-host" style={{ left: left(p.startCol, p.clippedStart), width: barWidth }}>
+              {/* A channel reservation has no BoLaGio record page, so it is not a link. */}
+              {r.href ? (
+                <Link
+                  href={r.href}
+                  className="bc-bar"
+                  data-kind={kind}
+                  data-clipped-start={p.clippedStart ? 'true' : undefined}
+                  data-clipped-end={p.clippedEnd ? 'true' : undefined}
+                  style={{ left: 0, width: '100%' }}
+                  aria-label={ariaLabel}
+                >
+                  {inner}
+                </Link>
+              ) : (
+                <span
+                  className="bc-bar"
+                  data-kind={kind}
+                  data-clipped-start={p.clippedStart ? 'true' : undefined}
+                  data-clipped-end={p.clippedEnd ? 'true' : undefined}
+                  style={{ left: 0, width: '100%' }}
+                  role="img"
+                  aria-label={ariaLabel}
+                >
+                  {inner}
+                </span>
+              )}
               <span className="bc-bar-pop" style={{ top: 'calc(var(--row) - 6px)', left: 0 }} aria-hidden="true">
                 <span className="flex items-center justify-between gap-3">
                   <span className="bc-ref">{r.reference}</span>
@@ -148,7 +181,9 @@ function UnitLane({
                   {formatStay(r.checkIn, r.checkOut)} · {pluralNights(r.nights)} · {r.adults + r.children} {r.adults + r.children === 1 ? 'guest' : 'guests'}
                 </span>
                 <span className="block bc-meta mt-1">
-                  Payment: {payment.label} · {sourcePresentation(r.source).label}
+                  {r.kind === 'reservation'
+                    ? `${sourcePresentation(r.source).label} · status ${r.providerStatus ?? r.status}${r.channelReference ? ` · ${r.channelReference}` : ''}`
+                    : `Payment: ${payment.label} · ${sourcePresentation(r.source).label}`}
                 </span>
               </span>
             </span>
@@ -183,8 +218,16 @@ export function CalendarLegend() {
         Needs a person
       </span>
       <span>
+        <i style={{ background: 'hsl(var(--bc-accent-wash))', borderColor: 'hsl(var(--bc-accent) / 0.5)' }} />
+        Channel reservation
+      </span>
+      <span>
+        <i style={{ background: 'hsl(var(--bc-surface-2))', borderColor: 'hsl(var(--bc-line-strong))', borderStyle: 'dashed', opacity: 0.62 }} />
+        Channel reservation, cancelled
+      </span>
+      <span>
         <i style={{ background: 'repeating-linear-gradient(135deg, hsl(var(--bc-surface-2)) 0 4px, hsl(var(--bc-line)) 4px 5px)', borderColor: 'hsl(var(--bc-line-strong))' }} />
-        Closed at channel (cached)
+        Closed at channel, no reservation
       </span>
     </div>
   );
