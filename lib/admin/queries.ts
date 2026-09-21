@@ -174,6 +174,7 @@ function toReservationDto(row: ReservationRow, unitNames: Map<string, string>): 
     unitName: unitName(row.unit_slug, unitNames.get(row.unit_id) ?? ''),
     source: row.source,
     sourceRaw: row.source_raw,
+    sourceApiId: row.external_source_id,
     channelReference: row.channel_reference,
     providerStatus: row.provider_status,
     statusClass: row.status_class,

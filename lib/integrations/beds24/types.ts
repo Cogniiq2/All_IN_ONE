@@ -197,11 +197,31 @@ export interface Beds24Booking {
    * `arrival` and `departure`, because the write response is read through the
    * same shape today.
    */
-  /** The channel the booking came from, where V2 names it directly. */
-  channel?: string;
-  /** Older/alternate spellings of the same idea. Read in priority order. */
-  apiSource?: string;
+  /**
+   * WHERE THE BOOKING CAME FROM.
+   *
+   * `apiSourceId` is Beds24's own NUMBER for the channel and is the strongest
+   * evidence available: 19 is Booking.com, 46 is Airbnb (XML). It is defined
+   * by the provider, cannot be localised, and does not change when a property
+   * renames a channel in its own interface.
+   *
+   * `apiSource` is V2's own channel NAME, and its vocabulary is Beds24's, not
+   * the channel's marketing one — Booking.com is `booking`, not
+   * `booking.com`. Reading only for strings resembling "booking.com" sends
+   * every real Booking.com reservation to `unknown`.
+   *
+   * Note that `apiSource` also uses `direct` for anything that did not arrive
+   * through a channel — typed into the Beds24 interface, a Beds24-hosted
+   * booking page, any API client on the account. That is NOT evidence of a
+   * BoLaGio direct booking, and `reservations.ts` never reads it as one.
+   *
+   * The remaining keys are alternate spellings seen in different places in
+   * the V2 surface; all are read, in descending order of how official they
+   * are. Numbers may arrive as strings.
+   */
   apiSourceId?: number | string;
+  apiSource?: string;
+  channel?: string;
   bookingSource?: string;
   source?: string;
   /** The channel's own confirmation number (a Booking.com reference). */

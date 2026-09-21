@@ -44,7 +44,7 @@ import { ATTENTION_STATUSES } from '@/lib/admin/rows';
  */
 const RESERVATION_COLUMNS =
   'id, unit_id, provider, external_booking_id, external_property_id, external_room_id,' +
-  ' source, source_raw, channel_reference, provider_status, status_class, check_in, check_out,' +
+  ' source, source_raw, external_source_id, channel_reference, provider_status, status_class, check_in, check_out,' +
   ' adults, children, number_of_guests, guest_first_name, guest_last_name, guest_country,' +
   ' currency, total_amount_cents, booked_at, provider_modified_at, provider_cancelled_at,' +
   ' direct_intent_id, imported_at, last_synced_at, last_seen_at,' +

@@ -48,7 +48,10 @@ export interface ProviderReservation {
   providerStatus: string;
   statusClass: ReservationClass;
   source: ReservationSource;
+  /** The channel label that decided it, or the first one that failed to. */
   sourceRaw?: string;
+  /** Beds24's own numeric channel id, kept whether or not it is mapped. */
+  sourceApiId?: number;
   channelReference?: string;
   checkIn: string;
   checkOut: string;
@@ -120,6 +123,29 @@ export function classifyStatus(status: string | undefined): ReservationClass {
 /* ── Source ────────────────────────────────────────────────────────────── */
 
 /**
+ * Beds24's OFFICIAL API source ids.
+ *
+ * V2 identifies the channel a booking arrived through with a numeric
+ * `apiSourceId`, and those numbers are defined by Beds24 — they are not a
+ * label someone typed, they cannot be localised, and they do not change when
+ * a property renames a channel in its own interface. That makes them the
+ * strongest evidence available and the first thing consulted.
+ *
+ *   19  Booking.com
+ *   46  Airbnb (XML)
+ *
+ * Only ids whose meaning is documented appear here. An id this table has not
+ * met resolves to nothing, falls through to the label evidence below, and
+ * ultimately to `unknown` — it is never guessed at. `external_source_id` on
+ * the row keeps the number, so a run of `unknown` reservations can be turned
+ * into one more line in this table rather than into speculation.
+ */
+const BEDS24_API_SOURCE_ID: Readonly<Record<number, ReservationSource>> = {
+  19: 'booking_com',
+  46: 'airbnb',
+};
+
+/**
  * The BoLaGio marker written on every reservation this website creates.
  * Mirrors `DIRECT_REFERER` in `live.ts`; kept as its own constant so the
  * reader does not import the write path.
@@ -127,7 +153,90 @@ export function classifyStatus(status: string | undefined): ReservationClass {
 const DIRECT_MARKER = 'bolagio direct';
 
 /**
- * Normalise the channel, on evidence only.
+ * Labels that, on their own, prove a channel.
+ *
+ * ── Why `direct` is absent, and must stay absent ─────────────────────────
+ * Beds24 uses "direct" for a booking that did not come through a channel —
+ * one typed into its own interface, one made on a Beds24-hosted booking page,
+ * one pushed in by any API client on the account. NONE of those is
+ * necessarily a BoLaGio direct booking. Mapping a generic `direct` to our
+ * `direct` source would attribute someone else's reservation to this website
+ * and, downstream, to this website's revenue.
+ *
+ * BoLaGio direct is therefore recognised ONLY by BoLaGio-specific evidence:
+ * the `BLG-XXXXXX` reference this site writes, or the exact `BoLaGio Direct`
+ * marker it sets as the referer. Both are strings only this codebase emits.
+ */
+const EXACT_LABEL: Readonly<Record<string, ReservationSource>> = {
+  // The official V2 channel name for Booking.com — this is what a real
+  // booking carries in `apiSource`, NOT the string "booking.com".
+  booking: 'booking_com',
+  'booking.com': 'booking_com',
+  bookingcom: 'booking_com',
+  airbnb: 'airbnb',
+  'airbnb.com': 'airbnb',
+  // BoLaGio's own marker. Not "direct" — see the note above.
+  [DIRECT_MARKER]: 'direct',
+  // A literal manual marker, and nothing looser. Beds24's exact wording for a
+  // booking typed into its own interface is NOT established for this account,
+  // so everything else stays `unknown` rather than being attributed to a
+  // channel that may not be the truth.
+  manual: 'manual',
+};
+
+/**
+ * The structured evidence a booking carries about where it came from.
+ *
+ * Deliberately NOT a single string: `apiSourceId` is a number, it outranks
+ * every label, and flattening it into text is how it got lost before.
+ */
+export interface SourceEvidence {
+  apiSourceId?: number;
+  apiSource?: string;
+  channel?: string;
+  bookingSource?: string;
+  source?: string;
+  referer?: string;
+  /** The BoLaGio reference, if the provider echoed one back. */
+  reference?: string;
+}
+
+/** The official id table, and nothing else. Exported for the tests. */
+export function sourceFromApiSourceId(id: number | undefined): ReservationSource | undefined {
+  if (id === undefined || !Number.isInteger(id)) return undefined;
+  return BEDS24_API_SOURCE_ID[id];
+}
+
+/**
+ * A single channel label, resolved — or nothing when it proves nothing.
+ *
+ * Exact matches first, because they are the ones that cannot be wrong. The
+ * two substring rules that follow exist only to catch a decorated variant of
+ * a name that is already unambiguous ("Booking.com B.V.", "Airbnb XML"); note
+ * that neither of them can match a bare `direct`, `web` or `manual`.
+ */
+export function sourceFromLabel(raw: string | undefined): ReservationSource | undefined {
+  const value = (raw ?? '').trim().toLowerCase();
+  if (value === '') return undefined;
+  const exact = EXACT_LABEL[value];
+  if (exact) return exact;
+  if (/booking\.?com/.test(value)) return 'booking_com';
+  if (/airbnb/.test(value)) return 'airbnb';
+  return undefined;
+}
+
+/** A BoLaGio reservation reference — a string only this codebase emits. */
+export function isBolagioReference(value: string | undefined): boolean {
+  return typeof value === 'string' && /^BLG-[0-9A-Z]{6}$/.test(value.trim());
+}
+
+/**
+ * Normalise the channel, on evidence only, strongest evidence first.
+ *
+ *   1. `apiSourceId`    Beds24's own documented number for the channel.
+ *   2. a BoLaGio reference we wrote ourselves.
+ *   3. a channel LABEL that proves a channel on its own.
+ *   4. otherwise `unknown`.
  *
  * ── What is deliberately NOT used ────────────────────────────────────────
  * A guest name, an email domain, a comment, a price, a date, a length of
@@ -135,28 +244,56 @@ const DIRECT_MARKER = 'bolagio direct';
  * one; a Booking.com guest with a gmail address is not an Airbnb booking, and
  * attributing revenue on a guess is worse than admitting ignorance.
  *
- * Anything without a recognised marker is `unknown`, and `sourceRaw` keeps
- * whatever the provider actually said so the mapping can be revisited once
- * the live values are observed.
+ * Nor a generic `direct` — see `EXACT_LABEL`.
+ *
+ * Anything unproven is `unknown`, with `sourceRaw` and `sourceApiId` keeping
+ * what the provider actually said, so the mapping can be tightened from
+ * observed values instead of from guesses.
  */
-export function normalizeSource(raw: string | undefined): ReservationSource {
-  const value = (raw ?? '').trim().toLowerCase();
-  if (value === '') return 'unknown';
-  if (/booking\.?com/.test(value)) return 'booking_com';
-  if (/airbnb/.test(value)) return 'airbnb';
-  if (value === DIRECT_MARKER) return 'direct';
-  // Only a literal manual marker. Beds24's actual wording for a booking typed
-  // into its own interface is NOT established for this account, so anything
-  // else stays `unknown` rather than being attributed to a channel that may
-  // not be the truth. See docs/beds24-reservations.md §Source normalisation.
-  if (value === 'manual') return 'manual';
+export function normalizeSource(evidence: SourceEvidence): ReservationSource {
+  // 1. The official id. Beds24 defines these; nothing a label says outranks
+  //    one, because a label can be renamed and a number cannot.
+  const byId = sourceFromApiSourceId(evidence.apiSourceId);
+  if (byId) return byId;
+
+  // 2. Our own marker on our own booking.
+  if (isBolagioReference(evidence.reference)) return 'direct';
+
+  // 3. Labels, in the order of how official each key is. `apiSource` is V2's
+  //    own channel name; `referer` is last because it is free text and is
+  //    where BoLaGio's own marker lives.
+  for (const label of [evidence.apiSource, evidence.channel, evidence.bookingSource, evidence.source, evidence.referer]) {
+    const resolved = sourceFromLabel(label);
+    if (resolved) return resolved;
+  }
+
   return 'unknown';
 }
 
-/** The provider's channel string, read from whichever key carries it. */
-function readSourceRaw(booking: Beds24Booking): string | undefined {
-  for (const candidate of [booking.channel, booking.apiSource, booking.bookingSource, booking.source, booking.referer]) {
-    if (typeof candidate === 'string' && candidate.trim() !== '') return candidate.trim().slice(0, 200);
+/** Everything on the booking that speaks to where it came from. */
+function readSourceEvidence(booking: Beds24Booking): SourceEvidence {
+  return {
+    apiSourceId: integer(booking.apiSourceId),
+    apiSource: text(booking.apiSource, 200),
+    channel: text(booking.channel, 200),
+    bookingSource: text(booking.bookingSource, 200),
+    source: text(booking.source, 200),
+    referer: text(booking.referer, 200),
+    reference: text(booking.reference, 64),
+  };
+}
+
+/**
+ * The label kept for diagnosis, in the same priority order the normalisation
+ * reads them — so a reservation that came out `unknown` shows the string that
+ * FAILED to resolve, rather than an unrelated one from another key.
+ *
+ * `apiSourceId` is kept separately, as a number, in `sourceApiId`. Folding it
+ * into this string is exactly how it was lost before.
+ */
+function readSourceRaw(evidence: SourceEvidence): string | undefined {
+  for (const candidate of [evidence.apiSource, evidence.channel, evidence.bookingSource, evidence.source, evidence.referer]) {
+    if (candidate !== undefined && candidate !== '') return candidate;
   }
   return undefined;
 }
@@ -175,6 +312,21 @@ function count(value: unknown): number | undefined {
   const n = typeof value === 'number' ? value : typeof value === 'string' && value.trim() !== '' ? Number(value) : NaN;
   if (!Number.isFinite(n) || n < 0 || n > 200) return undefined;
   return Math.trunc(n);
+}
+
+/**
+ * A whole number the provider gave, or nothing.
+ *
+ * Beds24 returns numbers as strings in places, so `"19"` and `19` are the
+ * same channel id. Anything that is not a plain integer is dropped rather
+ * than coerced into one that happens to collide with a real source id.
+ */
+function integer(value: unknown): number | undefined {
+  if (typeof value === 'number') return Number.isInteger(value) ? value : undefined;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!/^-?\d{1,9}$/.test(trimmed)) return undefined;
+  return Number.parseInt(trimmed, 10);
 }
 
 /** A date the provider gave, or nothing. A date is never derived from another. */
@@ -228,8 +380,8 @@ export function mapReservation(booking: Beds24Booking): ProviderReservation | Ma
   if (checkOut <= checkIn) return { externalBookingId: id, reason: 'bad_range' };
 
   const providerStatus = text(booking.status, 32) ?? 'unknown';
-  const sourceRaw = readSourceRaw(booking);
-  const reference = text(booking.reference, 64);
+  const evidence = readSourceEvidence(booking);
+  const reference = evidence.reference;
 
   return {
     externalBookingId: id,
@@ -237,10 +389,11 @@ export function mapReservation(booking: Beds24Booking): ProviderReservation | Ma
     externalRoomId: text(booking.roomId, 64) ?? numberAsText(booking.roomId),
     providerStatus,
     statusClass: classifyStatus(providerStatus),
-    // A reservation carrying OUR reference is one this website created, which
-    // is direct evidence — stronger than any channel string.
-    source: reference && /^BLG-[0-9A-Z]{6}$/.test(reference) ? 'direct' : normalizeSource(sourceRaw),
-    sourceRaw,
+    // Strongest evidence first: Beds24's own channel id, then our own
+    // reference, then a label that proves a channel. Never a guess.
+    source: normalizeSource(evidence),
+    sourceRaw: readSourceRaw(evidence),
+    sourceApiId: evidence.apiSourceId,
     channelReference: text(booking.apiReference, 100) ?? text(booking.channelReference, 100),
     checkIn,
     checkOut,
@@ -336,6 +489,7 @@ export async function readReservations(window: ReservationWindow): Promise<Reser
     requests += 1;
 
     const rows = Array.isArray(response?.data) ? response.data : [];
+    let fresh = 0;
     for (const row of rows) {
       const mapped = mapReservation(row);
       if (isMalformed(mapped)) {
@@ -347,14 +501,42 @@ export async function readReservations(window: ReservationWindow): Promise<Reser
       if (seen.has(mapped.externalBookingId)) continue;
       seen.add(mapped.externalBookingId);
       reservations.push(mapped);
+      fresh += 1;
     }
 
     if (rows.length === 0) {
       truncated = false;
       break;
     }
-    // Only ever used to stop EARLIER than the empty page would. An absent
+
+    /*
+     * A page that added nothing new is the end of the data.
+     *
+     * This is the guard for a provider that IGNORES `page` and answers every
+     * request with the same first page. Without it the loop would spend all
+     * twenty-five requests re-reading one page and then report `truncated`,
+     * which is both wasteful and a false alarm. With it, an ignored `page`
+     * costs exactly one extra request — and because the stop is on "nothing
+     * new" rather than on a count, a genuine page of entirely-already-seen
+     * bookings (which the provider has no reason to send) is the only way it
+     * could stop early, and the next scheduled pass would pick those up.
+     */
+    if (fresh === 0 && rows.every((row) => {
+      const mapped = mapReservation(row);
+      return !isMalformed(mapped) && seen.has(mapped.externalBookingId);
+    })) {
+      truncated = false;
+      break;
+    }
+
+    // Only ever used to stop EARLIER than the guards above would. An absent
     // `pages` object costs one extra request, never a missed booking.
+    //
+    // `pages.nextPageLink` is deliberately NOT followed: it would mean issuing
+    // a request to a URL the provider supplies, outside the typed, timed,
+    // token-refreshing `beds24Request` path — a different and larger trust
+    // decision than incrementing a page number, and one this import does not
+    // need to make.
     if (response?.pages?.nextPageExists === false) {
       truncated = false;
       break;

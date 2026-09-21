@@ -114,6 +114,8 @@ export interface ReservationRow {
   external_room_id: string | null;
   source: string;
   source_raw: string | null;
+  /** Beds24's own numeric channel id. Not personal data; the input to widening the mapping. */
+  external_source_id: number | null;
   channel_reference: string | null;
   provider_status: string;
   /** active | provisional | cancelled | blocked | unknown. */

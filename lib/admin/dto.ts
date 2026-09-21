@@ -312,6 +312,8 @@ export interface ReservationDto {
   source: string;
   /** What the provider actually called the channel. Shown when the source is unknown. */
   sourceRaw: string | null;
+  /** Beds24's own numeric channel id, shown when the channel could not be identified. */
+  sourceApiId: number | null;
   channelReference: string | null;
   /** The provider's own status word, verbatim. */
   providerStatus: string;

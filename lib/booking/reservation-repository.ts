@@ -96,6 +96,7 @@ export async function upsertReservation(input: UpsertReservationInput): Promise<
     external_property_id: r.externalPropertyId,
     external_room_id: r.externalRoomId,
     source_raw: r.sourceRaw,
+    external_source_id: r.sourceApiId,
     channel_reference: r.channelReference,
     adults: r.adults,
     children: r.children,

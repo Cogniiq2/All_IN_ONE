@@ -98,6 +98,12 @@ create table if not exists bolagio_reservations (
   -- Exactly what the provider called the channel, untouched, for the day the
   -- normalisation has to be revisited.
   source_raw            text,
+  -- Beds24's own NUMERIC channel id (`apiSourceId`): 19 Booking.com, 46 Airbnb.
+  -- Kept whether or not it is mapped, because it is the one piece of channel
+  -- evidence the provider defines rather than a property typing a label. A run
+  -- of `unknown` reservations sharing one id here is a mapping to add, not a
+  -- mystery. Not personal data.
+  external_source_id    integer,
   -- The channel's own reference (a Booking.com confirmation number), where the
   -- provider supplies one. Operationally this is what a guest quotes.
   channel_reference     text,
@@ -156,6 +162,8 @@ comment on table bolagio_reservations is
   'Canonical local read model of reservations that exist at the channel manager. Read-only import; Beds24 stays authoritative. Contains guest personal data.';
 comment on column bolagio_reservations.total_amount_cents is
   'Gross as the provider states it. Commission, VAT and city-tax treatment are NOT implied. Not accounting revenue.';
+comment on column bolagio_reservations.external_source_id is
+  'Beds24 apiSourceId. Officially defined by the provider (19 Booking.com, 46 Airbnb); the strongest channel evidence and the input to widening the mapping.';
 comment on column bolagio_reservations.last_seen_at is
   'When the provider last listed this reservation. Absence from a bounded window is never treated as a cancellation.';
 
@@ -184,6 +192,9 @@ create index if not exists bolagio_reservations_class_idx
   on bolagio_reservations (status_class);
 create index if not exists bolagio_reservations_source_idx
   on bolagio_reservations (source);
+-- The diagnostic read: "which provider channel ids are we not mapping yet?"
+create index if not exists bolagio_reservations_source_id_idx
+  on bolagio_reservations (external_source_id) where external_source_id is not null;
 -- Incremental sync, if and when a provider-side modification filter proves
 -- usable; harmless and small otherwise.
 create index if not exists bolagio_reservations_modified_idx

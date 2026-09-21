@@ -32,10 +32,22 @@ function guestCount(r: ReservationDto): string | null {
   return `${r.guests} ${r.guests === 1 ? 'guest' : 'guests'}`;
 }
 
-/** The channel, and what the provider actually called it when we could not tell. */
+/**
+ * The channel — and, when it could not be identified, exactly what the
+ * provider said instead.
+ *
+ * That detail is the point: an operator who sees `Channel not identified ·
+ * “expedia” (id 71)` can report one line back and the mapping gains a channel.
+ * Hiding it would turn a fixable gap into a permanent mystery. Neither value
+ * is personal data: they are the provider's own channel name and number.
+ */
 function channelLabel(r: ReservationDto): string {
   const presentation = sourcePresentation(r.source).label;
-  return r.source === 'unknown' && r.sourceRaw ? `${presentation} · “${r.sourceRaw}”` : presentation;
+  if (r.source !== 'unknown') return presentation;
+  const evidence = [r.sourceRaw ? `“${r.sourceRaw}”` : null, r.sourceApiId !== null ? `id ${r.sourceApiId}` : null]
+    .filter(Boolean)
+    .join(', ');
+  return evidence ? `${presentation} · ${evidence}` : presentation;
 }
 
 export function ReservationTable({ items }: { items: ReservationDto[] }) {

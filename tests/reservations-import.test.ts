@@ -33,6 +33,14 @@ const h = vi.hoisted(() => ({
   bookings: [] as unknown[],
   /** When set, the next read throws it. */
   failWith: null as Error | null,
+  /**
+   * Make the fake account behave like a provider that IGNORES `page` and
+   * answers every request with the same first page. A real risk: `page` is
+   * not verified against this account.
+   */
+  ignorePage: false,
+  /** When set, the response carries this `pages` object. */
+  pages: null as { nextPageExists?: boolean } | null,
 }));
 
 vi.mock('@/lib/integrations/beds24/client', () => ({
@@ -46,7 +54,7 @@ vi.mock('@/lib/integrations/beds24/client', () => ({
     if (h.failWith) throw h.failWith;
     // Page 2 and beyond are always empty: the fixtures are small, and an
     // empty page is how the reader learns it has reached the end.
-    const page = Number(init.query?.page ?? 1);
+    const page = h.ignorePage ? 1 : Number(init.query?.page ?? 1);
     if (init.query?.id !== undefined) {
       const id = String(init.query.id);
       return { data: (h.bookings as Beds24Booking[]).filter((b) => String(b.id) === id) };
@@ -56,6 +64,7 @@ vi.mock('@/lib/integrations/beds24/client', () => ({
     const from = String(init.query?.arrivalFrom ?? '0000-01-01');
     const to = String(init.query?.arrivalTo ?? '9999-12-31');
     return {
+      ...(h.pages ? { pages: h.pages } : {}),
       data: (h.bookings as Beds24Booking[]).filter((b) => {
         if (room !== null && String(b.roomId) !== room) return false;
         // A booking the provider returns WITHOUT usable dates is exactly the
@@ -158,7 +167,16 @@ vi.mock('@/lib/booking/repository', async (importOriginal) => {
   };
 });
 
-import { classifyStatus, mapReservation, isMalformed, normalizeSource, readReservations } from '@/lib/integrations/beds24/reservations';
+import {
+  classifyStatus,
+  isBolagioReference,
+  isMalformed,
+  mapReservation,
+  normalizeSource,
+  readReservations,
+  sourceFromApiSourceId,
+  sourceFromLabel,
+} from '@/lib/integrations/beds24/reservations';
 import { upsertReservation } from '@/lib/booking/reservation-repository';
 import { shiftMonths, syncReservations, windows } from '@/lib/booking/reservation-sync';
 import { createLogger } from '@/lib/booking/logger';
@@ -199,6 +217,8 @@ beforeEach(() => {
   h.calls.length = 0;
   h.bookings.length = 0;
   h.failWith = null;
+  h.ignorePage = false;
+  h.pages = null;
   db.bolagio_reservations.length = 0;
   db.bolagio_booking_intents.length = 0;
   db.units.length = 0;
@@ -312,40 +332,185 @@ describe('status classification', () => {
 /* ══ Source ════════════════════════════════════════════════════════════ */
 
 describe('channel normalisation', () => {
-  it('maps the channels it can prove', () => {
-    expect(normalizeSource('Booking.com')).toBe('booking_com');
-    expect(normalizeSource('BOOKING.COM')).toBe('booking_com');
-    expect(normalizeSource('bookingcom')).toBe('booking_com');
-    expect(normalizeSource('Airbnb')).toBe('airbnb');
-    expect(normalizeSource('airbnb.com')).toBe('airbnb');
-    expect(normalizeSource('BoLaGio Direct')).toBe('direct');
-    expect(normalizeSource('manual')).toBe('manual');
-    expect(normalizeSource('Manual')).toBe('manual');
+  /*
+   * Beds24 identifies a channel with a NUMBER (`apiSourceId`) that it defines
+   * itself, and with a NAME (`apiSource`) that is its own vocabulary — and
+   * that vocabulary is `booking`, not `booking.com`. An implementation that
+   * only recognises strings resembling "booking.com" sends every real
+   * Booking.com reservation to `unknown`, which is the failure these tests
+   * exist to prevent.
+   */
+  describe('the official Beds24 source ids, which outrank every label', () => {
+    it('reads 19 as Booking.com', () => {
+      expect(sourceFromApiSourceId(19)).toBe('booking_com');
+      expect(normalizeSource({ apiSourceId: 19 })).toBe('booking_com');
+      const m = mapReservation(booking({ apiSourceId: 19, apiSource: undefined, referer: undefined }));
+      if (isMalformed(m)) throw new Error('unexpected');
+      expect(m.source).toBe('booking_com');
+      expect(m.sourceApiId).toBe(19);
+    });
+
+    it('reads 46 as Airbnb', () => {
+      expect(sourceFromApiSourceId(46)).toBe('airbnb');
+      expect(normalizeSource({ apiSourceId: 46 })).toBe('airbnb');
+      const m = mapReservation(booking({ apiSourceId: 46, apiSource: undefined, referer: undefined }));
+      if (isMalformed(m)) throw new Error('unexpected');
+      expect(m.source).toBe('airbnb');
+      expect(m.sourceApiId).toBe(46);
+    });
+
+    it('accepts the id as a string, because Beds24 returns numbers as strings in places', () => {
+      const m = mapReservation(booking({ apiSourceId: '19', apiSource: undefined, referer: undefined }));
+      if (isMalformed(m)) throw new Error('unexpected');
+      expect(m.source).toBe('booking_com');
+      expect(m.sourceApiId).toBe(19);
+    });
+
+    it('outranks a label that disagrees, because a number cannot be renamed', () => {
+      expect(normalizeSource({ apiSourceId: 19, apiSource: 'airbnb', referer: 'Airbnb' })).toBe('booking_com');
+      expect(normalizeSource({ apiSourceId: 46, referer: 'Booking.com' })).toBe('airbnb');
+    });
+
+    it('leaves an id it has not met unmapped rather than guessing', () => {
+      expect(sourceFromApiSourceId(71)).toBeUndefined();
+      expect(sourceFromApiSourceId(0)).toBeUndefined();
+      expect(sourceFromApiSourceId(undefined)).toBeUndefined();
+      expect(normalizeSource({ apiSourceId: 71 })).toBe('unknown');
+      // …but the number is still kept, so the mapping can be widened from it.
+      const m = mapReservation(booking({ apiSourceId: 71, apiSource: 'expedia', referer: undefined }));
+      if (isMalformed(m)) throw new Error('unexpected');
+      expect(m.source).toBe('unknown');
+      expect(m.sourceApiId).toBe(71);
+      expect(m.sourceRaw).toBe('expedia');
+    });
   });
 
-  it('leaves anything it cannot prove unknown, and keeps what the provider said', () => {
-    expect(normalizeSource('Web')).toBe('unknown');
-    expect(normalizeSource('Expedia')).toBe('unknown');
-    expect(normalizeSource(undefined)).toBe('unknown');
-    expect(normalizeSource('')).toBe('unknown');
-    const m = mapReservation(booking({ referer: 'Some Portal', channel: undefined }));
-    if (isMalformed(m)) throw new Error('unexpected');
-    expect(m.source).toBe('unknown');
-    expect(m.sourceRaw).toBe('Some Portal');
+  describe("the provider's channel names", () => {
+    it('reads apiSource "booking" as Booking.com — V2\'s own name for it', () => {
+      expect(sourceFromLabel('booking')).toBe('booking_com');
+      expect(normalizeSource({ apiSource: 'booking' })).toBe('booking_com');
+      expect(normalizeSource({ apiSource: 'Booking' })).toBe('booking_com');
+      const m = mapReservation(booking({ apiSourceId: undefined, apiSource: 'booking', referer: undefined }));
+      if (isMalformed(m)) throw new Error('unexpected');
+      expect(m.source).toBe('booking_com');
+    });
+
+    it('reads apiSource "airbnb" as Airbnb', () => {
+      expect(sourceFromLabel('airbnb')).toBe('airbnb');
+      expect(normalizeSource({ apiSource: 'airbnb' })).toBe('airbnb');
+      const m = mapReservation(booking({ apiSourceId: undefined, apiSource: 'airbnb', referer: undefined }));
+      if (isMalformed(m)) throw new Error('unexpected');
+      expect(m.source).toBe('airbnb');
+    });
+
+    it('still accepts the explicit spellings that were already supported', () => {
+      expect(normalizeSource({ referer: 'Booking.com' })).toBe('booking_com');
+      expect(normalizeSource({ channel: 'BOOKING.COM' })).toBe('booking_com');
+      expect(normalizeSource({ channel: 'bookingcom' })).toBe('booking_com');
+      expect(normalizeSource({ referer: 'Airbnb' })).toBe('airbnb');
+      expect(normalizeSource({ channel: 'airbnb.com' })).toBe('airbnb');
+      expect(normalizeSource({ referer: 'Airbnb XML' })).toBe('airbnb');
+    });
+
+    it('reads the channel keys in order of how official each one is', () => {
+      // apiSource is V2's own name for the channel and wins over free text.
+      expect(normalizeSource({ apiSource: 'booking', referer: 'Airbnb' })).toBe('booking_com');
+      // A key that proves nothing does not stop a later one that does.
+      expect(normalizeSource({ apiSource: 'web', channel: 'airbnb' })).toBe('airbnb');
+    });
   });
 
-  it('never infers a channel from a guest name, an email domain or a price', () => {
-    const m = mapReservation(
-      booking({ referer: undefined, channel: undefined, email: 'someone@booking.com', lastName: 'Airbnb', price: 1 })
-    );
-    if (isMalformed(m)) throw new Error('unexpected');
-    expect(m.source).toBe('unknown');
+  describe('BoLaGio direct, which only BoLaGio evidence proves', () => {
+    it('never treats a generic Beds24 "direct" as a BoLaGio direct booking', () => {
+      /*
+       * Beds24 says `direct` for anything that did not come through a channel
+       * — typed into its own interface, made on a Beds24-hosted booking page,
+       * or pushed in by any API client on the account. None of those is
+       * necessarily ours, and calling one ours would attribute someone else's
+       * reservation to this website's revenue.
+       */
+      expect(sourceFromLabel('direct')).toBeUndefined();
+      expect(normalizeSource({ apiSource: 'direct' })).toBe('unknown');
+      expect(normalizeSource({ channel: 'Direct' })).toBe('unknown');
+      expect(normalizeSource({ referer: 'direct booking' })).toBe('unknown');
+      expect(normalizeSource({ apiSourceId: 0, apiSource: 'direct' })).toBe('unknown');
+      const m = mapReservation(booking({ apiSourceId: undefined, apiSource: 'direct', referer: undefined, reference: undefined }));
+      if (isMalformed(m)) throw new Error('unexpected');
+      expect(m.source).toBe('unknown');
+      expect(m.source).not.toBe('direct');
+    });
+
+    it('accepts a valid BoLaGio reference, which only this codebase writes', () => {
+      expect(isBolagioReference('BLG-AB12CD')).toBe(true);
+      expect(normalizeSource({ reference: 'BLG-AB12CD' })).toBe('direct');
+      const m = mapReservation(booking({ apiSourceId: undefined, apiSource: 'direct', reference: 'BLG-AB12CD' }));
+      if (isMalformed(m)) throw new Error('unexpected');
+      expect(m.source).toBe('direct');
+    });
+
+    it('accepts the BoLaGio referer marker, and nothing looser', () => {
+      expect(normalizeSource({ referer: 'BoLaGio Direct' })).toBe('direct');
+      expect(normalizeSource({ referer: 'bolagio direct' })).toBe('direct');
+      expect(normalizeSource({ referer: 'BoLaGio' })).toBe('unknown');
+      expect(normalizeSource({ referer: 'Some Other Direct' })).toBe('unknown');
+    });
+
+    it('rejects a malformed reference rather than reading it as ours', () => {
+      expect(isBolagioReference('BLG-abc')).toBe(false);
+      expect(isBolagioReference('blg-ab12cd')).toBe(false);
+      expect(isBolagioReference('XBLG-AB12CD')).toBe(false);
+      expect(normalizeSource({ reference: 'BLG-123' })).toBe('unknown');
+    });
+
+    it('lets the official channel id outrank a reference, because the id cannot be typed by a guest', () => {
+      expect(normalizeSource({ apiSourceId: 19, reference: 'BLG-AB12CD' })).toBe('booking_com');
+    });
   });
 
-  it('treats a BoLaGio reference as direct evidence, outranking the channel string', () => {
-    const m = mapReservation(booking({ reference: 'BLG-AB12CD', referer: 'Booking.com' }));
-    if (isMalformed(m)) throw new Error('unexpected');
-    expect(m.source).toBe('direct');
+  describe('manual, and everything unproven', () => {
+    it('accepts only a literal manual marker', () => {
+      expect(normalizeSource({ apiSource: 'manual' })).toBe('manual');
+      expect(normalizeSource({ channel: 'Manual' })).toBe('manual');
+      // Beds24's exact wording for a hand-typed booking is not established for
+      // this account, so anything looser stays unknown.
+      expect(normalizeSource({ apiSource: 'manual entry' })).toBe('unknown');
+      expect(normalizeSource({ channel: 'beds24' })).toBe('unknown');
+    });
+
+    it('leaves anything it cannot prove unknown, and keeps what the provider said', () => {
+      expect(normalizeSource({ apiSource: 'web' })).toBe('unknown');
+      expect(normalizeSource({ channel: 'Expedia' })).toBe('unknown');
+      expect(normalizeSource({})).toBe('unknown');
+      expect(normalizeSource({ apiSource: '' })).toBe('unknown');
+      expect(sourceFromLabel(undefined)).toBeUndefined();
+      expect(sourceFromLabel('')).toBeUndefined();
+      const m = mapReservation(booking({ apiSourceId: undefined, apiSource: undefined, referer: 'Some Portal' }));
+      if (isMalformed(m)) throw new Error('unexpected');
+      expect(m.source).toBe('unknown');
+      expect(m.sourceRaw).toBe('Some Portal');
+    });
+
+    it('keeps the label that FAILED to resolve, not an unrelated one', () => {
+      const m = mapReservation(booking({ apiSourceId: undefined, apiSource: 'web', channel: undefined, referer: 'noise' }));
+      if (isMalformed(m)) throw new Error('unexpected');
+      expect(m.sourceRaw).toBe('web');
+    });
+
+    it('never infers a channel from a guest name, an email domain or a price', () => {
+      const m = mapReservation(
+        booking({
+          apiSourceId: undefined,
+          apiSource: undefined,
+          referer: undefined,
+          channel: undefined,
+          email: 'someone@booking.com',
+          lastName: 'Airbnb',
+          price: 1,
+        })
+      );
+      if (isMalformed(m)) throw new Error('unexpected');
+      expect(m.source).toBe('unknown');
+    });
   });
 });
 
@@ -404,6 +569,42 @@ describe('reading from the provider', () => {
     const result = await readReservations({ externalPropertyId: '354659', externalRoomId: '731147', arrivalFrom: '2026-01-01', arrivalTo: '2026-12-31' });
     expect(result.reservations).toHaveLength(1);
     expect(result.malformed).toEqual([{ externalBookingId: '90000009', reason: 'no_dates' }]);
+  });
+
+  it('walks pages until one comes back empty', async () => {
+    h.bookings.push(booking());
+    const result = await readReservations({ externalPropertyId: '354659', externalRoomId: '731147', arrivalFrom: '2026-01-01', arrivalTo: '2026-12-31' });
+    // Page 1 returns the booking, page 2 is empty and ends the walk.
+    expect(h.calls.map((c: RecordedCall) => c.query.page)).toEqual([1, 2]);
+    expect(result.reservations).toHaveLength(1);
+    expect(result.truncated).toBe(false);
+  });
+
+  it('stops early when the provider says there is no next page', async () => {
+    h.pages = { nextPageExists: false };
+    h.bookings.push(booking());
+    const result = await readReservations({ externalPropertyId: '354659', externalRoomId: '731147', arrivalFrom: '2026-01-01', arrivalTo: '2026-12-31' });
+    expect(h.calls).toHaveLength(1);
+    expect(result.reservations).toHaveLength(1);
+    expect(result.truncated).toBe(false);
+  });
+
+  it('does not spin when the provider ignores `page` and repeats the first one', async () => {
+    // `page` is NOT verified against this account. A provider that ignores it
+    // must cost one wasted request, not twenty-five and a false `truncated`.
+    h.ignorePage = true;
+    h.bookings.push(booking(), booking({ id: 90000002 }));
+    const result = await readReservations({ externalPropertyId: '354659', externalRoomId: '731147', arrivalFrom: '2026-01-01', arrivalTo: '2026-12-31' });
+    expect(h.calls.length).toBeLessThanOrEqual(2);
+    expect(result.reservations).toHaveLength(2);
+    expect(result.truncated).toBe(false);
+  });
+
+  it('never returns the same booking twice, however the provider paginates', async () => {
+    h.ignorePage = true;
+    h.bookings.push(booking(), booking());
+    const result = await readReservations({ externalPropertyId: '354659', externalRoomId: '731147', arrivalFrom: '2026-01-01', arrivalTo: '2026-12-31' });
+    expect(result.reservations.map((r) => r.externalBookingId)).toEqual(['90000001']);
   });
 
   it('sends a status filter only when one is configured', async () => {

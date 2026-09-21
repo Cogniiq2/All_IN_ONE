@@ -77,10 +77,11 @@ feature, both read-only and safe to run at any time:
 
 ```
 GET /bookings?propertyId=354659&roomId=731147&arrivalFrom=<past>&arrivalTo=<future>
-  → record: the exact key the channel appears under (channel / apiSource /
-    referer / bookingSource), the exact value Booking.com and Airbnb produce,
-    the value a booking typed into Beds24 by hand produces, whether `pages`
-    is present, and whether cancelled bookings are returned by default.
+  → record: the apiSourceId on a real Booking.com booking (expected 19) and on
+    an Airbnb one (expected 46); the exact apiSource string each carries
+    (expected "booking" and "airbnb"); what a booking typed into Beds24 by
+    hand carries in BOTH fields; whether `pages` is present and whether `page`
+    is honoured; and whether cancelled bookings are returned by default.
 GET /bookings?propertyId=354659&roomId=731147&arrivalFrom=…&status=cancelled
   → record whether `status` is accepted, ignored, or rejected.
 ```
@@ -134,28 +135,87 @@ records when the provider last listed it and claims nothing more.
 ## 4. Source normalisation
 
 Normalised into `booking_com`, `airbnb`, `direct`, `manual`, `unknown` — **on
-evidence only**:
+evidence only, strongest evidence first**:
 
-| Evidence | Source |
-|---|---|
-| a `BLG-XXXXXX` reference echoed on the booking | `direct` (strongest: we wrote it) |
-| channel string matching `booking.com` / `bookingcom` | `booking_com` |
-| channel string matching `airbnb` | `airbnb` |
-| channel string exactly `BoLaGio Direct` | `direct` |
-| channel string exactly `manual` | `manual` |
-| anything else, or nothing | `unknown` |
+| # | Evidence | Source |
+|---|---|---|
+| 1 | `apiSourceId = 19` | `booking_com` |
+| 1 | `apiSourceId = 46` | `airbnb` |
+| 2 | a valid `BLG-XXXXXX` reference on the booking | `direct` |
+| 3 | `apiSource` / `channel` / `bookingSource` / `source` / `referer` equal to `booking`, `booking.com`, `bookingcom` | `booking_com` |
+| 3 | …equal to `airbnb`, `airbnb.com`, or containing `airbnb` | `airbnb` |
+| 3 | …containing `booking.com` / `bookingcom` | `booking_com` |
+| 3 | …exactly `BoLaGio Direct` | `direct` |
+| 3 | …exactly `manual` | `manual` |
+| 4 | anything else, or nothing | `unknown` |
 
-A guest name, an email domain, a comment, a price and a date are **never**
-used. Every one of them correlates with a channel and none proves one, and
-attributing revenue on a guess is worse than admitting ignorance. What the
-provider actually said is kept in `source_raw` (and in the snapshot), so the
-mapping can be tightened the moment the live values above are observed.
+### `apiSourceId` first, because Beds24 defines it
 
-Beds24's wording for a booking typed into its own interface is **not
-established for this account**, so those currently land in `unknown` rather
-than being attributed to a channel that may not be the truth.
+The numeric `apiSourceId` is the provider's own identifier for the channel.
+It is not a label someone typed, it cannot be localised, and it does not
+change when a property renames a channel in its own interface. It therefore
+outranks every string — including a `BLG-` reference, which is a text field.
+Only documented ids are mapped (19, 46); an id this table has not met falls
+through to the label evidence and ultimately to `unknown`.
 
----
+### `apiSource` is `booking`, not `booking.com`
+
+This is the correction that matters most. Beds24 V2's channel *name* for
+Booking.com is **`booking`** — its own vocabulary, not the channel's marketing
+one. An implementation that recognises only strings resembling `booking.com`
+sends **every real Booking.com reservation to `unknown`**. Both spellings are
+accepted; `booking` is the one a live booking actually carries.
+
+### A generic `direct` is never BoLaGio direct
+
+Beds24 uses `direct` for anything that did not arrive through a channel: a
+booking typed into its own interface, one made on a Beds24-hosted booking
+page, one pushed in by any API client on the account. **None of those is
+necessarily a BoLaGio direct booking**, and mapping a generic `direct` to our
+`direct` source would attribute someone else's reservation to this website
+and, downstream, to this website's revenue.
+
+BoLaGio direct is recognised only by BoLaGio-specific evidence: the
+`BLG-XXXXXX` reference this site writes, or the exact `BoLaGio Direct` marker
+it sets as the referer. Both are strings only this codebase emits.
+
+### What is never used
+
+A guest name, an email domain, a comment, a price, a date, a length of stay.
+Every one of them correlates with a channel and none proves one, and
+attributing revenue on a guess is worse than admitting ignorance.
+
+### Diagnosis
+
+Two columns keep the evidence so the mapping can be tightened from observed
+values rather than guesses, and neither is personal data:
+
+* `source_raw` — the channel label that decided it, or, for an `unknown`, the
+  first label that *failed* to resolve (read in the same priority order, so it
+  is never an unrelated string from another key).
+* `external_source_id` — Beds24's `apiSourceId`, kept whether or not it is
+  mapped. A run of `unknown` reservations sharing one id here is a mapping to
+  add, not a mystery.
+
+The admin board shows both on an unidentified channel
+(`Channel not identified · “expedia”, id 71`), so an operator can report one
+line back and the table above gains a row.
+
+Beds24's exact wording for a booking typed into its own interface is still
+**not established for this account**, so those land in `unknown` rather than
+being attributed to a channel that may not be the truth.
+
+After the first live import, this is the query that closes the gap:
+
+```sql
+-- What the provider actually calls the channels we could not identify.
+-- One row here with a repeated id is one row to add to the table above.
+select external_source_id, source_raw, count(*)
+from public.bolagio_reservations
+where source = 'unknown'
+group by 1, 2
+order by 3 desc;
+```
 
 ## 5. Status
 

@@ -111,7 +111,7 @@ const SEEDS: Seed[] = [
 const RESERVATIONS: ReservationRow[] = [
   {
     id: 'r-1', unit_id: 'u-s1', unit_slug: 'schulstrasse-i', provider: 'beds24', external_booking_id: '90000001',
-    external_property_id: '354659', external_room_id: '731147', source: 'booking_com', source_raw: 'Booking.com',
+    external_property_id: '354659', external_room_id: '731147', source: 'booking_com', source_raw: 'booking', external_source_id: 19,
     channel_reference: '4123456789', provider_status: 'confirmed', status_class: 'active',
     check_in: day(-2), check_out: day(3), adults: 2, children: 0, number_of_guests: 2,
     guest_first_name: 'Erika', guest_last_name: 'Mustermann', guest_country: 'DE', currency: 'EUR',
@@ -120,7 +120,7 @@ const RESERVATIONS: ReservationRow[] = [
   },
   {
     id: 'r-2', unit_id: 'u-s2', unit_slug: 'schulstrasse-ii', provider: 'beds24', external_booking_id: '90000002',
-    external_property_id: '354658', external_room_id: '731146', source: 'airbnb', source_raw: 'Airbnb',
+    external_property_id: '354658', external_room_id: '731146', source: 'airbnb', source_raw: 'airbnb', external_source_id: 46,
     channel_reference: 'HMABCDEFGH', provider_status: 'confirmed', status_class: 'active',
     check_in: day(1), check_out: day(6), adults: 1, children: 1, number_of_guests: 2,
     guest_first_name: 'Max', guest_last_name: 'Mustermann', guest_country: 'AT', currency: 'EUR',
@@ -129,7 +129,7 @@ const RESERVATIONS: ReservationRow[] = [
   },
   {
     id: 'r-3', unit_id: 'u-s1', unit_slug: 'schulstrasse-i', provider: 'beds24', external_booking_id: '90000003',
-    external_property_id: '354659', external_room_id: '731147', source: 'booking_com', source_raw: 'Booking.com',
+    external_property_id: '354659', external_room_id: '731147', source: 'booking_com', source_raw: 'booking', external_source_id: 19,
     channel_reference: '4987654321', provider_status: 'cancelled', status_class: 'cancelled',
     check_in: day(8), check_out: day(11), adults: 2, children: 0, number_of_guests: 2,
     guest_first_name: 'Anna', guest_last_name: 'Beispiel', guest_country: 'DE', currency: 'EUR',
@@ -138,7 +138,7 @@ const RESERVATIONS: ReservationRow[] = [
   },
   {
     id: 'r-4', unit_id: 'u-s2', unit_slug: 'schulstrasse-ii', provider: 'beds24', external_booking_id: '90000004',
-    external_property_id: '354658', external_room_id: '731146', source: 'manual', source_raw: 'manual',
+    external_property_id: '354658', external_room_id: '731146', source: 'manual', source_raw: 'manual', external_source_id: null,
     channel_reference: null, provider_status: 'black', status_class: 'blocked',
     check_in: day(14), check_out: day(16), adults: null, children: null, number_of_guests: null,
     guest_first_name: null, guest_last_name: null, guest_country: null, currency: null,
@@ -147,7 +147,7 @@ const RESERVATIONS: ReservationRow[] = [
   },
   {
     id: 'r-5', unit_id: 'u-s1', unit_slug: 'schulstrasse-i', provider: 'beds24', external_booking_id: '90000005',
-    external_property_id: '354659', external_room_id: '731147', source: 'unknown', source_raw: 'Web',
+    external_property_id: '354659', external_room_id: '731147', source: 'unknown', source_raw: 'Web', external_source_id: 71,
     channel_reference: null, provider_status: 'new', status_class: 'active',
     check_in: day(20), check_out: day(23), adults: 2, children: 0, number_of_guests: 2,
     guest_first_name: 'Jamie', guest_last_name: 'Doe', guest_country: null, currency: 'EUR',
