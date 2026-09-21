@@ -1,3 +1,8 @@
+-- BoLaGio / Cogniiq shared-project hardening
+-- Supabase SQL Editor compatible DRY-RUN version
+-- IMPORTANT: this version sets cogniiq.hardening_apply = 'no' and therefore does NOT apply changes.
+-- It only evaluates the current database state and prints the SQL actions that would be taken.
+
 -- ════════════════════════════════════════════════════════════════════════════
 -- SHARED-PROJECT HARDENING — precise, named, reversible.
 --
@@ -82,13 +87,7 @@
 -- Undo: supabase/ops/shared_project_hardening_rollback.sql.
 -- ════════════════════════════════════════════════════════════════════════════
 
-\set ON_ERROR_STOP on
-\pset pager off
-\if :{?apply}
-\else
-  \set apply no
-\endif
-select set_config('cogniiq.hardening_apply', :'apply', false) as apply_mode;
+select set_config('cogniiq.hardening_apply', 'no', false) as apply_mode;
 
 do $$
 declare
