@@ -1,0 +1,2 @@
+Harmless staging redeploy trigger for branch claude/bolagio-beds24-reservation-import.
+No application, database, environment, or production behavior is changed by this file.
