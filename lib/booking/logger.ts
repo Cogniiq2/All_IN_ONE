@@ -27,6 +27,8 @@ export type BookingLogEvent =
   | 'inventory.sync'
   /** The canonical reservation import. Counts, unit slugs and provider ids only. */
   | 'reservation.sync'
+  /** The staging-only financial shape probe. Outcome and provider status only. */
+  | 'reservation.financial_probe'
   | 'availability.read'
   | 'beds24.availability'
   | 'beds24.offer'

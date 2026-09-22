@@ -90,6 +90,12 @@ The answers turn three things from defensive into exact: the source
 normalisation (§4), the status filter (§7), and whether cancellations are
 learned from the sweep as well as from the webhook.
 
+A separate, temporary, staging-only diagnostic answers the *financial* half of
+the same ignorance — whether `price` is gross or net, whether a commission
+field exists, what `invoiceItems` holds. See `docs/beds24-financial-debug.md`.
+It is read-only, returns no personal data, and is expected to be deleted once
+its answers are recorded.
+
 ---
 
 ## 3. The table
