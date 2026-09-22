@@ -1,6 +1,7 @@
 # Production readiness — go / no-go
 
-State on 2026-09-21, end of the platform-completion phase. Direct booking is
+State on **2026-09-24**, end of the production-readiness sprint
+(was 2026-09-21, platform completion). Direct booking is
 OFF (`DIRECT_BOOKING_ENABLED` unset, `is_bookable=false` everywhere outside
 test data). This document is the single list of what stands between the
 repository and a real booking. The exhaustive report is
@@ -18,6 +19,11 @@ repository and a real booking. The exhaustive report is
 | CI | **READY** (no credential in CI; live checks stay manual) | `.github/workflows/ci.yml` |
 | Invoicing | **BLOCKED** on tax decisions | `docs/invoicing.md` §5 |
 | Data retention | **DOCUMENTED**, nothing automated | `docs/data-retention.md` |
+| Canonical reservations (Beds24 → Supabase) | **LIVE AND PROVEN** | 16 real Booking.com reservations imported; idempotency proven; webhook proven live for both properties (`docs/beds24-webhook.md`) |
+| Reservation safety net | **READY AFTER CONFIG** | hourly job now in `ops/staging/cron.sql`; run the first import by hand, then schedule |
+| Operating performance (`/admin/performance`) | **READY** | reads the verified reservations; gross only, commission/payout marked unavailable |
+| Guest Privileges (QR loyalty) | **READY AFTER CONFIG** | migration + n8n email template + campaign row + legal §7/§8; redemption deliberately not wired (`docs/guest-privileges.md` §7) |
+| Legal register | **OPEN** | `LEGAL_REVIEW_REQUIRED.md` — 12 items, 8 of them launch-blocking |
 | Direct booking | **BLOCKED** | every row above, plus legal (§3) |
 | Production launch | **BLOCKED** | as above |
 
@@ -91,3 +97,75 @@ repository and a real booking. The exhaustive report is
 
 `DIRECT_BOOKING_ENABLED=false` and redeploy, or `is_bookable=false` per unit
 (no deploy). Keep the schedule running.
+
+---
+
+## 5. The system, end to end
+
+```
+  Booking.com ─┐
+  Airbnb ──────┼──►  BEDS24  ◄── the availability + reservation authority
+  Beds24 UI ───┘       │  ▲
+                       │  └──── GET only from BoLaGio on this path.
+       webhook (signal)│       Nothing here ever writes a reservation.
+                       ▼
+        ┌──────────────────────────────────────────────┐
+        │  CLOUDFLARE WORKER  (Next.js via OpenNext)   │
+        │                                              │
+        │  /api/webhooks/beds24   signal → fresh GET   │
+        │  /api/booking/reservations/sync   hourly net │
+        │  /api/booking/sync      inventory, 30 min    │
+        │  /api/booking/reconcile saga, 3 min          │
+        │  /api/guest/privileges/*  QR signup + verify │
+        │  /admin/*   BoLaGio Control (session-gated)  │
+        └───────────────┬──────────────────────────────┘
+                        │ service role only
+                        ▼
+        ┌──────────────────────────────────────────────┐
+        │  SUPABASE / POSTGRES — operational authority │
+        │                                              │
+        │  bolagio_reservations      what IS booked    │
+        │  bolagio_unit_inventory_days  is it free     │
+        │  bolagio_booking_intents   direct checkout   │
+        │  bolagio_finance_*         accounting truth  │
+        │  bolagio_guest_identities  privileges + consent│
+        │  bolagio_outbox_events  →  n8n               │
+        │  pg_cron + pg_net          all three schedules│
+        └───────────────┬──────────────────────────────┘
+                        │ outbox (references, never PII)
+                        ▼
+                  n8n  → SMTP → guest
+                        
+  PayPal ──► /api/webhooks/paypal (or the Edge Function — exactly ONE)
+             direct booking only, and currently gated OFF
+```
+
+Two authorities, deliberately not merged:
+
+* **Beds24** decides what is booked and what is free.
+* **Supabase** is the operational record of everything BoLaGio does about it.
+
+Two kinds of money truth, deliberately not merged:
+
+* **`/admin/performance`** — gross booking value from the channel manager.
+  Operational, available immediately, never netted.
+* **`/admin/finance`** — reconciled, VAT-correct, defensible. Fed by imports
+  and documents, never by a channel read.
+
+## 6. Rollback
+
+| To stop | Do this | Deploy needed? |
+|---|---|---|
+| Direct booking, everywhere | `DIRECT_BOOKING_ENABLED=false` | yes |
+| Direct booking, one unit | `update bolagio_units set is_bookable=false where slug='…'` | no |
+| The real-time reservation webhook | remove the webhook in Beds24, **or** unset `BEDS24_WEBHOOK_SECRET` (the endpoint then refuses everything) | secret: yes |
+| The hourly reservation import | `select cron.unschedule(jobid) from cron.job where jobname='bolagio-reservation-sync';` | no |
+| A privileges campaign | `update bolagio_privilege_campaigns set active=false where code='…'` | no |
+| All privileges signups | `update bolagio_privilege_campaigns set active=false` — signup still works and still verifies, but earns no grant | no |
+
+**Never disable the reconcile schedule when disabling booking.** Held and paid
+bookings still need finalizing and releasing; stopping the schedule strands
+them.
+
+Nothing on this branch deletes data. Turning a feature off leaves every row in
+place, so turning it back on is the same switch in the other direction.
