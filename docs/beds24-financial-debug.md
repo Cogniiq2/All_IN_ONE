@@ -2,9 +2,14 @@
 
 `POST /api/booking/reservations/financial-debug`
 
-**This endpoint is scaffolding. It is meant to be deleted.** It exists to answer
-one question that cannot be answered from the documentation, and once the
-answers are written into §5 of this file it has no further purpose.
+> **REMOVED on 2026-09-24.** The endpoint, `lib/integrations/beds24/financial-probe.ts`
+> and their two test files no longer exist. It was scaffolding, it did its job,
+> and leaving a route that reads a live guest's reservation in the tree — even
+> a staging-gated one — is not a thing to do indefinitely.
+>
+> This page is kept for **§5, the answers**, which are the only record of what
+> Beds24 actually reports about money. The sections before it describe how they
+> were obtained. Nothing in the running system depends on any of it.
 
 ---
 
@@ -153,24 +158,68 @@ the provider for a booking of its own choosing.
 
 ---
 
-## 5. The answers  ·  NOT YET RECORDED
+## 5. The answers  ·  RECORDED 2026-09-24  ·  ENDPOINT REMOVED
 
-Fill this in from a real staging run, then **delete the endpoint, the probe
-module and their two test files**. Until then nothing downstream may assume any
-of it.
+Run on staging against a real Booking.com reservation. The endpoint, the
+probe module and their tests were removed in the same change that recorded
+this; the section is kept because it is the only place these answers exist.
+
+Observed on one confirmed Booking.com reservation:
+
+```
+price                 1595.49
+invoiceItems          present
+invoiceItems.amount   1595.49
+invoiceItems.lineTotal 1595.49
+commission            0
+tax                   0
+deposit               0
+apiSourceId           19
+channel               booking
+providerStatus        confirmed
+```
 
 | question | answer |
 |---|---|
-| Is `price` gross (guest-paid) or net of the channel commission? | *unrecorded* |
-| Is a commission field present at all on a Booking.com reservation? | *unrecorded* |
-| Are taxes broken out, or included in `price`? | *unrecorded* |
-| Are fees (cleaning, city tax) separate fields, invoice items, or neither? | *unrecorded* |
-| What does `invoiceItems` contain, and what are its field names? | *unrecorded* |
-| Is there any payout-side field, or must payouts be reconciled from statements? | *unrecorded* |
-| What are the observed `paymentStatus` values? | *unrecorded* |
-| Does `apiSourceId = 19` hold on a real Booking.com booking? | *unrecorded* (also §2 of `docs/beds24-reservations.md`) |
+| Is `price` gross (guest-paid) or net of the channel commission? | **Gross, as far as can be told.** `price`, `invoiceItems.amount` and `invoiceItems.lineTotal` all agree at 1595.49, so there is no second figure anywhere that could be the net. Treated as gross booking value, and nothing is derived from it as net. |
+| Is a commission field present at all? | Present, and **zero** — which is the important finding. See the warning below. |
+| Are taxes broken out? | No. `tax` is 0 and no VAT or Kurtaxe breakdown appears anywhere in the payload. Nothing computes a tax figure from this source. |
+| Are fees separate fields, invoice items, or neither? | **Neither, on this reservation.** No fee field carried a value and the invoice items reproduce the room charge only. |
+| What does `invoiceItems` contain? | One line matching the total, with `amount` and `lineTotal`. It is not a settlement breakdown. |
+| Is there a payout-side field? | **No.** Nothing in the reservation describes a payout, its status or its date. |
+| Observed `paymentStatus` values | None reported on this reservation. |
+| Does `apiSourceId = 19` hold on a real Booking.com booking? | **Yes — confirmed live.** The normalisation in `lib/integrations/beds24/reservations.ts` is correct as written. |
 
----
+### The warning that matters more than any row above
+
+> **`commission: 0` is not evidence that Booking.com charged zero commission.**
+> It is evidence that **Beds24 was not told**. Booking.com's commission is
+> agreed in the Booking.com extranet and deducted at settlement; it is not part
+> of the reservation object that reaches Beds24.
+>
+> Anything that subtracted this zero and called the result "net revenue" would
+> overstate earnings by the entire commission — on the order of 15% of gross.
+> Nothing in this repository does. `/admin/performance` reports **gross booking
+> value** and renders commission, net payout, payout status and tax as
+> **"Not yet reconciled"**, and `lib/admin/performance.ts` carries no
+> `netCents` or `commissionCents` field at all so that the mistake cannot be
+> made by accident. A test asserts their absence.
+
+### What is still needed for real net revenue
+
+The reservation is the wrong source and no amount of reading it harder will
+help. The missing facts live in the **Booking.com payout / statement data**:
+commission actually charged, the payout amount, the payout date, its status,
+and any adjustments. Two candidate sources, neither built:
+
+1. The monthly Booking.com statement, imported through the existing finance
+   import pipeline (`docs/finance/imports.md`) — the same road every other
+   reconciled figure already travels.
+2. The Booking.com Partner API, if BoLaGio has access, as a scheduled read.
+
+Until one exists, the split holds: `/admin/performance` is gross and
+operational, `/admin/finance` is reconciled and authoritative, and the two
+are never added together.
 
 ## 6. Legal note
 
