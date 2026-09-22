@@ -236,6 +236,7 @@ export const RETENTION_CLASSES: readonly RetentionClass[] = [
 
   /* ── Finance foundation (2026-09-22). Accounting records: § 147 AO governs; nothing deletes. ── */
   ...financeClasses(),
+  ...privilegeClasses(),
 ];
 
 /**
@@ -284,6 +285,64 @@ function financeClasses(): RetentionClass[] {
     c('bolagio_minibar_products', 'configuration', 'Minibar product catalogue with tax code and prices.', reference),
     c('bolagio_minibar_movements', 'transaction_evidence', 'Stock movements; sales are the source of minibar revenue facts.', books),
     c('bolagio_finance_turnover_costs', 'operational_telemetry', 'Expected cleaning cost per turnover, linked to the actual invoice line when it arrives.', `As long as the turnover record (24 months proposed) — ${NEEDS}`),
+  ];
+}
+
+/**
+ * ── Guest privileges ──────────────────────────────────────────────────────
+ *
+ * The returning-guest system. One of these tables holds an email address and
+ * consent evidence; the other three hold configuration and a ledger and no
+ * personal data at all.
+ *
+ * ── The retention question this raises, and why it is flagged ────────────
+ * A marketing consent record is evidence of a LAWFUL BASIS, and evidence
+ * that is deleted stops being evidence: Art. 5(2) and Art. 7(1) GDPR require
+ * the controller to be able to DEMONSTRATE consent, which points to keeping
+ * the record while it is relied on and for the limitation period afterwards.
+ * Pulling the other way, Art. 5(1)(e) says personal data is kept no longer
+ * than necessary, and a consent withdrawn years ago is not being relied on.
+ *
+ * The honest answer is a period BoLaGio chooses and can defend, not one this
+ * file invents — so it is flagged, like every other period here.
+ *
+ * Note that a privileges identity is NOT a booking record. It is not a
+ * commercial document, so § 147 AO does not reach it and the ten-year
+ * retention that protects booking data is not available as a justification.
+ */
+function privilegeClasses(): RetentionClass[] {
+  const c = (table: string, category: DataCategory, purpose: string, proposedRetention: string, personalColumns: string[] = [], legalBasisHint = 'Art. 6(1)(f) GDPR (legitimate interest in the guest relationship)'): RetentionClass => ({
+    table, category, purpose, personalColumns, proposedRetention, legalBasisHint, mechanism: 'manual, documented',
+  });
+  return [
+    c(
+      'bolagio_guest_identities',
+      'guest_personal_data',
+      'The returning-guest identity: a normalised email address, its double opt-in state, and the evidence of any marketing consent (when, from where, which wording version). Used to recognise a returning guest at direct booking and, only where consent was given, to contact them.',
+      `Proposal, to be decided: delete the identity 36 months after the last booking or the last interaction, whichever is later; delete 12 months after an unverified signup that was never confirmed; retain a WITHDRAWN marketing consent record for the limitation period after withdrawal as evidence that it was honoured, then delete. Art. 7(1) GDPR (demonstrate consent) pulls against Art. 5(1)(e) (storage limitation) here and the balance is BoLaGio's to strike — ${NEEDS}`,
+      ['email_normalized'],
+      'Art. 6(1)(a) GDPR (consent) for marketing; Art. 6(1)(b)/(f) for recognising a returning guest at booking'
+    ),
+    c(
+      'bolagio_privilege_campaigns',
+      'configuration',
+      'Admin-configured returning-guest benefits: discount, caps, validity, usage limits. Commercial configuration; no personal data.',
+      'Kept while in use; historic campaigns kept so a past redemption can still be explained.'
+    ),
+    c(
+      'bolagio_privilege_grants',
+      'operational_telemetry',
+      'Which identity is entitled to which campaign. Holds no personal data itself — it references an identity by id — but it is only meaningful alongside one, and a subject-access request must follow it.',
+      `Deleted with the identity it belongs to (cascade) — ${NEEDS}`
+    ),
+    c(
+      'bolagio_privilege_redemptions',
+      'transaction_evidence',
+      'Immutable ledger of benefits actually applied to a booking: the discount, the gross it came off, the campaign. Part of the commercial record of why a booking cost what it did.',
+      `10 years from the end of the calendar year of the booking, as part of the commercial record of the price (§ 147 AO, § 257 HGB) — ${NEEDS}`,
+      [],
+      'Art. 6(1)(c) GDPR with § 147 AO'
+    ),
   ];
 }
 

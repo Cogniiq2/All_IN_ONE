@@ -64,6 +64,10 @@ export type BookingLogEvent =
   | 'operations.pass'
   /** The finance subledger ingestion that follows an operations pass. */
   | 'finance.ingest'
+  /* ── Guest privileges. Outcomes and ids only; an address never appears. ── */
+  | 'privileges.signup'
+  | 'privileges.verify'
+  | 'privileges.resolve'
   | 'scheduler.heartbeat'
   | 'config.validation'
   | 'health.read';
