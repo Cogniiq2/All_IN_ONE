@@ -30,7 +30,12 @@
       // Live Beds24 reads against the real account, PayPal SANDBOX, its own
       // Supabase project. Direct booking may be switched on here for the
       // sandbox end-to-end run and nowhere else before production.
-      "vars": { "APP_ENV": "staging", "BEDS24_MODE": "live", "DIRECT_BOOKING_ENABLED": "false" }
+      "vars": {
+        "APP_ENV": "staging",
+        "BEDS24_MODE": "live",
+        "DIRECT_BOOKING_ENABLED": "false",
+        "SUPABASE_URL": "https://lqgtmoulqzmrhglabrms.supabase.co"
+      }
     },
     "production": {
       "name": "bolagio",
