@@ -181,8 +181,12 @@ Generate each shared secret with real entropy, e.g. `openssl rand -hex 32`.
    setting silently reintroduces overbooking.
 4. **Booking webhook.** Point it at `https://<domain>/api/webhooks/beds24` and
    configure the header `x-bolagio-signature` with the value of
-   `BEDS24_WEBHOOK_SECRET`. Without a configured secret the endpoint refuses
-   everything, by design.
+   `BEDS24_WEBHOOK_SECRET` — or, where the Beds24 form offers no custom header,
+   append `?token=<BEDS24_WEBHOOK_SECRET>` to the URL. Without a configured
+   secret the endpoint refuses everything, by design. Enable the created,
+   modified and cancelled triggers: the same delivery drives both the inventory
+   resync and the real-time reservation refresh.
+   **`docs/beds24-webhook.md` has the exact settings, field by field.**
 5. **Channel connections.** Booking.com and Airbnb are connected *inside
    Beds24*. The website never talks to either directly.
 

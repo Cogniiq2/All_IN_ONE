@@ -206,21 +206,45 @@ async function store(reservation: ProviderReservation, queried: BookableUnit, lo
 }
 
 /**
+ * Why a single-reservation refresh did nothing, when it did nothing.
+ *
+ * The two cases used to share a `null`, and the webhook logged both as
+ * `skipped_unmapped_room`. They are not the same thing at all: one is a
+ * booking on someone else's room, which is ordinary and expected, and the
+ * other is the provider not returning a booking it was just told about,
+ * which is worth seeing in the logs.
+ */
+export type RefreshOutcome = StoreOutcome | 'not_found_at_provider' | 'skipped_unmapped_room';
+
+/**
  * Refresh ONE reservation from the provider, by id.
  *
  * The Beds24 webhook's follow-up. The delivery says a booking changed; this
  * establishes what it changed to by asking the provider, because a webhook
  * payload is a claim about the past that may arrive late, twice or forged.
  *
- * Returns null when the booking is not on a mapped, enabled room — including
- * when it belongs to a property BoLaGio does not operate.
+ * ── Cancellations ────────────────────────────────────────────────────────
+ * A cancelled booking is imported like any other: Beds24 keeps it and returns
+ * it with `status: cancelled`, the mapper classifies it, and the upsert
+ * writes that status over the stored one. That is how a cancellation reaches
+ * the board within seconds.
+ *
+ * What is NOT done is inferring a cancellation from a booking the provider
+ * did not return. Absence is evidence of nothing — a filtered read, a
+ * transient provider fault and a genuine deletion look identical from here —
+ * and a stay that vanishes from the interface the moment a read hiccups is
+ * worse than one that is a few minutes stale. The scheduled import is the
+ * floor under this; `not_found_at_provider` makes the case visible meanwhile.
  */
 export async function refreshReservation(
   externalBookingId: string,
   logger: BookingLogger = createLogger()
-): Promise<StoreOutcome | null> {
+): Promise<RefreshOutcome> {
   const reservation = await readReservationById(externalBookingId);
-  if (!reservation) return null;
+  if (!reservation) {
+    logger.warn('reservation.sync', { externalId: externalBookingId, outcome: 'not_found_at_provider' });
+    return 'not_found_at_provider';
+  }
 
   const units = await listBookableUnits();
   const unit = units.find(
@@ -231,7 +255,7 @@ export async function refreshReservation(
   );
   if (!unit) {
     logger.warn('reservation.sync', { externalId: externalBookingId, outcome: 'skipped_unmapped_room' });
-    return null;
+    return 'skipped_unmapped_room';
   }
 
   return store(reservation, unit, logger);

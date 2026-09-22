@@ -47,13 +47,29 @@
  *
  * Errors after step 2 also still answer 200: the payload is safely persisted,
  * and a 500 would make Beds24 retry a delivery we have already accepted.
+ *
+ * ── How the secret travels ───────────────────────────────────────────────
+ * `x-bolagio-signature: <BEDS24_WEBHOOK_SECRET>` is the preferred transport
+ * and is tried first. Beds24's webhook configuration does not offer a custom
+ * header on every account and every property, and the documentation cannot be
+ * reached from the environment this is built in (docs/beds24-contract.md), so
+ * the same secret is also accepted as the `token` query parameter:
+ *
+ *     https://<domain>/api/webhooks/beds24?token=<BEDS24_WEBHOOK_SECRET>
+ *
+ * Both are compared in constant time and an unset secret refuses everything,
+ * so the fallback widens the transport, never the trust. It is a fallback and
+ * not the default for a reason: a secret in a URL is written to access logs,
+ * proxy logs and browser history in a way a header is not. Use the header
+ * where Beds24 offers one, and rotate the secret if a URL leaks.
+ * See docs/beds24-webhook.md.
  */
 
 import type { NextRequest } from 'next/server';
 import { createLogger } from '@/lib/booking/logger';
 import { beds24WebhookSecret } from '@/lib/booking/config';
 import { requireBackend, verifySharedSecret } from '@/lib/booking/http';
-import { payloadHash } from '@/lib/booking/reference';
+import { payloadHash, timingSafeEqual } from '@/lib/booking/reference';
 import {
   findIntentByProviderBookingId,
   findUnitByProviderRoom,
@@ -74,18 +90,30 @@ export const runtime = 'nodejs';
 /** Beds24 actions that mean "the calendar just changed". */
 const INVENTORY_ACTIONS = new Set(['created', 'modified', 'cancelled', 'new', 'booking']);
 
-/**
- * Actions that mean "a reservation changed", and so warrant a fresh read of
- * it. Deliberately the same set: every one of them can change a stay, and an
- * action this list has not met costs a missed refresh, not a wrong one — the
- * scheduled import still catches it.
+/*
+ * ── Why the reservation refresh is NOT gated on the action ───────────────
+ *
+ * There used to be a `RESERVATION_ACTIONS` set here, and a delivery whose
+ * action was not in it was not refreshed. That gate was a liability: Beds24's
+ * webhook action vocabulary is not established for this account — the
+ * documentation is unreachable from the environment this is built in — so a
+ * provider that says `BOOKING_MODIFIED`, `booking_changed`, or nothing at all
+ * would have silently skipped the very read this endpoint exists to perform.
+ * A missed cancellation then waits for the next scheduled pass, which is
+ * exactly the delay real-time sync is meant to remove.
+ *
+ * So: any delivery carrying a provider booking id gets a fresh read. It costs
+ * one GET, it cannot write anything anywhere, the provider's answer is
+ * authoritative regardless of what the payload claimed, and an action this
+ * code has never seen is handled correctly by construction rather than by
+ * having been listed. `INVENTORY_ACTIONS` keeps its gate because closing
+ * nights is a state change, not a read.
  */
-const RESERVATION_ACTIONS = INVENTORY_ACTIONS;
 
 export async function POST(request: NextRequest) {
   const logger = createLogger(request);
 
-  if (!verifySharedSecret(request, beds24WebhookSecret())) {
+  if (!authenticated(request)) {
     logger.warn('webhook.beds24', { outcome: 'unauthorised' });
     return new Response(null, { status: 401 });
   }
@@ -107,8 +135,12 @@ export async function POST(request: NextRequest) {
     }
 
     const booking = payload.booking ?? {};
-    const externalId = String(payload.bookingId ?? booking.id ?? '');
-    const action = String(payload.action ?? 'unknown').toLowerCase();
+    // Validated, not merely stringified: an id is what goes into the provider
+    // query, and `String({})` is `"[object Object]"`, which would be sent to
+    // Beds24 verbatim. A delivery whose id is not a provider id carries no id
+    // at all, and the reservation refresh below is simply not attempted.
+    const externalId = providerBookingId(payload.bookingId) ?? providerBookingId(booking.id) ?? '';
+    const action = String(payload.action ?? 'unknown').toLowerCase().slice(0, 32);
 
     const stored = await recordIntegrationEvent({
       eventType: action,
@@ -175,10 +207,10 @@ async function process(
    * cannot be reached is logged: the scheduled import is the floor under this
    * and will pick the change up on its next pass.
    */
-  if (externalId && RESERVATION_ACTIONS.has(action)) {
+  if (externalId) {
     try {
       const outcome = await refreshReservation(externalId, logger);
-      logger.info('webhook.beds24', { externalId, eventType: action, outcome: outcome ?? 'skipped_unmapped_room' });
+      logger.info('webhook.beds24', { externalId, eventType: action, outcome });
     } catch (cause) {
       logger.error('webhook.beds24', cause, { externalId, eventType: action, outcome: 'reservation_refresh_failed' });
     }
@@ -217,6 +249,35 @@ async function slugForUnit(unitId: string): Promise<string | undefined> {
   const { supabaseAdmin } = await import('@/lib/supabase/server');
   const { data } = await supabaseAdmin().from('bolagio_units').select('slug').eq('id', unitId).maybeSingle();
   return (data?.slug as string | undefined) ?? undefined;
+}
+
+/**
+ * The shared secret, from the header or — as a documented fallback — the
+ * `token` query parameter. Constant time in both cases, and an unset
+ * `BEDS24_WEBHOOK_SECRET` refuses everything rather than opening the door.
+ */
+function authenticated(request: NextRequest): boolean {
+  const expected = beds24WebhookSecret();
+  if (!expected) return false;
+  if (verifySharedSecret(request, expected)) return true;
+  const token = new URL(request.url).searchParams.get('token') ?? '';
+  return token !== '' && timingSafeEqual(token, expected);
+}
+
+/**
+ * A Beds24 booking id, or nothing.
+ *
+ * Digits, because that is what every booking id on this account is, and
+ * because this value is interpolated into a provider query. A number arrives
+ * as a number on some deliveries and as a string on others; both are read,
+ * and anything else — an object, an array, a null, an injection attempt — is
+ * not an id and is dropped rather than coerced.
+ */
+function providerBookingId(value: unknown): string | undefined {
+  if (typeof value === 'number') return Number.isInteger(value) && value > 0 ? String(value) : undefined;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return /^[0-9]{1,32}$/.test(trimmed) ? trimmed : undefined;
 }
 
 /** The only success response. Carries nothing. */
