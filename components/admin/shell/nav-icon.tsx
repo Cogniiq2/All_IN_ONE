@@ -1,7 +1,7 @@
 import type { NavIcon } from '@/components/admin/shell/nav-items';
 
 /**
- * Fifteen line icons on one 24-unit grid, 1.6 stroke, round joins. Drawn here
+ * Sixteen line icons on one 24-unit grid, 1.6 stroke, round joins. Drawn here
  * rather than pulled from an icon set so their weight, optical size and
  * alignment are one decision, not seven.
  */
@@ -21,6 +21,15 @@ export function Icon({ name, className }: { name: NavIcon; className?: string })
         <svg {...common}>
           <circle cx="12" cy="12" r="8.5" />
           <path d="M12 7.5V12l3 2" />
+        </svg>
+      );
+    case 'performance':
+      // An ascending bar trio. Deliberately not an arrow: the page reports
+      // what happened, it does not promise a direction.
+      return (
+        <svg {...common}>
+          <path d="M4 20V13M12 20V7M20 20v-9" />
+          <path d="M3 20h18" />
         </svg>
       );
     case 'calendar':

@@ -43,6 +43,8 @@ import {
 import { collectAttention, LEVEL_ORDER, OUTBOX_BACKLOG_MS, PAYMENT_EVENT_STUCK_MS } from '@/lib/admin/attention';
 import { deriveAlerts, SCHEDULER_INTERVAL_MS, type AlertReport } from '@/lib/ops/alerts';
 import { closedRanges, nightsCovered } from '@/lib/admin/calendar';
+import { buildPerformance, type PerformanceReport } from '@/lib/admin/performance';
+import type { DateRange } from '@/lib/finance/periods';
 import { ageMs, guestListLabel } from '@/lib/admin/format';
 import { PAGE_SIZE, statesFor, type BookingListFilter } from '@/lib/admin/filters';
 import { AdminUnconfiguredError, rowSource } from '@/lib/admin/source';
@@ -222,6 +224,64 @@ export async function loadReservations(query: ReservationQuery = {}): Promise<Qu
         bySource,
       },
     };
+  });
+}
+
+/**
+ * Operational performance over a window.
+ *
+ * Reads every reservation OVERLAPPING the range — not merely those arriving
+ * in it — because a stay that began last month still occupies nights this
+ * month, and an occupancy figure that ignored it would be wrong in exactly
+ * the months that matter.
+ *
+ * The provider row cap is 400 per read, so this pages until the window is
+ * exhausted. A bounded number of passes: a window wide enough to need more
+ * than twenty of them is a window nobody is reading on a screen.
+ */
+export async function loadPerformance(range: DateRange): Promise<QueryResult<PerformanceReport>> {
+  return guard(async () => {
+    const source = await rowSource();
+    const units = await source.units();
+
+    const rows: ReservationRow[] = [];
+    const PAGE = 400;
+    for (let page = 0; page < 20; page += 1) {
+      const result = await source.reservations({
+        overlaps: { from: range.from, to: range.to },
+        sort: 'check_in',
+        limit: PAGE,
+        offset: page * PAGE,
+      });
+      rows.push(...result.rows);
+      if (result.rows.length < PAGE || rows.length >= result.total) break;
+    }
+
+    const names = new Map(units.map((u) => [u.id, u.display_name] as const));
+    /*
+     * Only units with an ENABLED provider mapping count towards available
+     * room nights. An apartment that is not sold anywhere cannot depress
+     * occupancy — the Opernstraße units have no mapping and must not make the
+     * estate look half empty.
+     */
+    const measured = units.filter((u) => u.integration?.enabled);
+    return buildPerformance(
+      rows.map((r) => ({
+        unit_slug: r.unit_slug,
+        source: r.source,
+        status_class: r.status_class,
+        check_in: r.check_in,
+        check_out: r.check_out,
+        total_amount_cents: r.total_amount_cents,
+        currency: r.currency,
+        booked_at: r.booked_at,
+      })),
+      (measured.length > 0 ? measured : units).map((u) => ({
+        slug: u.slug,
+        display_name: unitName(u.slug, names.get(u.id) ?? ''),
+      })),
+      range
+    );
   });
 }
 

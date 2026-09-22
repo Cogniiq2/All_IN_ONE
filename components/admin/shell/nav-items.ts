@@ -4,7 +4,7 @@
  * before.
  */
 
-export type NavIcon = 'overview' | 'calendar' | 'bookings' | 'operations' | 'cleaning' | 'automations' | 'properties' | 'payments' | 'system' | 'finance' | 'inbox' | 'transactions' | 'taxes' | 'reports' | 'accountant';
+export type NavIcon = 'overview' | 'calendar' | 'bookings' | 'performance' | 'operations' | 'cleaning' | 'automations' | 'properties' | 'payments' | 'system' | 'finance' | 'inbox' | 'transactions' | 'taxes' | 'reports' | 'accountant';
 
 export interface NavItem {
   href: string;
@@ -28,6 +28,10 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: '/admin', label: 'Today', icon: 'overview', match: (p) => p === '/admin' },
       { href: '/admin/calendar', label: 'Calendar', icon: 'calendar', match: startsWith('/admin/calendar') },
       { href: '/admin/bookings', label: 'Bookings', icon: 'bookings', match: startsWith('/admin/bookings') },
+      // Operating performance, deliberately in Overview and not in Finance:
+      // gross booking value from the channel manager is a different kind of
+      // truth from the reconciled, VAT-correct figures Finance owns.
+      { href: '/admin/performance', label: 'Performance', icon: 'performance', match: startsWith('/admin/performance') },
     ],
   },
   {

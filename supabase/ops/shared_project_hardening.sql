@@ -1,6 +1,7 @@
 -- BoLaGio / Cogniiq shared-project hardening
 -- Supabase SQL Editor compatible DRY-RUN version
--- IMPORTANT: this version sets cogniiq.hardening_apply = 'no' and therefore does NOT apply changes.
+-- Dry run by default: without `-v apply=yes` nothing is changed, every
+-- statement that WOULD run is printed, and the script exits reporting so.
 -- It only evaluates the current database state and prints the SQL actions that would be taken.
 
 -- ════════════════════════════════════════════════════════════════════════════
@@ -87,7 +88,23 @@
 -- Undo: supabase/ops/shared_project_hardening_rollback.sql.
 -- ════════════════════════════════════════════════════════════════════════════
 
-select set_config('cogniiq.hardening_apply', 'no', false) as apply_mode;
+-- ── The dry-run gate ───────────────────────────────────────────────────────
+--
+-- Default `no`. `-v apply=yes` is what turns it into a real run, and the
+-- guard below is what makes the default safe: psql substitutes an UNSET
+-- variable as the literal text `:apply`, which would compare unequal to
+-- 'yes' and so still be a dry run — but it would also put a meaningless
+-- string into a session setting, so the variable is defaulted explicitly.
+--
+-- This was briefly hard-wired to 'no', which made step 2 of the usage note
+-- above a silent no-op: an operator running `-v apply=yes` got "DRY RUN —
+-- nothing changed" with no explanation, and nothing was ever hardened. The
+-- gate is a gate again; `no` is still what you get if you say nothing.
+\if :{?apply}
+\else
+  \set apply no
+\endif
+select set_config('cogniiq.hardening_apply', :'apply', false) as apply_mode;
 
 do $$
 declare
