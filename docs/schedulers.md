@@ -1,14 +1,25 @@
 # Schedulers
 
-Three secured routes do all scheduled work. Neither depends on n8n, a browser or
-the other.
+Three secured routes do all scheduled work. None depends on n8n, a browser or
+the others.
+
+`ops/staging/cron.sql` is the executable version of this page and schedules all
+three. Run that rather than pasting from here.
+
+**The reservation import is a safety net, not the primary path.** The Beds24
+webhook (`docs/beds24-webhook.md`) refreshes a changed booking within seconds;
+this hourly pass exists for the deliveries that never arrive, the ones dropped
+during a redeploy, and changes Beds24 makes without firing a hook. That is why
+it is hourly rather than every few minutes: a tighter schedule would buy no
+freshness the webhook does not already provide and would spend the Beds24 rate
+limit re-reading unchanged answers.
 
 | Job | Route | Interval | Heartbeat name | What it does |
 |---|---|---|---|---|
 | reconcile | `POST /api/booking/reconcile` `{ "limit": 25 }` | every 3 min | `reconcile` | drain the verified payment inbox → sweep for stuck bookings → work the queue most-severe first |
 | operations | same request, after the reconcile | (same) | `operations` | derive turnovers from confirmed stays; emit time-driven guest events once |
 | inventory sync | `POST /api/booking/sync` | every 30 min | `inventory_sync` | release holds whose lease (plus grace) ran out and have no payment evidence; refresh the availability cache from Beds24 |
-| reservation import | `POST /api/booking/reservations/sync` | every 20 min | `reservation_sync` | read Beds24's reservations (GET only) into `bolagio_reservations`: Booking.com, Airbnb, manual. Never writes to Beds24. See docs/beds24-reservations.md |
+| reservation import | `POST /api/booking/reservations/sync` | **hourly** (`7 * * * *`) | `reservation_sync` | read Beds24's reservations (GET only) into `bolagio_reservations`: Booking.com, Airbnb, manual. Never writes to Beds24. See docs/beds24-reservations.md |
 
 All three take `x-bolagio-signature: <BOOKING_SYNC_SECRET>` — a plain shared
 secret, because they carry no data and no authority: a forged call can only
@@ -59,7 +70,7 @@ $$);
 -- Run the FIRST reservation import by hand before scheduling it: that run is
 -- the backfill (twelve months back through the booking horizon) and is the
 -- slow one. Every run after it is an idempotent refresh of the same horizon.
-select cron.schedule('bolagio-reservation-sync', '*/20 * * * *', $$
+select cron.schedule('bolagio-reservation-sync', '7 * * * *', $$
   select net.http_post(
     url     := current_setting('app.site_url') || '/api/booking/reservations/sync',
     headers := jsonb_build_object('content-type','application/json',

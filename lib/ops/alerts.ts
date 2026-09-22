@@ -282,7 +282,21 @@ export function deriveAlerts(input: AlertInput): AlertReport {
         title: `Scheduled ${job.replace('_', ' ')} overdue`,
         detail: `The last run finished ${Math.round(age(last.finished_at, now) / 60_000)} minutes ago; the expected interval is ${Math.round(SCHEDULER_INTERVAL_MS[job] / 60_000)} minutes. Check the scheduler.`,
       });
-    } else if (!last.ok && job !== 'inventory_sync' && job !== 'reservation_sync') {
+    } else if (!last.ok && job !== 'inventory_sync') {
+      /*
+       * `inventory_sync` is the one job whose failure is covered by a
+       * different alert: a cache that stops being refreshed raises
+       * CACHE_STALE above, which names the consequence rather than the run.
+       *
+       * `reservation_sync` used to be excluded here too, and that was a hole.
+       * It runs hourly and is only flagged overdue after two hours, so a pass
+       * that RUNS ON TIME AND FAILS EVERY TIME was completely silent: no
+       * overdue alert, no failure alert, and no compensating alert anywhere
+       * else. A reservation import that has been failing all day is exactly
+       * the thing an operator must be told about — the board would quietly
+       * stop reflecting Booking.com. One bad run self-clears at the next
+       * success, which is why it is MEDIUM and not HIGH.
+       */
       alerts.push({
         level: 'MEDIUM',
         code: 'SCHEDULER_LAST_RUN_FAILED',

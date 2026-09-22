@@ -121,6 +121,33 @@ describe('HIGH', () => {
     expect(report.alerts.map((a) => a.code)).toEqual(expect.arrayContaining(['STALE_HOLD', 'INVENTORY_SYNC_FAILING']));
   });
 
+  it('a reservation import that runs on time and fails every time is not silent', () => {
+    /*
+     * The regression this guards. `reservation_sync` runs hourly and is only
+     * flagged overdue after two hours, so a pass that keeps its schedule and
+     * fails on every run produced NO alert at all — and unlike the inventory
+     * sync it has no compensating "cache stale" alert behind it. The board
+     * would quietly stop reflecting Booking.com while the System page stayed
+     * green.
+     */
+    const report = deriveAlerts(
+      quiet({ schedulers: quiet().schedulers.map((s) => (s.job === 'reservation_sync' ? { ...s, ok: false } : s)) })
+    );
+    const failed = report.alerts.find((a) => a.code === 'SCHEDULER_LAST_RUN_FAILED' && a.title.includes('reservation'));
+    expect(failed).toBeDefined();
+    // One bad run clears itself at the next success, so it is not an emergency.
+    expect(failed?.level).toBe('MEDIUM');
+  });
+
+  it('still lets the inventory sync speak through CACHE_STALE rather than twice', () => {
+    // The one deliberate exclusion: a failing inventory sync is reported as
+    // the consequence an operator can act on, not as a run that failed.
+    const report = deriveAlerts(
+      quiet({ schedulers: quiet().schedulers.map((s) => (s.job === 'inventory_sync' ? { ...s, ok: false } : s)) })
+    );
+    expect(report.alerts.filter((a) => a.code === 'SCHEDULER_LAST_RUN_FAILED')).toHaveLength(0);
+  });
+
   it('a configuration contradiction', () => {
     const report = deriveAlerts(quiet({ configFindings: [{ code: 'LIVE_PAYPAL_OUTSIDE_PRODUCTION', severity: 'refuse', message: 'x' }] }));
     expect(report.alerts[0]).toMatchObject({ level: 'HIGH', code: 'CONFIGURATION_CONTRADICTION' });
