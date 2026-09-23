@@ -133,3 +133,17 @@ describe('no tracking before consent (§ 25 TDDDG)', () => {
     expect(html).not.toMatch(/google\.com\/maps\/embed/);
   });
 });
+
+describe('public prices (§ 3 PAngV)', () => {
+  it('no apartment can show an "ab" price without the note stating what it includes and what comes on top', async () => {
+    const { apartments } = await import('@/lib/content/apartments');
+    const bare = apartments.filter((a) => a.priceFromEur !== undefined && !a.priceFromNote);
+    expect(bare.map((a) => a.slug)).toEqual([]);
+  });
+
+  it('the rating badge attributes reviews to Booking.com and claims no verification of its own', () => {
+    const source = code(path.join(ROOT, 'components', 'ui-kit', 'booking-trust.tsx'));
+    expect(source).not.toMatch(/verifizierte Bewertungen|verified reviews/);
+    expect(source).toMatch(/Bewertungen auf Booking\.com/);
+  });
+});

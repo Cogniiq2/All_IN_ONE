@@ -386,11 +386,17 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
                         : 'Guests, dates, contact — in four steps. We confirm availability and price personally before anything becomes binding.'}
                     </p>
 
-                    {/* Price appears only once real rates exist. */}
-                    {apartment.priceFromEur && (
+                    {/* Price appears only once real rates exist — and only with
+                        the note stating what it includes and every mandatory
+                        charge on top (§ 3 PAngV). A bare nightly "ab" figure
+                        understates what a guest pays. */}
+                    {apartment.priceFromEur && apartment.priceFromNote && (
                       <p className="mt-5 text-[15px]">
-                        <span className="font-semibold">ab €{apartment.priceFromEur}</span>{' '}
+                        <span className="font-semibold">
+                          {de ? `ab ${apartment.priceFromEur} €` : `from €${apartment.priceFromEur}`}
+                        </span>{' '}
                         <span className="text-muted-foreground">/ {de ? 'Nacht' : 'night'}</span>
+                        <span className="mt-1 block text-[12px] text-muted-foreground">{apartment.priceFromNote[locale]}</span>
                       </p>
                     )}
 

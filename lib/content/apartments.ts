@@ -152,6 +152,16 @@ export interface Apartment extends BaseUnit {
   notSuitable?: Localized[];
   /** NEEDS CONFIRMATION — nightly rate by season. No price is shown until set. */
   priceFromEur?: number;
+  /**
+   * NEEDS CONFIRMATION — REQUIRED alongside `priceFromEur`, or no price is
+   * shown. States what the "ab" price includes and every mandatory charge
+   * that comes on top, e.g. "pro Nacht inkl. MwSt., zzgl. einmaliger
+   * Endreinigung 60 €". § 3 PAngV requires the price a consumer actually
+   * pays; a nightly "ab" figure without the mandatory one-off fees next to it
+   * understates it. The "ab" figure itself must be a price that is genuinely
+   * bookable.
+   */
+  priceFromNote?: Localized;
   /** NEEDS CONFIRMATION — minimum stay in nights. */
   minNights?: number;
 }

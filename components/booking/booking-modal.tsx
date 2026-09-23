@@ -784,7 +784,9 @@ function Progress({ step }: { step: number }) {
                     ? 'hsl(var(--champagne-dark))'
                     : done
                     ? 'hsl(var(--foreground))'
-                    : 'hsl(var(--muted-foreground) / 0.75)',
+                    // Full muted tone: at 75% opacity these 10px labels fell to
+                    // 3.9:1, below the WCAG AA 4.5:1 for small text.
+                    : 'hsl(var(--muted-foreground))',
                 }}
               >
                 {label}
@@ -831,7 +833,7 @@ function StepGuests({
         <StepperButton onClick={() => setGuests(Math.max(MIN_GUESTS, guests - 1))} disabled={guests <= MIN_GUESTS}
                        label={de ? 'Weniger' : 'Fewer'}><Minus className="h-4 w-4" /></StepperButton>
         <div className="text-center" style={{ minWidth: 92 }}>
-          <p className="font-serif text-[52px] leading-none" style={{ color: 'hsl(var(--foreground))' }}>
+          <p className="font-serif text-[52px] leading-none" style={{ color: 'hsl(var(--foreground))' }} aria-live="polite">
             {guests}
           </p>
           <p className="mt-2 text-[12px] uppercase tracking-[0.14em]" style={{ color: 'hsl(var(--muted-foreground))' }}>

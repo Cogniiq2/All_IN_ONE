@@ -18,15 +18,29 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>('de');
 
   useEffect(() => {
-    const saved = localStorage.getItem('bolagio-locale') as Locale | null;
-    if (saved && (saved === 'de' || saved === 'en')) {
+    // Storage can be unavailable (private mode, blocked site data) and then
+    // throws; the language falls back to German rather than breaking the page.
+    let saved: string | null = null;
+    try {
+      saved = localStorage.getItem('bolagio-locale');
+    } catch {
+      saved = null;
+    }
+    if (saved === 'de' || saved === 'en') {
       setLocaleState(saved);
+      // The document language must follow the text on screen (WCAG 3.1.1),
+      // including a preference restored on load — not only a fresh toggle.
+      document.documentElement.lang = saved;
     }
   }, []);
 
   const setLocale = useCallback((newLocale: Locale) => {
     setLocaleState(newLocale);
-    localStorage.setItem('bolagio-locale', newLocale);
+    try {
+      localStorage.setItem('bolagio-locale', newLocale);
+    } catch {
+      // Not remembered across visits; the switch itself still works.
+    }
     document.documentElement.lang = newLocale;
   }, []);
 

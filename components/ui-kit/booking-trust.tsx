@@ -17,6 +17,13 @@
  * label always reads "Booking.com · Schulstraße" — never an unqualified
  * "Booking.com" that would read as covering every BoLaGio property.
  *
+ * ── "reviews on Booking.com", not "verified reviews" (2026-09-23) ───────
+ * Calling them "verified" is a claim about how the reviews were checked.
+ * § 5b Abs. 3 UWG then requires BoLaGio to explain whether and how it ensures
+ * they come from real guests, and BoLaGio does not collect or check them
+ * itself; Booking.com does. The label now states only where the reviews come
+ * from. Whether to add a verification sentence is in LEGAL_REVIEW_REQUIRED.md.
+ *
  * ── Never a fake star rating ────────────────────────────────────────────
  * Booking.com's own scale is out of 10, and that real number — "8,9" — is
  * always the value shown, never converted into a star count. The star row
@@ -74,10 +81,10 @@ export function BookingTrustBadge({
   const goldColor = invert ? 'hsl(var(--on-dark-gold))' : 'hsl(var(--champagne-dark))';
 
   const ariaLabel = de
-    ? `Booking.com Bewertung Schulstraße: ${ratingLabel} von 10, ${reviewCountLabel} verifizierte Bewertungen${
+    ? `Booking.com Bewertung Schulstraße: ${ratingLabel} von 10, ${reviewCountLabel} Bewertungen auf Booking.com${
         url ? ' — Bewertungen auf Booking.com ansehen' : ''
       }`
-    : `Booking.com rating for Schulstraße: ${ratingLabel} out of 10, ${reviewCountLabel} verified reviews${
+    : `Booking.com rating for Schulstraße: ${ratingLabel} out of 10, ${reviewCountLabel} reviews on Booking.com${
         url ? ' — view reviews on Booking.com' : ''
       }`;
 
@@ -133,8 +140,8 @@ export function BookingTrustBadge({
           </span>
           <span className="text-[12px] leading-none" style={{ color: mutedColor }}>
             {de
-              ? `${reviewCountLabel} verifizierte Bewertungen`
-              : `${reviewCountLabel} verified reviews`}
+              ? `${reviewCountLabel} Bewertungen auf Booking.com`
+              : `${reviewCountLabel} reviews on Booking.com`}
           </span>
         </span>
 
