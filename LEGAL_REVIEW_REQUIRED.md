@@ -1,277 +1,339 @@
 # Legal review required — BoLaGio GmbH
 
-**This file is not legal advice and nothing in it is a legal conclusion.** It is
-a register of questions the implementation cannot answer for itself, written by
-the engineering side so that a lawyer or tax adviser can be asked something
-specific rather than "please review the website".
+**This file is not legal advice and none of it is a legal conclusion.** It
+lists only the questions that are **still unresolved**. Each one is put so
+that a lawyer, tax adviser or authority can answer something specific.
 
-Each item states: what the issue is, why it matters, where in the product it
-lives, the **exact question** to put to the adviser, and whether it **blocks
-public launch**.
+Updated 23 Sep 2026. Background and sources: `docs/legal/compliance-register.md`.
+The wording to approve: `docs/legal/checkout-wording-for-approval.md`.
+The booking AGB brief: `docs/legal/agb-booking-draft.md`.
 
-Jurisdiction: Germany (Bavaria). Company: BoLaGio GmbH, Bayreuth.
+> **Source caveat.** The primary statute sites could not be reached from the
+> engineering environment. Citations were cross-checked through official and
+> chamber sources found by search. Counsel should read each cited provision in
+> its current version before relying on a row.
 
-| # | Issue | Blocks launch? |
-|---|---|---|
-| 1 | AGB written for enquiries, not concluded bookings | **Yes**, for direct booking |
-| 2 | Cancellation policy may render empty | **Yes**, for direct booking |
-| 3 | Total price completeness (Kurtaxe, deposits) | **Yes**, for direct booking |
-| 4 | Button wording / Button­lösung | **Yes**, for direct booking |
-| 5 | Widerrufsrecht exemption wording | **Yes**, for direct booking |
-| 6 | VAT treatment and invoice content | **Yes**, for invoicing |
-| 7 | Privacy notice: processors and the privileges data | **Yes** |
-| 8 | Marketing consent and double opt-in evidence | **Yes**, for marketing only |
-| 9 | Retention periods, including the privileges identity | No — documented, flagged |
-| 10 | Meldeschein (guest registration) | No — outside the booking flow |
-| 11 | Review attribution | No — but fix before promoting ratings |
-| 12 | Kurtaxe / local accommodation tax in Bayreuth | **Yes**, if it applies |
+**Owners used below:**
+- **GF** = BoLaGio Geschäftsführung
+- **RA** = lawyer (consumer, tenancy, competition law)
+- **DS** = data protection counsel
+- **StB** = tax adviser
+- **Stadt** = Stadt Bayreuth / Landratsamt Bayreuth
 
-Items 1–6 are pre-existing and already listed in
-`docs/production-readiness.md` §3; they are restated here so one register
-covers everything. Items 7–9 and 11 arise from work on this branch.
+## Overview
 
----
-
-## 1. AGB cover enquiries, not a concluded booking — **blocks direct booking**
-
-**Where** `/agb`, and the checkout flow in `components/enquiry/` and
-`app/(site)/book-direct`.
-
-**Why it matters** The current terms were written when the site took
-*enquiries*. Direct booking concludes a contract on the website: money changes
-hands, inventory is committed, and the terms that govern that contract are the
-ones shown at the moment of conclusion. Terms describing an enquiry do not
-govern a booking.
-
-**Exact question** *"Do our AGB, as published, govern a distance contract for
-accommodation concluded and paid for on our website — including the moment of
-conclusion, our obligations, the guest's obligations, no-show, and late
-arrival? If not, please supply terms that do."*
+| # | Issue | Blocks | Owner | Status |
+|---|---|---|---|---|
+| 1 | Company identity data (Impressum, checkout, privacy) | **Public launch** | GF | Open — shown as visible gaps |
+| 2 | Privacy notice: entities, regions, retention, Art. 28 contracts | **Public launch** | GF + DS | Open — draft published with gaps |
+| 3 | Art. 14 information for Booking.com / Airbnb guests | **Already applies today** | GF + DS | Open — operational |
+| 4 | § 36 VSBG statement | Public launch, if > 10 employees | GF | Open |
+| 5 | Cancellation policy wording | **Direct booking** | GF + RA | Open — code fails closed |
+| 6 | No-withdrawal notice and the online stay limit (`maxNights`) | **Direct booking** | RA | Open — code fails closed |
+| 7 | Booking AGB, and when the contract is concluded | **Direct booking** | RA | Open — code fails closed |
+| 8 | Order-button wording and the PayPal step | **Direct booking** | RA | Implemented, to confirm |
+| 9 | Price completeness, VAT statement, on-site charges | **Direct booking**, invoicing | GF + StB | Open — code fails closed |
+| 10 | BFSG applicability (micro-enterprise?) | Direct booking, if not exempt | GF + StB | Open |
+| 11 | Marketing-consent wording and confirmation email | **Marketing only** | RA + DS | Open — marketing blocked in code |
+| 12 | Review / feedback emails | No — suppressed | GF + RA | Open |
+| 13 | Retention periods | No — documented | DS + StB | Open |
+| 14 | Displaying the Booking.com rating | No | RA | Open |
+| 15 | § 18 Abs. 2 MStV for the journal | No | RA | Open |
+| 16 | Zweckentfremdung in Bayreuth | **Operation** (not website) | Stadt | Open — sources contradict |
+| 17 | Planning law / change of use per unit; Gewerbe | **Operation** | Stadt + RA | Open |
+| 18 | Local tourism levy in Bayreuth | Direct booking, if adopted | Stadt / StB | Open |
+| 19 | Guest registration (Meldeschein) process | **Operation** (already applies) | GF | Open |
 
 ---
 
-## 2. The cancellation policy can render as nothing — **blocks direct booking**
+## 1. Company identity data — blocks public launch
 
-**Where** `BookingQuote.cancellationPolicy`, rendered in the quote step. The
-value comes from whatever Beds24 returns for the offer.
+- **Issue.** `lib/legal/company.ts` has no registered address, Geschäftsführer,
+  register court or HRB number, or monitored email. The Impressum shows them
+  as "wird ergänzt".
+- **Why it matters.** § 5 DDG requires these for any business website. The
+  checkout needs the trader's identity (Art. 246a § 1 EGBGB), and the privacy
+  notice needs the controller (Art. 13 GDPR). Direct booking is refused while
+  any of them is missing (`LEGAL_COMPANY_IDENTITY_INCOMPLETE`).
+- **Law.** § 5 DDG; Art. 246a EGBGB; Art. 13 Abs. 1 lit. a GDPR.
+- **Question (GF).** *Supply from the Handelsregister extract: the full
+  registered address, every Geschäftsführer, the register court and HRB
+  number, the USt-IdNr. (if issued), and a monitored email address.*
+- **Blocks launch.** Yes, the public website.
+- **Status.** Open.
 
-**Why it matters** If Beds24 returns no policy text, **the booking flow shows
-no cancellation terms at all** and the guest pays anyway. That is a
-consumer-information problem that only appears in production, on the
-reservations where the field happens to be empty.
+## 2. Privacy notice — blocks public launch
 
-**Engineering note** This should not be left to the provider. The safe design
-is a BoLaGio-owned cancellation policy, shown always, with the provider's text
-used only where it agrees. That change is not made here because the *content*
-is a business and legal decision, not a technical one.
+- **Issue.** `/datenschutz` was rewritten against the actual architecture on
+  23 Sep 2026. Still missing:
+  - the contracting entity and storage region / transfer basis for Cloudflare,
+    Supabase, Beds24, the n8n host and the SMTP provider
+  - the concrete retention periods
+  - approval of the text
+- **Why it matters.** Art. 13/14 GDPR require all of this. **The n8n instance
+  runs at `n8n.cogniiq.co`, so Cogniiq processes BoLaGio's guest data and needs
+  its own Art. 28 agreement with BoLaGio.**
+- **Law.** Art. 13, 14, 28, 30, 44 ff. GDPR.
+- **Question (DS).** *Please approve or correct `/datenschutz`. Confirm, for
+  each service in `lib/legal/processors.ts`, its role (processor or
+  independent controller), the contracting entity, the storage region and the
+  transfer basis. Confirm that an Art. 28 agreement exists with Cloudflare,
+  Supabase, Beds24, Cogniiq (n8n) and the SMTP provider.*
+- **Blocks launch.** Yes. Direct booking is also refused
+  (`LEGAL_PRIVACY_NOTICE_UNAPPROVED`) until a version is recorded in
+  `PRIVACY_NOTICES`.
+- **Status.** Open.
 
-**Exact question** *"What is our cancellation policy, in the exact wording to
-be shown to a guest before payment? Must it be displayed before the payment
-step, and must the guest acknowledge it separately?"*
+## 3. Art. 14 information for platform guests — applies today
+
+- **Issue.** Guests who booked through Booking.com or Airbnb never entered
+  data on bolagio.de. BoLaGio receives their data through Beds24.
+  `/datenschutz` §7 now describes this processing. **The guests themselves are
+  not yet pointed to it.**
+- **Why it matters.** Art. 14 Abs. 3 GDPR: the information is due at the
+  latest one month after receipt, or at the first communication, whichever is
+  earlier. This already applies to current reservations.
+- **Question (DS).** *Is a link to `/datenschutz` in our first message through
+  the platform sufficient under Art. 14 Abs. 3 lit. b? Does Art. 14 Abs. 5
+  lit. a apply to anything the platform has already told the guest?*
+- **Owner and action (GF).** Add the link to the first message template on
+  each platform.
+- **Blocks launch.** It is not a website blocker, but it is **live today**.
+- **Status.** Open.
+
+## 4. § 36 VSBG statement
+
+- **Issue.** The EU ODR link was **removed**: the platform closed on
+  20 July 2025. The separate § 36 VSBG statement is still owed if BoLaGio had
+  more than 10 employees on 31 December of the previous year.
+- **Question (GF/RA).** *How many employees did BoLaGio have on 31.12.2025?
+  Whether or not we are exempt, do we publish "Wir sind nicht bereit und nicht
+  verpflichtet, an Streitbeilegungsverfahren vor einer
+  Verbraucherschlichtungsstelle teilzunehmen"?*
+- **Blocks launch.** Only if more than 10 employees.
+- **Status.** Open. Config field `COMPANY.consumerDisputeStatement`.
+
+## 5. Cancellation policy wording — blocks direct booking
+
+- **Issue.** The technical defect is **fixed**. The checkout no longer shows
+  Beds24's text, always renders BoLaGio's approved policy or the stated gap,
+  refuses payment without one, stores the version shown, and puts the same
+  version in the confirmation email. **No policy has been approved**, so the
+  gate stays shut (`LEGAL_CANCELLATION_POLICY_UNAPPROVED`).
+- **Law.** § 312j Abs. 2, § 312f Abs. 2 BGB; Art. 246a EGBGB; § 309 Nr. 5 BGB
+  (lump-sum damages); § 537 BGB (fallback).
+- **Question (GF, then RA).** *Choose the model: free until N days, tiered, or
+  non-refundable. Choose the no-show rule and the refund timing. Approve the
+  wording in `checkout-wording-for-approval.md` §1. Is the lump sum
+  reasonable, and is the counter-proof sentence sufficient?* Also align the
+  policy configured in Beds24 with it.
+- **Blocks launch.** Yes, direct booking.
+- **Status.** Open.
+
+## 6. No-withdrawal notice and the online stay limit — blocks direct booking
+
+- **Issue.** No right of withdrawal is assumed only for accommodation "zu
+  anderen als Wohnzwecken" with fixed dates (§ 312g Abs. 2 Nr. 9 BGB). The
+  flow currently quotes up to **90 nights**. A monthly stay may be
+  *Wohnzwecke*. In that case:
+  - a withdrawal right applies, subject to § 312 Abs. 4 BGB for residential
+    leases
+  - so does the withdrawal button of § 356a BGB (in force since 19.06.2026)
+  - and so does tenancy law
+  
+  The code now caps online stays at the `maxNights` recorded with the
+  approved notice. Longer stays go to the enquiry flow.
+- **Question (RA).** *Up to how many nights may we rely on § 312g Abs. 2 Nr. 9
+  for furnished apartments booked online? Approve the notice wording in
+  `checkout-wording-for-approval.md` §2. For longer stays, confirm that
+  enquiry plus an individually concluded contract is the right path, and what
+  that contract needs (withdrawal information, § 356a).*
+- **Blocks launch.** Yes, direct booking.
+- **Status.** Open.
+
+## 7. Booking AGB and conclusion of contract — blocks direct booking
+
+- **Issue.** `/agb` covers enquiries. The online flow is: button, hold, PayPal
+  approval, capture, then confirmation at Beds24.
+- **Question (RA).** *When is the contract concluded in this flow? Please
+  draft the booking AGB against `docs/legal/agb-booking-draft.md`, including:*
+  - *house rules incorporated before the contract*
+  - *whether we take a deposit*
+  - *liability under § 309 Nr. 7*
+  - *unavailability*
+  - *how these AGB relate to Booking.com and Airbnb bookings*
+- **Blocks launch.** Yes, direct booking (`LEGAL_BOOKING_TERMS_UNAPPROVED`).
+- **Status.** Open.
+
+## 8. Order button and the PayPal step
+
+- **Issue.** The button that places the booking now reads **"Zahlungspflichtig
+  buchen"** (EN "Book and pay"); it used to say "Verbindlich buchen". The
+  PayPal button follows. It carries PayPal's own label.
+- **Law.** § 312j Abs. 3, 4 BGB; CJEU C-249/21 (only the words on the button
+  count).
+- **Question (RA).** *Is "Zahlungspflichtig buchen" on our button, followed by
+  PayPal's button, compliant, given that our button already holds the nights
+  and the obligation to pay arises from it? Is "Book and pay" acceptable
+  wording in English?*
+- **Blocks launch.** Yes, direct booking. The code is in place and awaits
+  confirmation.
+- **Status.** Implemented; to confirm.
+
+## 9. Price completeness, VAT and on-site charges — blocks direct booking and invoicing
+
+- **Issue.** The checkout shows the Beds24 total, itemised. Nobody has
+  confirmed that it contains every mandatory component, what the VAT
+  statement is, or that nothing is payable on site
+  (`LEGAL_PRICE_COMPLETENESS_UNCONFIRMED`).
+- **Law.** § 3, § 6 PAngV; § 312j Abs. 2 BGB; § 12 Abs. 2 Nr. 11 UStG;
+  § 14 UStG; § 19 UStG.
+- **Question (StB).** *Is BoLaGio GmbH subject to standard VAT (7 % on
+  accommodation) or a Kleinunternehmer? What rate applies to a separately
+  shown final-cleaning fee, and to extras (parking, pets, laundry)? What must
+  our guest invoices contain?*
+- **Question (GF).** *Confirm, for each unit, that the Beds24 total includes
+  cleaning and every mandatory fee, and list anything payable on site (or
+  confirm there is nothing).*
+- **Blocks launch.** Yes.
+- **Status.** Open.
+
+## 10. BFSG applicability
+
+- **Issue.** Since 28.06.2025 the BFSG covers B2C e-commerce services,
+  including online booking with payment. Micro-enterprises providing services
+  are exempt: fewer than 10 employees **and** turnover or balance sheet total
+  ≤ €2m (§ 3 Abs. 3 BFSG). Major defects found in the audit were fixed; a full
+  WCAG audit has not been done.
+- **Question (GF/StB).** *Does BoLaGio GmbH meet both micro-enterprise
+  criteria? If not, we need a full WCAG 2.1 AA audit and an accessibility
+  statement before direct booking.*
+- **Blocks launch.** Direct booking, if not exempt.
+- **Status.** Open.
+
+## 11. Marketing consent wording and confirmation email — blocks marketing only
+
+- **What is implemented.**
+  - The box is optional and unticked.
+  - The benefit is independent of it.
+  - Double opt-in now confirms the **consent** itself.
+  - Evidence is stored: version, source, time, confirmation, withdrawal and
+    its source.
+  - A signed unsubscribe link with RFC 8058 one-click exists.
+  - No audience can be read until `PRIVILEGES_UNSUBSCRIBE_SECRET` is set and
+    `MARKETING_CONSENT_APPROVAL` is recorded.
+- **Law.** § 7 Abs. 2 Nr. 2, Abs. 3 UWG; Art. 7 GDPR; BGH I ZR 164/09.
+- **Question (RA/DS).** *Approve the consent sentence (version 2026-09-25.1)
+  and the confirmation email (transactional, no advertising). What must the
+  footer of each marketing email contain?*
+- **Blocks launch.** Marketing only.
+- **Status.** Open.
+
+## 12. Review and feedback emails
+
+- **Issue.** The messaging system can send `review_request`. The BGH treats
+  this as advertising (VI ZR 225/17). It is **suppressed** in code
+  (`REVIEW_REQUEST_BASIS = null`).
+- **Question (RA).** *Consent, or § 7 Abs. 3 UWG? If § 7 Abs. 3: what exact
+  objection notice must the checkout show when the email address is collected,
+  and what must every such email say?*
+- **Blocks launch.** No.
+- **Status.** Open.
+
+## 13. Retention periods
+
+- **Issue.** `lib/retention/policy.ts` proposes a period per table.
+  Buchungsbelege are 8 years since 2025 (BEG IV). The privileges identity and
+  withdrawn consents need a decision.
+- **Question (DS/StB).** *Confirm or correct each proposed period in
+  `docs/data-retention.md`, in particular: how long do we keep evidence of a
+  withdrawn marketing consent, and how long do we keep enquiries that did not
+  lead to a booking?*
+- **Blocks launch.** No. The periods also go into `/datenschutz` §14.
+- **Status.** Open.
+
+## 14. Displaying the Booking.com rating
+
+- **Issue.** The site shows "8,9 · 72 Bewertungen auf Booking.com ·
+  Schulstraße" (owner-verified). The word "verifiziert" was removed, because
+  § 5b Abs. 3 UWG would then require explaining how the reviews are checked.
+- **Question (RA).** *May we show our Booking.com score on our own site? With
+  this attribution, is any § 5b Abs. 3 UWG statement required?*
+- **Blocks launch.** No.
+- **Status.** Open.
+
+## 15. § 18 Abs. 2 MStV and the journal
+
+- **Question (RA).** *Is our journal "journalistisch-redaktionell" within
+  § 18 Abs. 2 MStV, so that a responsible person must be named with address?*
+  Config field: `COMPANY.editorialResponsible`.
+- **Blocks launch.** No.
+- **Status.** Open.
+
+## 16. Zweckentfremdung in Bayreuth — operational
+
+- **Issue.** Bayreuth adopted a Zweckentfremdungssatzung in 2019, requiring a
+  permit for more than 8 weeks a year of letting to visitors. The BayVGH
+  declared it void (12 N 20.1726, 2021). The BayernPortal still describes the
+  rule. **Engineering could not establish the current status.**
+- **Question (Stadt).** *Is a Zweckentfremdungssatzung under the ZwEWG in
+  force in Bayreuth today? If so, from when and with which exemptions, and do
+  our units at Schulstraße and Opernstraße need a permit for short-term
+  letting?*
+- **Blocks launch.** It is not a website blocker, but a **precondition for
+  the business**.
+- **Status.** Open.
+
+## 17. Planning law and business registration — operational
+
+- **Question (Stadt/RA).**
+  - *Does short-term letting of each unit need a Nutzungsänderung or building
+    permit (§ 13a BauNVO; permit authority reportedly the Landratsamt since
+    2025)?*
+  - *Are there fire-safety requirements for our units (BayBO;
+    BayBStättV — reportedly only above 30 beds)?*
+  - *Is a Gewerbeanmeldung for the letting in place?*
+- **Blocks launch.** Operation.
+- **Status.** Open.
+
+## 18. Local tourism levy
+
+- **Issue.** No Kurbeitrag was found. Bavaria bans an overnight-stay tax (the
+  BayVerfGH upheld the ban in 2025). A Bayreuth tourism levy was proposed in
+  2025, and whether it was adopted is **unknown**.
+- **Question (Stadt/StB).** *Has Bayreuth adopted a Fremdenverkehrsbeitrag or
+  a comparable levy that we owe or must pass on to guests?*
+- **Blocks launch.** Only if adopted. It would change the total price (§ 3
+  PAngV).
+- **Status.** Open.
+
+## 19. Guest registration (Meldeschein) — operational
+
+- **Issue.** Since 01.01.2025 only foreign guests must complete the form, on
+  arrival. It is kept for 12 months, then destroyed within 3 months (§§ 29,
+  30 BMG). This is deliberately handled outside the website.
+- **Question (GF).** *Who completes and keeps the forms for foreign guests,
+  on paper or digitally (§ 29 Abs. 5 BMG), and who deletes them on time?*
+- **Blocks launch.** It is not a website blocker, but it is **live today**.
+- **Status.** Open.
 
 ---
 
-## 3. Is the displayed total actually the total? — **blocks direct booking**
+## Resolved in code on 23–25 Sep 2026 (no longer questions)
 
-**Where** The quote and payment steps.
-
-**Why it matters** German price-indication rules require the price a consumer
-must pay. Anything mandatory and payable on site — a local accommodation tax,
-a cleaning fee, a deposit — must be visible before payment. Nothing in the
-codebase computes such an amount; the quote renders what Beds24 returns.
-
-**Exact question** *"Are there any mandatory charges for a stay at Schulstraße
-that are not in the Beds24 rate — Kurtaxe, cleaning, deposit, pets, late
-check-in? For each: is it included in the displayed total, or must it be shown
-separately as payable on site, and in what wording?"* (See also item 12.)
-
----
-
-## 4. Payment button wording (Buttonlösung) — **blocks direct booking**
-
-**Where** The payment step. The PayPal button is rendered by PayPal's SDK; the
-surrounding copy is BoLaGio's.
-
-**Why it matters** § 312j Abs. 3 BGB requires the button that concludes a
-paid consumer contract to be labelled unambiguously ("zahlungspflichtig
-bestellen" or equivalent). Where a third-party payment button carries its own
-label, whether the requirement is satisfied — and what the surrounding copy
-must say — is a legal judgement.
-
-**Exact question** *"Does the PayPal button as rendered satisfy § 312j Abs. 3
-BGB for our flow, or must we place our own labelled confirmation step before
-it? If the latter, what exact label?"*
-
----
-
-## 5. Widerrufsrecht exemption wording — **blocks direct booking**
-
-**Where** `/agb`, and the checkout.
-
-**Why it matters** Accommodation for a specified date is normally exempt from
-the distance-selling right of withdrawal (§ 312g Abs. 2 Nr. 9 BGB). The
-exemption is widely relied on, but the **wording of the notice** telling the
-guest the right does not apply, and the conditions under which it holds, need
-confirmation. This has been flagged, never assumed, anywhere in the code.
-
-**Exact question** *"Please confirm that § 312g Abs. 2 Nr. 9 BGB applies to our
-bookings, and supply the exact notice wording to display, and where."*
-
----
-
-## 6. VAT treatment and invoice content — **blocks invoicing**
-
-**Where** `lib/finance/tax/*`, `docs/invoicing.md` §5, `docs/finance/vat.md`.
-
-**Why it matters** The finance layer computes VAT from configured tax codes.
-Which rate applies to short-term accommodation, how a separately-charged
-cleaning fee is treated, and whether any Kleinunternehmer or reverse-charge
-situation applies are tax determinations, not engineering ones. An invoice
-stating a rate nobody decided is a tax problem.
-
-**Exact question** *"For short-term furnished accommodation let by BoLaGio GmbH
-in Bayreuth: which VAT rate applies to the accommodation, and which to any
-separately-itemised cleaning fee, breakfast or minibar item? Please confirm the
-mandatory content of our guest invoices under § 14 UStG."*
-
----
-
-## 7. Privacy notice: processors and the privileges data — **blocks launch**
-
-**Where** `/datenschutz`.
-
-**Why it matters** The notice must name the processors and describe the
-processing. The current deployment involves **Cloudflare** (hosting/edge),
-**Supabase** (database), **Beds24** (channel manager), **PayPal** (payments,
-once enabled) and **n8n** plus an SMTP provider (transactional email). The
-Residence Privileges system added on this branch processes an **email address
-and consent evidence** for a purpose the notice does not yet describe.
-
-Whether international transfers arise (and on what basis) depends on where each
-processor actually hosts BoLaGio's data — a fact only BoLaGio can confirm from
-its contracts.
-
-**Exact question** *"Please update our privacy notice to cover: (a) each
-processor we use, with an AV-Vertrag in place for each; (b) the region each
-one stores data in and the transfer basis if outside the EU/EEA; (c) the
-Residence Privileges processing — email address, double opt-in state, and
-marketing consent evidence — with its legal basis and retention; and (d) the
-data subject rights contact."*
-
-**Also needed, not code:** an **AV-Vertrag (Art. 28 GDPR)** with each
-processor, and a **Verzeichnis von Verarbeitungstätigkeiten** entry per
-purpose. `lib/retention/policy.ts` is written to feed the latter.
-
----
-
-## 8. Marketing consent and double opt-in — **blocks marketing only**
-
-**Where** `/guest/privileges`, `lib/privileges/*`,
-`bolagio_guest_identities`.
-
-**What the implementation does** — so the adviser is reviewing facts:
-
-* The marketing checkbox is **not pre-checked** and is **not required** to
-  receive the benefit. The benefit is granted either way; only marketing
-  depends on the box. Consent is therefore not bundled into the service.
-* Consent is stored as **evidence**: timestamp, source (`qr_privileges`) and
-  the **wording version** shown at the time (`MARKETING_CONSENT_VERSION`).
-* The address is confirmed by a **double opt-in**: a link is emailed and the
-  identity is not verified — and earns nothing — until it is clicked. The link
-  expires after 72 hours, is single-use, and only its SHA-256 is stored.
-* A withdrawal column exists (`marketing_withdrawn_at`) and cannot predate the
-  consent it withdraws (database constraint).
-
-**What is NOT implemented** An unsubscribe link and a withdrawal endpoint. No
-marketing email can be sent yet, so nothing is unlawful today — but **sending
-the first marketing email without a working one-click withdrawal would be.**
-
-**Exact question** *"Does the described flow meet the requirements for
-consent-based email marketing in Germany (§ 7 UWG, Art. 7 GDPR)? Please
-confirm (a) the exact consent sentence to display, (b) the required content of
-the confirmation email, and (c) the required unsubscribe mechanism."*
-
----
-
-## 9. Retention periods, including the privileges identity — does not block
-
-**Where** `lib/retention/policy.ts`, `docs/data-retention.md`.
-
-Every `bolagio_*` table is classified with a purpose, its personal columns and
-a **proposed** period marked `NEEDS CONFIRMATION`. Nothing is automated; no row
-is deleted by any scheduler.
-
-One tension is worth the adviser's attention rather than a rubber stamp:
-
-> A privileges identity is **not** a booking record, so the commercial-document
-> retention under § 147 AO that protects booking data does not reach it.
-> Art. 7(1) GDPR requires the controller to be able to **demonstrate** consent,
-> which argues for keeping a consent record; Art. 5(1)(e) argues for deleting
-> personal data once it is no longer necessary. The proposal in the code is 36
-> months after the last interaction, 12 months for an unverified signup, and
-> retention of a **withdrawn** consent for the limitation period as evidence
-> that the withdrawal was honoured.
-
-**Exact question** *"Please confirm or correct each proposed retention period,
-and in particular how long we should keep a withdrawn marketing consent as
-evidence."*
-
----
-
-## 10. Meldeschein — does not block this release
-
-Guest registration is a legal obligation handled **outside** the checkout, on
-purpose: identity-document details do not belong in a payment flow and are
-deliberately absent from every table. It still needs an answer.
-
-**Exact question** *"What is our obligation for guest registration in Bayreuth
-for short-term lets, and what is the compliant process — paper on arrival, or a
-digital form? If digital, we will scope it as a separate system."*
-
----
-
-## 11. Review attribution — fix before promoting any rating
-
-**Where** Anywhere a rating or review count is shown, and any `AggregateRating`
-structured data.
-
-**Why it matters** A rating earned on Booking.com is a **Booking.com** rating.
-Presenting it as an all-platform, Google or BoLaGio rating is misleading, and
-`AggregateRating` markup that does not reflect reviews collected on the site is
-a structured-data policy problem as well as a fairness one.
-
-**Engineering note** No fake reviews or ratings were created on this branch and
-none exist in the codebase.
-
-**Exact question** *"May we display our Booking.com rating on our own site, and
-with what attribution wording?"*
-
----
-
-## 12. Kurtaxe / local accommodation tax — blocks if it applies
-
-**Where** Nothing implements it. The quote shows what Beds24 returns.
-
-**Exact question** *"Does the City of Bayreuth levy a Kurtaxe, Bettensteuer or
-comparable local accommodation tax on our lettings? If so: what is the rate,
-who owes it, must it be collected from the guest, and must it appear in the
-displayed price or as a charge payable on site?"*
-
----
-
-## What engineering has already done, so it need not be re-asked
-
-* **No cookies or tracking** are set by the site or the booking flow. No
-  analytics script is loaded. The PayPal SDK loads only when a guest reaches
-  the payment step. Fonts are self-hosted (`next/font`) — no external font
-  request, so no visitor IP reaches a third party before consent.
-* **Direct booking is OFF** behind a server-side gate that fails closed
-  (`DIRECT_BOOKING_ENABLED`, plus `bolagio_units.is_bookable` per unit).
-* **No guest personal data** appears in any log line, API response or webhook
-  response; this is enforced by an allow-list in `lib/booking/logger.ts` and
-  asserted by tests rather than left as a convention.
-* **Every `bolagio_*` table** has RLS on with no policy and browser roles
-  revoked. The only access is the service role held by the server.
-* **Nothing invents a fact.** Unverified property details are `undefined` and
-  the UI omits the section; unavailable financial data reads "Not yet
-  reconciled" and never `0`.
+- The checkout can no longer omit the cancellation terms. It fails closed.
+- The provider's cancellation text is no longer shown.
+- The terms evidence of each booking is stored.
+- The confirmation email requires the contract terms.
+- The order button states the payment obligation.
+- The payment method is stated at the start of the flow.
+- The dead EU-ODR reference was removed.
+- Privacy links appear at every point of collection.
+- The DOI confirms consent. Unsubscribe was built before any marketing.
+- Review emails are suppressed.
+- There is no tracking or non-essential storage, so **no cookie banner is
+  needed** (tested).
+- An "ab" price cannot render without its fee note.
+- The contrast and `lang` accessibility defects were fixed.
+- **`DIRECT_BOOKING_ENABLED` remains `false` on every environment.** It
+  cannot open while any `LEGAL_*` refusal exists.

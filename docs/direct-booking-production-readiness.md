@@ -13,12 +13,22 @@ room they do not get, or a room could be sold twice.
 
 ---
 
-## 1. The two gates
+## 1. The gates
 
 | Gate | Where | Scope |
 |---|---|---|
 | `DIRECT_BOOKING_ENABLED=true` | environment | the whole deployment |
+| no `validateEnvironment()` refusal | environment | the whole deployment |
+| **no legal gap** — `bookingLegalGaps()` empty | `lib/legal/*` (code, reviewed) | the whole deployment |
 | `bolagio_units.is_bookable = true` | database | per unit |
+
+The legal lock (2026-09-25) refuses while the cancellation policy, the
+no-withdrawal notice, the booking AGB, the privacy notice, the price-
+completeness confirmation or the company identity is unapproved. Its refusal
+codes (`LEGAL_*`) appear on the System page beside the environment refusals.
+`BOOKING_TEST_TERMS=true` satisfies it with loudly labelled sandbox texts on
+`local`/`staging` only — refused on production. See `LEGAL_REVIEW_REQUIRED.md`
+and `docs/legal/checkout-wording-for-approval.md`.
 
 The first is checked **server-side, before anything else**, on every endpoint
 that can reserve inventory or create a payment order. A hidden frontend button
@@ -96,10 +106,11 @@ Not code. Every one blocks launch.
 
 - [ ] **Booking terms (AGB)** cover a concluded direct booking, not only an
       enquiry. The current text was written for an enquiry flow.
-- [ ] **Cancellation policy** written, and shown before the guest pays.
-      `BookingQuote.cancellationPolicy` renders whatever Beds24 returns; if
-      Beds24 returns nothing, nothing is shown, and a booking flow that shows
-      no cancellation terms is a consumer-law problem.
+- [ ] **Cancellation policy** approved and entered in
+      `CANCELLATION_POLICIES` (`lib/legal/booking-terms.ts`). Technically
+      fixed 2026-09-25: the provider's text is no longer shown, the checkout
+      always renders BoLaGio's approved policy or the stated gap, and the gate
+      stays shut without one. The *wording* is still owed.
 - [ ] **Final total price** verified as the actual total. Anything payable on
       site (Kurtaxe, deposit) must be visible before payment.
 - [ ] **VAT / Kurtaxe treatment reviewed.** `taxCategory` records what the

@@ -44,6 +44,8 @@ values for every secret.
 | ☐ | `PAYMENT_REFUND_EXECUTION_ENABLED` | var | `false` or unset |
 | ☐ | `OPERATOR_PAID_CANCELLATION_ENABLED` | var | `false` or unset |
 | ☐ | `MESSAGING_TEST_COMPLETIONS_ALLOWED` | var | **unset**; set for a messaging rehearsal, then `wrangler secret delete` / remove |
+| ☐ | `BOOKING_TEST_TERMS` | var | `true` only for the scripted sandbox run (the checkout shows "TEST" terms), then remove |
+| ☐ | `PRIVILEGES_UNSUBSCRIBE_SECRET` | secret | ≥ 32 random characters; required before any marketing email |
 | ☐ | `BOOKING_*` clamps | var | optional |
 | ☐ | none of `ADMIN_PREVIEW_*`, `ADMIN_DEV_FIXTURES`, `BEDS24_API_BASE_URL`, `PAYPAL_SIMULATOR_URL`, `NEXT_PUBLIC_*` | — | confirm absent: `npx wrangler secret list --env staging` |
 

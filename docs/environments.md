@@ -46,6 +46,8 @@ A `refuse` finding shuts the direct-booking gate whatever
 | `PROVIDER_OVERRIDE_OUTSIDE_LOCAL` | `BEDS24_API_BASE_URL` (not Beds24) or `PAYPAL_SIMULATOR_URL` set on anything but `local`; the override is ignored **and** the configuration refused |
 | `REFUND_EXECUTION_UNVALIDATED` | `PAYMENT_REFUND_EXECUTION_ENABLED=true` on production (warn elsewhere) until the refund contract is validated in the sandbox |
 | `TEST_MESSAGING_ON_PRODUCTION` | `MESSAGING_TEST_COMPLETIONS_ALLOWED=true` on production |
+| `TEST_TERMS_OUTSIDE_STAGING` | `BOOKING_TEST_TERMS=true` on preview or production |
+| `LEGAL_*` (from `lib/legal/readiness.ts`) | gate on while a checkout text or the company identity is unapproved — see `LEGAL_REVIEW_REQUIRED.md` |
 
 Warnings (surfaced, no behaviour change): `APP_ENV_ASSUMED`,
 `DEMO_WITH_DATABASE`, `PAYPAL_MODE_INVALID`, `LIVE_BEDS24_ON_PREVIEW`,
@@ -84,6 +86,8 @@ Nothing below may be `NEXT_PUBLIC_`.
 | `PAYMENT_REFUND_EXECUTION_ENABLED` | var | optional | — | default off; **refused on production** until the sandbox refund validation is recorded |
 | `MESSAGING_CONTACT_EMAIL` / `MESSAGING_CONTACT_PHONE` | var | ✓ | — | rendered into guest messages; a template missing them fails safely (nothing is sent) |
 | `MESSAGING_TEST_COMPLETIONS_ALLOWED` | var | local / staging only | — | **refused on production** |
+| `BOOKING_TEST_TERMS` | var | local / staging only | — | sandbox checkout texts labelled "TEST"; **refused on preview and production** |
+| `PRIVILEGES_UNSUBSCRIBE_SECRET` | secret | ✓ before any marketing | — | ≥ 32 chars; signs unsubscribe links. Without it no marketing audience can be read |
 | `PAYPAL_SIMULATOR_URL`, `BEDS24_API_BASE_URL` (non-Beds24), `PROVIDER_TIMEOUT_MS` | var | **local only** | — | ignored and refused elsewhere (`PROVIDER_OVERRIDE_OUTSIDE_LOCAL`) |
 | `INVOICE_*` | var | optional | — | see `docs/invoicing.md`; absence blocks invoicing, never defaults a rate |
 
