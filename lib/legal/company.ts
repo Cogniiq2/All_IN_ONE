@@ -77,25 +77,23 @@ export interface CompanyIdentity {
 export const COMPANY: CompanyIdentity = {
   legalName: 'BoLaGio GmbH',
 
-  // Fill ONLY from the Handelsregister / verified company records.
-  street: null,
-  postalCode: null,
-  city: null,
+  street: 'Harburgerstraße 5',
+  postalCode: '95444',
+  city: 'Bayreuth',
   country: 'Deutschland',
 
-  // Fill with every registered Geschäftsführer.
-  managingDirectors: null,
+  managingDirectors: ['Milica Popovic'],
 
-  // Fill exactly from the Handelsregister.
+  // Leave null until verified from the Handelsregister.
   registerCourt: null,
   registerNumber: null,
 
-  // Fill only where actually issued.
+  // Not issued / not known yet.
   vatId: null,
   economicId: null,
 
   // Existing central contact data.
-  // Verify that these addresses/numbers are actively monitored by BoLaGio.
+  // Verify that these are actively monitored by BoLaGio.
   email: contact.email,
   phone: contact.phone,
 
@@ -167,7 +165,7 @@ export function companyIdentityGaps(
  * Human-readable contracting-party line used in checkout and confirmations.
  *
  * Example:
- * "BoLaGio GmbH, Musterstraße 1, 95444 Bayreuth"
+ * "BoLaGio GmbH, Harburgerstraße 5, 95444 Bayreuth"
  */
 export function contractingPartyLine(
   company: CompanyIdentity = COMPANY
