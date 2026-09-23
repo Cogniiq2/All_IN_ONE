@@ -1,250 +1,568 @@
 # Checkout wording BoLaGio must approve before direct booking
 
-**This is not legal advice and none of the wording below is approved.** It sets
-out, as options and templates, every text the direct-booking checkout needs.
-BoLaGio decides the commercial terms and counsel approves the wording. Nothing
-here is live. The checkout stays shut until each item is entered in code as an
-approved, versioned record (§8).
+**This document records BoLaGio's commercial decisions and the legal wording that still requires final approval where explicitly stated.**
 
-Each item says where it appears, what the law requires, the decision BoLaGio
-has to make, and a neutral template with `[placeholders]`.
+Nothing marked **Legal review: PENDING** may be treated as legally approved in `lib/legal/booking-terms.ts`.
+
+The checkout remains blocked until every required legal text has been entered in code as an approved, versioned record.
 
 ---
 
 ## 1. Cancellation policy — `CANCELLATION_POLICIES`
 
-**Shown:** checkout (above the button), in the confirmation email, in the AGB.
+**Status**
 
-**Why:**
-- The cancellation terms and the costs of cancelling are essential contract
-  information. The guest must see them before paying (§ 312j Abs. 2 BGB,
-  Art. 246a EGBGB).
-- They also go into the confirmation on a durable medium (§ 312f Abs. 2 BGB).
-- Without a contractual policy, § 537 BGB applies (a guest who does not stay
-  still owes the price, less saved expenses and income from reletting). That
-  is a legal fallback, not a text the checkout may leave out.
+- BoLaGio commercial decision: **APPROVED**
+- Legal review: **PENDING**
+- Technical activation: **NOT YET**
 
-**BoLaGio decides:**
+**Shown:** checkout above the payment button, booking confirmation and booking AGB.
 
-1. **Model.** Choose one:
-   - (A) free cancellation until `[N]` days before arrival, then `[X] %`
-   - (B) tiered: `[X] %` from `[N1]` days, `[Y] %` from `[N2]` days
-   - (C) a non-refundable rate, if offered as a separate, clearly labelled and
-     cheaper rate
-2. **No-show.** What is owed, and whether saved costs (e.g. cleaning) are
-   credited.
-3. **Refunds.** How and when a refund is paid (same payment method, within
-   `[14]` days).
-4. **Reletting.** Whether an amount earned by reletting the nights is credited.
-5. **Deadline.** The time zone and clock time (e.g. 23:59 Bayreuth time).
-6. **Beds24.** Whether the policy configured on the Beds24 channel is the same
-   one. It must be.
+### BoLaGio commercial decision
 
-**Template:**
+BoLaGio will use the following standard direct-booking cancellation policy:
 
-> **DE —** Sie können Ihre Buchung bis `[N]` Tage vor dem Anreisetag
-> (`[Uhrzeit]` Uhr, Ortszeit Bayreuth) kostenfrei stornieren. Bei einer
-> späteren Stornierung oder Nichtanreise berechnen wir `[X] %` des
-> Gesamtpreises. `[Ersparte Aufwendungen / Einnahmen aus einer
-> Weitervermietung rechnen wir an.]` Ihnen bleibt der Nachweis
-> vorbehalten, dass uns kein oder ein geringerer Schaden entstanden ist.
-> Erstattungen erfolgen innerhalb von `[14]` Tagen über das verwendete
-> Zahlungsmittel. Stornierungen richten Sie bitte an `[E-Mail]`.
+- Free cancellation until **7 days before arrival**
+- Deadline: **23:59 Bayreuth local time**
+- Later cancellation: **80% of the accommodation price**
+- No-show without prior cancellation: **90% of the accommodation price**
+- Saved expenses must be credited
+- Income from re-letting the cancelled nights must be credited
+- The guest may prove that BoLaGio suffered no loss or a substantially lower loss
+- Refunds are returned through the original payment method
+- Refund target: within **14 days**
+- Cleaning costs or comparable costs which BoLaGio does not incur after cancellation are not included in the cancellation charge
+
+### German wording for legal approval
+
+> **Stornierungsbedingungen**
 >
-> **EN —** You may cancel free of charge until `[N]` days before the day of
-> arrival (`[time]`, Bayreuth local time). For a later cancellation or a
-> no-show we charge `[X] %` of the total price. `[We credit saved expenses and
-> income from reletting.]` You remain free to show that we suffered no loss or
-> a lower one. Refunds are made within `[14]` days to the payment method used.
-> Please send cancellations to `[email]`.
+> Sie können Ihre Buchung bis 7 Tage vor dem Anreisetag um 23:59 Uhr
+> (Ortszeit Bayreuth) kostenfrei stornieren.
+>
+> Bei einer späteren Stornierung berechnen wir 80 % des Beherbergungspreises.
+>
+> Bei Nichtanreise ohne vorherige Stornierung berechnen wir 90 % des
+> Beherbergungspreises.
+>
+> Der Beherbergungspreis umfasst nicht solche Kosten, die uns infolge der
+> Stornierung nicht entstehen, insbesondere nicht eine nicht durchgeführte
+> Endreinigung oder vergleichbare ersparte Aufwendungen.
+>
+> Ersparte Aufwendungen sowie Einnahmen aus einer anderweitigen Vermietung
+> der stornierten Übernachtungen werden angerechnet.
+>
+> Ihnen bleibt ausdrücklich der Nachweis vorbehalten, dass uns kein Schaden
+> oder ein wesentlich geringerer Schaden entstanden ist.
+>
+> Erstattungen erfolgen innerhalb von 14 Tagen über das ursprünglich
+> verwendete Zahlungsmittel.
+>
+> Stornierungen richten Sie bitte an die im Impressum angegebene
+> Kontaktadresse.
 
-**Counsel to confirm:**
-- that the lump sum is reasonable (§ 309 Nr. 5 BGB)
-- that the sentence allowing the guest to show a lower loss is sufficient
-- the wording for a non-refundable rate, if one is offered
+### English wording for legal approval
+
+> **Cancellation Policy**
+>
+> You may cancel your booking free of charge until 11:59 p.m.
+> (Bayreuth local time) 7 days before the day of arrival.
+>
+> For a later cancellation, we charge 80% of the accommodation price.
+>
+> In the event of a no-show without prior cancellation, we charge 90% of the
+> accommodation price.
+>
+> The accommodation price does not include costs which we do not incur as a
+> result of the cancellation, in particular final cleaning that is not carried
+> out or comparable saved expenses.
+>
+> Saved expenses and any income received from re-letting the cancelled nights
+> will be credited.
+>
+> You expressly remain entitled to prove that we suffered no loss or a
+> significantly lower loss.
+>
+> Refunds are made within 14 days to the payment method originally used.
+>
+> Please send cancellations to the contact address stated in our legal notice.
+
+### Still to confirm before activation
+
+Counsel should confirm:
+
+1. whether the 80% late-cancellation lump sum is reasonable;
+2. whether the 90% no-show lump sum is reasonable;
+3. whether the lower-loss evidence wording is sufficient;
+4. whether the treatment of cleaning and other saved expenses is sufficiently clear;
+5. whether the policy should refer to the accommodation price or another defined contractual price basis;
+6. whether the same rules can be used consistently across all BoLaGio direct-booking apartments.
+
+### Beds24 / OTA consistency
+
+The direct-booking policy must not accidentally conflict with the rate conditions configured in Beds24, Booking.com or Airbnb.
+
+OTA rates may have different contractual cancellation rules where the platform booking itself clearly establishes those different terms.
 
 ---
 
-## 2. Right of withdrawal — `WITHDRAWAL_NOTICES` (with `maxNights`)
+## 2. Right of withdrawal — `WITHDRAWAL_NOTICES` with `maxNights`
 
-**Shown:** checkout, in the confirmation email, in the AGB.
+**Status**
 
-**Why:**
-- § 312g Abs. 2 Nr. 9 BGB: there is no right of withdrawal for
-  accommodation "for other than residential purposes" when the contract fixes
-  a specific date or period.
-- Art. 246a § 1 Abs. 3 Nr. 1 EGBGB: the guest must be told that they cannot
-  withdraw.
-- Do **not** show a generic 14-day withdrawal notice. It would grant a right
-  that does not exist.
+- Commercial decision: **PENDING**
+- Legal review: **PENDING**
+- Technical activation: **NOT YET**
 
-**BoLaGio / counsel decides:**
-- The wording.
-- **`maxNights`**: the longest stay for which the exemption can safely be
-  relied on. A long stay may be *Wohnzwecke*. The withdrawal right would then
-  apply, and so would the withdrawal button of § 356a BGB (in force since
-  19 June 2026) and tenancy law. Online booking refuses any longer stay, which
-  goes to the enquiry flow instead.
+**Shown:** checkout, booking confirmation and booking AGB.
 
-**Template:**
+### Legal issue
 
-> **DE —** Ein Widerrufsrecht besteht nicht. Nach § 312g Abs. 2 Nr. 9 BGB
-> gilt das gesetzliche Widerrufsrecht nicht für Verträge über die Beherbergung
-> zu anderen als Wohnzwecken, wenn — wie hier — ein bestimmter Zeitraum
-> vereinbart ist. Es gelten unsere Stornierungsbedingungen.
+For accommodation for purposes other than residential use where a specific date or period is agreed, § 312g Abs. 2 Nr. 9 BGB may exclude the statutory right of withdrawal.
+
+The checkout therefore must not automatically show a generic 14-day withdrawal notice for ordinary short-term accommodation if the statutory exception applies.
+
+However, longer stays may raise the question whether the accommodation is being provided for residential purposes.
+
+The software therefore requires a legally approved `maxNights` value.
+
+Any stay exceeding this limit must go to the enquiry flow instead of direct online booking.
+
+### Proposed wording for legal approval
+
+> **DE**
 >
-> **EN —** There is no right of withdrawal. Under § 312g(2) no. 9 of the German
-> Civil Code, the statutory right of withdrawal does not apply to contracts for
-> accommodation for other than residential purposes where, as here, a specific
-> period is agreed. Our cancellation terms apply.
+> Ein Widerrufsrecht besteht nicht. Nach § 312g Abs. 2 Nr. 9 BGB gilt das
+> gesetzliche Widerrufsrecht nicht für Verträge über die Beherbergung zu
+> anderen als Wohnzwecken, wenn – wie hier – ein bestimmter Zeitraum
+> vereinbart ist. Es gelten unsere Stornierungsbedingungen.
 
-**`maxNights` proposal to discuss:** `[28]`. Engineering is not recommending a
-number; this is counsel's decision. The code currently caps any quote at 90
-nights.
+> **EN**
+>
+> There is no right of withdrawal. Under § 312g(2) no. 9 of the German Civil
+> Code, the statutory right of withdrawal does not apply to contracts for
+> accommodation for purposes other than residential use where, as here, a
+> specific period is agreed. Our cancellation terms apply.
+
+### Decision still required
+
+Counsel must determine:
+
+- approved wording;
+- longest permitted direct-booking stay;
+- the `maxNights` value used by the software;
+- whether longer stays require different consumer-law or tenancy-law treatment.
+
+Current discussion value only:
+
+`28 nights`
+
+This is **not approved**.
+
+Engineering must not turn this proposal into a legal rule without approval.
 
 ---
 
 ## 3. Price completeness — `PRICE_COMPLETENESS`
 
-**Shown:** directly under the total in the checkout.
+**Status**
 
-**Why:**
-- § 3 PAngV: the total price must include VAT and every other unavoidable
-  component.
-- § 6 PAngV: for distance selling, say that prices include VAT and whether
-  further costs apply.
-- § 312j Abs. 2 BGB and Art. 246a § 1 Abs. 1 Nr. 4 EGBGB: the total, and any
-  additional costs, directly before the order button.
+- Commercial confirmation: **PENDING**
+- Tax confirmation: **PENDING**
+- Technical activation: **NOT YET**
 
-**BoLaGio / tax adviser confirms, for each unit in Beds24:**
+**Shown:** immediately beneath the final total in checkout.
 
-1. That the Beds24 offer total already contains:
-   - the accommodation
-   - the final cleaning fee, if it is mandatory
-   - any per-person or per-stay fee
-2. The VAT status. Standard VAT at 7 % on accommodation, or Kleinunternehmer
-   (§ 19 UStG)?
-3. Every mandatory charge **not** in the total and payable on site: local
-   levy, pets, deposit. For each, the amount and its basis. **An empty list is
-   itself a confirmation.**
+Before direct booking is activated, BoLaGio must confirm exactly what the Beds24 total contains.
 
-**Template:**
+### Required confirmation
 
-> **DE —** Gesamtpreis inkl. `[7 %]` gesetzlicher Umsatzsteuer und
-> Endreinigung. `[Keine weiteren Kosten vor Ort.]`
+For every BoLaGio unit confirm whether the returned price includes:
+
+1. accommodation;
+2. mandatory final cleaning;
+3. mandatory per-person charges;
+4. mandatory per-stay charges;
+5. VAT;
+6. any mandatory local charge.
+
+Also identify every mandatory amount not included in the displayed total.
+
+### VAT question
+
+Tax adviser must confirm:
+
+- whether BoLaGio charges VAT;
+- the applicable VAT treatment of accommodation;
+- VAT treatment of cleaning;
+- VAT treatment of additional services;
+- whether any Kleinunternehmer treatment applies.
+
+### Draft price statement if VAT applies as expected
+
+Not approved:
+
+> **DE**
 >
-> **EN —** Total price incl. `[7 %]` statutory VAT and final cleaning.
-> `[No further charges on site.]`
+> Gesamtpreis inkl. gesetzlicher Umsatzsteuer und Endreinigung.
+> Keine weiteren verpflichtenden Kosten vor Ort, sofern im Buchungsangebot
+> nicht ausdrücklich anders angegeben.
 
-If BoLaGio is a Kleinunternehmer, the statement changes: no VAT is shown, and
-a note refers to § 19 UStG.
+> **EN**
+>
+> Total price including statutory VAT and final cleaning.
+> No further mandatory charges are payable on site unless expressly stated
+> otherwise in the booking offer.
+
+Do not activate this text until the actual price composition is confirmed.
+
+### On-site charges
+
+`onSiteCharges` must contain every mandatory charge not already contained in the Beds24 total.
+
+An empty array means BoLaGio has positively confirmed that there are no further mandatory on-site charges.
+
+It must never be assumed automatically.
 
 ---
 
 ## 4. Company identity — `lib/legal/company.ts`
 
-**Why:**
-- § 5 DDG (Impressum)
-- Art. 246a § 1 Abs. 1 Nr. 2–3 EGBGB (the trader's identity in the checkout)
-- Art. 13 GDPR (the controller)
+**Status**
 
-Supply these from the Handelsregister extract:
-- registered address with house number
-- every Geschäftsführer
-- register court and HRB number
-- USt-IdNr. (if issued)
-- a **monitored** email address
+Partially completed.
 
-Also supply the person responsible under § 18 Abs. 2 MStV, if counsel treats
-the journal as journalistic-editorial content.
+Current verified information supplied by BoLaGio:
+
+- Legal name: **BoLaGio GmbH**
+- Registered address:
+  **Harburgerstraße 5, 95444 Bayreuth**
+- Geschäftsführer:
+  **Milica Popovic**
+
+Still missing / to be verified:
+
+- Register court
+- HRB number
+- USt-IdNr., if issued
+- Wirtschafts-Identifikationsnummer, if issued and relevant
+- Verification that the configured company email is actively monitored
+- Verification that the configured phone number is correct
+
+### IMPORTANT
+
+Register court and HRB number must be copied exactly from the Handelsregister.
+
+They must not be guessed merely from the company's location.
 
 ---
 
-## 5. Consumer dispute resolution (§ 36 VSBG) — `COMPANY.consumerDisputeStatement`
+## 5. Consumer dispute resolution — § 36 VSBG
 
-**Why:**
-- A business with a website or AGB must say whether it takes part in
-  consumer arbitration.
-- It is exempt if it had **10 or fewer employees on 31 December of the
-  previous year** (§ 36 Abs. 3 VSBG).
-- The EU ODR platform link is no longer required. The platform closed on
-  20 July 2025.
+**Status**
 
-**Template (recommended even if exempt):**
+- Applicability: **PENDING**
+- Final wording: **PENDING**
 
-> **DE —** Wir sind nicht bereit und nicht verpflichtet, an
-> Streitbeilegungsverfahren vor einer Verbraucherschlichtungsstelle
-> teilzunehmen.
+BoLaGio must determine whether the information obligation applies.
+
+The employee-count exemption must also be checked using the legally relevant headcount date.
+
+### Candidate wording
+
+Not approved:
+
+> **DE**
 >
-> **EN —** We are neither willing nor obliged to take part in dispute
-> resolution proceedings before a consumer arbitration board.
+> Wir sind nicht bereit und nicht verpflichtet, an Streitbeilegungsverfahren
+> vor einer Verbraucherschlichtungsstelle teilzunehmen.
+
+> **EN**
+>
+> We are neither willing nor obliged to participate in dispute resolution
+> proceedings before a consumer arbitration board.
+
+Do not publish this statement until applicability and the underlying factual position have been confirmed.
+
+The former EU Online Dispute Resolution platform must not be linked as an active dispute platform.
 
 ---
 
-## 6. Marketing consent (Residence Privileges) — `MARKETING_CONSENT_APPROVAL`
+## 6. Marketing consent — Residence Privileges
 
-**Current wording, version `2026-09-25.1`** (on `/guest/privileges`):
+**Status**
 
-> **DE —** Ja, die BoLaGio GmbH darf mir gelegentlich per E-Mail Angebote und
+- Technical double opt-in: implemented
+- Unsubscribe: implemented
+- Marketing activation: **BLOCKED**
+- Consent wording approval: **PENDING**
+
+Current Residence Privileges consent wording:
+
+> **DE**
+>
+> Ja, die BoLaGio GmbH darf mir gelegentlich per E-Mail Angebote und
 > Neuigkeiten zu ihren Apartments in Bayreuth senden. Meine Einwilligung wird
 > erst wirksam, wenn ich sie über den Link in der Bestätigungs-E-Mail
 > bestätige, und ich kann sie jederzeit mit Wirkung für die Zukunft
-> widerrufen — über den Abmeldelink in jeder E-Mail oder formlos per Nachricht
+> widerrufen – über den Abmeldelink in jeder E-Mail oder formlos per Nachricht
 > an BoLaGio.
 
-**Also to approve:**
-1. **The confirmation email** (n8n template `guest_privileges_verify`). It is
-   transactional: one sentence, one link, **no advertising**. It has two
-   purposes, `verify_address` and `confirm_marketing_consent`.
-2. **The footer of every marketing email.** Identity of the sender, the
-   unsubscribe link, and the `List-Unsubscribe` / `List-Unsubscribe-Post`
-   headers. These are provided by `unsubscribeLinks()`.
+Before any marketing email is sent:
 
-**To record the approval:** set `MARKETING_CONSENT_APPROVAL` with the approved
-`versions`. Consents recorded under any other wording version are not
-marketable.
+1. consent wording must be approved;
+2. double opt-in must be functioning;
+3. the confirmation email must remain transactional;
+4. unsubscribe must function;
+5. every marketing email must contain the required sender identity and unsubscribe option;
+6. mailing-list access must remain technically blocked until the approval flag is configured.
+
+Historical consent and withdrawal evidence must not be overwritten.
 
 ---
 
 ## 7. Review / feedback emails — `REVIEW_REQUEST_BASIS`
 
-**Why:**
-- The BGH treats an email asking for feedback as advertising (VI ZR 225/17,
-  10.07.2018).
-- It then needs either prior consent, or the § 7 Abs. 3 UWG existing-customer
-  exemption. The exemption requires, among other things, a notice of the
-  right to object **when the address is collected**, and the checkout does
-  not give one today.
+**Status**
 
-**Decision:** choose one:
-- keep review requests off (the current state)
-- add an objection notice to the checkout (text for counsel), then record the
-  basis
-- ask for consent
+Review-request emails: **OFF**
+
+They must remain disabled until BoLaGio has established and documented a lawful basis for them.
+
+Options to review later:
+
+- specific consent;
+- an applicable existing-customer marketing basis with all required notices;
+- no automated review-request emails.
+
+No automatic review-request email should be enabled merely because the guest has completed a stay.
 
 ---
 
-## 8. How an approval enters the code
+## 8. Booking AGB — `BOOKING_TERMS_DOCUMENTS`
 
-Append a record. Never edit or delete one: bookings store the version they
-were shown.
+**Status**
+
+- Direct-booking AGB: **PENDING**
+- Legal review: **PENDING**
+- Technical activation: **BLOCKED**
+
+The existing `/agb` page must not automatically be treated as the governing direct-booking contract terms unless it has been reviewed for this booking flow.
+
+The final direct-booking AGB should consistently cover at least:
+
+- contracting party;
+- contract formation;
+- accommodation/service scope;
+- price;
+- payment;
+- PayPal flow;
+- cancellation;
+- no-show;
+- re-letting;
+- saved expenses;
+- check-in/check-out;
+- guest obligations;
+- house rules;
+- damage;
+- liability;
+- cancellation by BoLaGio where applicable;
+- force-majeure issues where appropriate;
+- withdrawal-right exception where applicable;
+- applicable law;
+- consumer dispute information where applicable.
+
+The exact contract-formation point in the sequence
+
+`hold → PayPal → confirmation`
+
+must be reviewed before the AGB is approved.
+
+---
+
+## 9. Privacy notice — `PRIVACY_NOTICES`
+
+**Status**
+
+- Technical privacy-page structure: implemented
+- Final controller information: partially complete
+- Processor information: **PENDING**
+- Legal approval: **PENDING**
+
+The privacy notice must cover at least:
+
+- direct-booking guests;
+- enquiry-form users;
+- Booking.com guests;
+- Airbnb guests;
+- Beds24 processing;
+- Supabase;
+- Cloudflare;
+- n8n;
+- SMTP/email provider;
+- PayPal once used;
+- Residence Privileges;
+- legal retention requirements;
+- data-subject rights;
+- international transfers where applicable.
+
+### Art. 14 GDPR operational issue
+
+Where BoLaGio receives personal information indirectly through Booking.com,
+Airbnb or another platform, the Art. 14 information process must be implemented
+within the applicable deadline.
+
+An operational owner must be assigned for this process.
+
+---
+
+## 10. Processor / hosting information
+
+Still required from BoLaGio:
+
+For each service identify:
+
+- contracting company;
+- DPA / AVV status;
+- data-processing region;
+- relevant international transfer mechanism where applicable.
+
+Services currently requiring confirmation:
+
+- Cloudflare
+- Supabase
+- Beds24
+- n8n
+- SMTP/email provider
+- PayPal once activated
+- any analytics provider later introduced
+
+### n8n
+
+If Cogniiq operates the n8n infrastructure as a separate company/service provider for BoLaGio, the processing relationship must be documented appropriately.
+
+---
+
+## 11. Cookies / tracking
+
+**Current status**
+
+The legal audit found no non-essential tracking requiring a consent banner in the current implementation.
+
+A technical test checks that tracking has not silently been introduced.
+
+### Rule
+
+Do not add a cookie banner merely for appearance.
+
+If analytics, advertising pixels, behavioural tracking or other non-essential storage/access is introduced later, reassess the consent requirement before deployment.
+
+---
+
+## 12. Accessibility / BFSG
+
+**Status**
+
+- Several technical accessibility fixes implemented
+- BFSG applicability: **PENDING**
+
+Already addressed technically:
+
+- focus-ring visibility;
+- small-text contrast;
+- dynamic `<html lang>`.
+
+Still required:
+
+Determine whether and to what extent the Barrierefreiheitsstärkungsgesetz applies to BoLaGio's consumer-facing booking service and whether an exemption applies.
+
+Do not treat implementation fixes as proof that all statutory accessibility obligations have been satisfied.
+
+---
+
+## 13. Bayreuth / Bavaria accommodation compliance
+
+**Status**
+
+Separate launch-compliance review required.
+
+Items requiring confirmation include:
+
+- Zweckentfremdungsrecht applicable in Bayreuth;
+- building-law permitted use;
+- possible Nutzungsänderung;
+- fire-safety requirements;
+- guest registration / Meldeschein process;
+- foreign-guest documentation where applicable;
+- any Bayreuth tourism or accommodation levy;
+- operational responsibility for mandatory guest-registration records.
+
+No rule from Munich, Berlin or another municipality may automatically be assumed to apply in Bayreuth.
+
+---
+
+## 14. Information currently still required from BoLaGio
+
+### Company
+
+Still needed:
+
+- register court;
+- HRB number;
+- USt-IdNr. if issued;
+- Wirtschafts-Identifikationsnummer if issued/relevant.
+
+Already supplied:
+
+- BoLaGio GmbH
+- Harburgerstraße 5
+- 95444 Bayreuth
+- Geschäftsführer: Milica Popovic
+
+### Tax / pricing
+
+Still needed:
+
+- VAT status;
+- exact VAT treatment;
+- whether Beds24 totals include cleaning;
+- whether any mandatory amount is payable on site.
+
+### Business size
+
+Still needed:
+
+- employee headcount on the legally relevant reference date;
+- annual turnover where required for BFSG or other exemption analysis.
+
+### Processors
+
+Still needed:
+
+- contracting entity and processing region for Cloudflare;
+- Supabase;
+- Beds24;
+- n8n;
+- SMTP provider;
+- PayPal.
+
+---
+
+## 15. How approved wording enters the code
+
+Approved legal texts must be entered as immutable versioned records.
+
+Example:
 
 ```ts
-// lib/legal/booking-terms.ts
 export const CANCELLATION_POLICIES: readonly ApprovedText[] = [
   {
     version: '2026-10-15.1',
     approvedAt: '2026-10-15',
-    approvedBy: 'Geschäftsführung nach anwaltlicher Prüfung (Kanzlei …)',
-    text: { de: '…', en: '…' },
+    approvedBy: 'Geschäftsführung nach anwaltlicher Prüfung',
+    text: {
+      de: '...',
+      en: '...',
+    },
   },
 ];
-```
-
-Do the same for `WITHDRAWAL_NOTICES`, which also needs `maxNights`,
-`BOOKING_TERMS_DOCUMENTS` (`path: '/agb'`), `PRIVACY_NOTICES`
-(`path: '/datenschutz'`) and `PRICE_COMPLETENESS`.
-
-The change goes through code review. `npm test` then shows the legal gaps
-closing. `tests/legal-checkout.test.ts` asserts today's refusals and will need
-updating in the same change, which is deliberate.
