@@ -26,7 +26,7 @@ to Beds24 or PayPal from a browser.
 | `/admin/properties` | Unit registry, mapping ids, cache freshness, today's state. Read-only. |
 | `/admin/payments` | Local payment records beside their bookings; recent webhook events. |
 | `/admin/system` | Measured health, queues, recent jobs/operations/outbox, operator audit. |
-| `/admin/finance` … | **Finance & Tax** (17 sections: overview, inbox, revenue, expenses, transactions, documents, VAT, taxes, P&L, cash flow, properties, reconciliation, minibar, invoices, imports, accountant, settings). Requires `finance.view`. See `docs/finance/architecture.md`. |
+| `/admin/finance` … | **Finance & Tax** (18 sections: overview, inbox, revenue, expenses, transactions, documents, VAT, taxes, P&L, cash flow, properties, reconciliation, Booking.com, minibar, invoices, imports, accountant, settings). Requires `finance.view`. See `docs/finance/architecture.md`. |
 
 Every `/admin` response carries `X-Robots-Tag: noindex, nofollow, noarchive`,
 `Cache-Control: no-store`, a strict `Content-Security-Policy`

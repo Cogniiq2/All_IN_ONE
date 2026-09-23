@@ -144,6 +144,15 @@ export interface ImportBatchRow {
 
 export interface ImportRowRow {
   id: string; batch_id: string; row_no: number; raw: Record<string, unknown>; parsed: Record<string, unknown> | null; status: string; error: string | null; transaction_id: string | null; payment_id: string | null;
+  /** The OTA settlement line this row became or was recognised as (Booking.com finance statement). */
+  settlement_id?: string | null;
+}
+
+export type { SettlementRow, ReservationCandidate } from '@/lib/finance/settlements';
+
+/** An OTA payout anchor. Totals are never read from here: they are summed from the settlement lines. */
+export interface OtaPayoutRow {
+  id: string; provider: string; payout_id: string; payout_date: string; currency: string; bank_state: string; bank_payment_id: string | null; bank_matched_at: string | null; first_import_batch_id: string; created_at: string;
 }
 
 export interface MinibarProductRow {
@@ -255,6 +264,16 @@ export interface FinanceRowSource {
   exports(limit: number): Promise<ExportRow[]>;
   importBatches(limit: number): Promise<ImportBatchRow[]>;
   importBatch(id: string): Promise<{ batch: ImportBatchRow; rows: ImportRowRow[] } | null>;
+  /**
+   * Booking.com statement lines. Without `batchId`: current lines and
+   * amendments awaiting review, with the period applied to the payout date or
+   * the check-out date. With `batchId`: every line that batch created, in any
+   * state.
+   */
+  otaSettlements(filter: { from?: string | null; to?: string | null; basis?: 'payout' | 'checkout'; batchId?: string | null; ids?: string[] | null; limit?: number }): Promise<import('@/lib/finance/settlements').SettlementRow[]>;
+  otaPayouts(): Promise<OtaPayoutRow[]>;
+  /** Local reservations by exact channel reference — the match input. No guest field. */
+  reservationsByChannelReference(refs: string[]): Promise<import('@/lib/finance/settlements').ReservationCandidate[]>;
   minibarProducts(): Promise<MinibarProductRow[]>;
   minibarStock(): Promise<MinibarStockRow[]>;
   minibarMovements(limit: number, productId?: string | null): Promise<MinibarMovementRow[]>;

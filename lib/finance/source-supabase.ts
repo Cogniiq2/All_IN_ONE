@@ -11,7 +11,7 @@ import 'server-only';
 import { supabaseAdmin } from '@/lib/supabase/server';
 import type {
   AccountRow, AssetRow, CategoryRow, CashMonthlyRow, CounterpartyRow, DocumentLinkRow, DocumentRow, ExceptionCountsRow, ExportRow, FinanceRowSource, ImportBatchRow,
-  ImportRowRow, InvoiceLineRow, InvoiceRow, LineRow, MinibarMovementRow, MinibarProductRow, MinibarStockRow, OverrideRow, PaymentRow, PeriodRow, PlMonthlyRow, PolicyRow,
+  ImportRowRow, OtaPayoutRow, ReservationCandidate, SettlementRow, InvoiceLineRow, InvoiceRow, LineRow, MinibarMovementRow, MinibarProductRow, MinibarStockRow, OverrideRow, PaymentRow, PeriodRow, PlMonthlyRow, PolicyRow,
   ReconciliationRow, ReserveRow, StayRow, TaxAdjustmentRow, TaxCodeRow, TaxEstimateRow, TaxNoticeRow, TaxPaymentRow, TaxPeriodRow, TaxRateRowDb, TransactionQuery,
   TransactionRow, TurnoverCostRow, UnitMonthlyRow,
 } from '@/lib/finance/rows';
@@ -35,6 +35,10 @@ function num<T extends object>(row: T, keys: (keyof T)[]): T {
 }
 
 const TX_NUM: (keyof TransactionRow)[] = ['net_cents', 'vat_cents', 'gross_cents'];
+
+// No guest field exists on the settlement table; this list is also the whole of what a screen can see.
+const SETTLEMENT = 'id, provider, identity_key, content_sha256, row_type, booking_number, payout_id, payout_date, check_in, check_out, currency, gross_cents, commission_cents, payment_service_fee_cents, net_cents, source_commission_cents, source_payment_service_fee_cents, reservation_status, payment_status, payments_service_provider, reservation_id, unit_id, match_state, match_candidates, local_gross_cents, local_currency, gross_delta_cents, gross_state, matched_at, amendment_state, supersedes_id, ledger_state, revenue_transaction_id, commission_transaction_id, fee_transaction_id, import_batch_id, import_row_id, created_by, created_at';
+const SETTLEMENT_NUM: (keyof SettlementRow)[] = ['gross_cents', 'commission_cents', 'payment_service_fee_cents', 'net_cents', 'source_commission_cents', 'source_payment_service_fee_cents', 'local_gross_cents', 'gross_delta_cents', 'match_candidates'];
 const LINE_NUM: (keyof LineRow)[] = ['net_cents', 'vat_cents', 'gross_cents', 'reverse_charge_vat_cents', 'deductible_bp', 'rate_bp', 'line_no'];
 const PAY_NUM: (keyof PaymentRow)[] = ['amount_cents', 'fee_cents'];
 
@@ -283,9 +287,35 @@ export function supabaseFinanceSource(): FinanceRowSource {
       const { data, error } = await db().from('bolagio_finance_import_batches').select('id, source_type, adapter, adapter_version, filename, sha256, byte_size, row_count, valid_rows, error_rows, duplicate_rows, status, error, imported_at, created_by, created_at').eq('id', id).maybeSingle();
       if (error) throw error;
       if (!data) return null;
-      const { data: rows, error: rerr } = await db().from('bolagio_finance_import_rows').select('id, batch_id, row_no, raw, parsed, status, error, transaction_id, payment_id').eq('batch_id', id).order('row_no').limit(5000);
+      const settlementCol = data.source_type === 'booking_com_finance_statement' ? ', settlement_id' : '';
+      const { data: rows, error: rerr } = await db().from('bolagio_finance_import_rows').select(`id, batch_id, row_no, raw, parsed, status, error, transaction_id, payment_id${settlementCol}`).eq('batch_id', id).order('row_no').limit(5000);
       if (rerr) throw rerr;
       return { batch: data as unknown as ImportBatchRow, rows: (rows ?? []) as unknown as ImportRowRow[] };
+    },
+    async otaSettlements(filter) {
+      let q = db().from('bolagio_finance_ota_settlements').select(SETTLEMENT).order('payout_date', { ascending: false }).order('booking_number').limit(filter.limit ?? 5000);
+      if (filter.batchId) q = q.eq('import_batch_id', filter.batchId);
+      else if (filter.ids) q = q.in('id', filter.ids.slice(0, 500));
+      else {
+        q = q.in('amendment_state', ['current', 'conflict']);
+        const col = filter.basis === 'checkout' ? 'check_out' : 'payout_date';
+        if (filter.from) q = q.gte(col, filter.from);
+        if (filter.to) q = q.lt(col, filter.to);
+      }
+      const { data, error } = await q;
+      if (error) throw error;
+      return ((data ?? []) as unknown as SettlementRow[]).map((r) => num(r, SETTLEMENT_NUM));
+    },
+    otaPayouts: () => all<OtaPayoutRow>('bolagio_finance_ota_payouts', 'id, provider, payout_id, payout_date, currency, bank_state, bank_payment_id, bank_matched_at, first_import_batch_id, created_at', { column: 'payout_date', ascending: false }, 2000),
+    async reservationsByChannelReference(refs) {
+      const unique = Array.from(new Set(refs.map((r) => r.trim()).filter(Boolean)));
+      const out: ReservationCandidate[] = [];
+      for (let i = 0; i < unique.length; i += 200) {
+        const { data, error } = await db().from('bolagio_reservations').select('id, unit_id, channel_reference, source, provider_status, status_class, check_in, check_out, currency, total_amount_cents').in('channel_reference', unique.slice(i, i + 200));
+        if (error) throw error;
+        out.push(...((data ?? []) as unknown as ReservationCandidate[]).map((r) => num(r, ['total_amount_cents'])));
+      }
+      return out;
     },
     minibarProducts: async () => (await all<MinibarProductRow>('bolagio_minibar_products', 'id, sku, name, unit_label, active, purchase_cost_cents, selling_price_cents, tax_code, purchase_tax_code, reorder_threshold, supplier_id, unit_id', { column: 'name' })).map((r) => num(r, ['purchase_cost_cents', 'selling_price_cents', 'reorder_threshold'])),
     minibarStock: async () => (await all<MinibarStockRow>('bolagio_minibar_stock', 'product_id, sku, name, active, reorder_threshold, purchase_cost_cents, selling_price_cents, tax_code, unit_id, on_hand, units_sold, shrinkage_units, complimentary_units, stock_value_cents', { column: 'name' })).map((r) => num(r, ['purchase_cost_cents', 'selling_price_cents', 'reorder_threshold', 'on_hand', 'units_sold', 'shrinkage_units', 'complimentary_units', 'stock_value_cents'])),

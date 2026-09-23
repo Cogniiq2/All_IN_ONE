@@ -96,11 +96,25 @@ describe('a cancelled Booking.com reservation that still carries a price', () =>
   const csv = (status: string, price: string, currency = 'EUR') =>
     `Book number,Check-in,Check-out,Status,Price,Commission amount,Currency,Rooms\n9001,2026-11-02,2026-11-05,${status},${price},"",${currency},Schulstrasse I\n`;
 
+  /**
+   * The reservation-statement adapter is RETIRED: a new upload is refused.
+   * A batch staged with it before retirement can still be committed, and
+   * its posting rules are what these tests hold to — so the batch is
+   * recreated here the way it would exist in the database, from the same
+   * pure staging, and committed through the real command.
+   */
   async function importAll(text: string) {
     const { stageImport, commitImport } = await import('@/lib/finance/commands');
-    const staged = await stageImport('booking_com_reservations', 'statement.csv', text, 'ops@example.com');
-    if (!staged.ok || staged.validRows === 0) return { staged, committed: null };
-    return { staged, committed: await commitImport(staged.batchId, 'ops@example.com') };
+    const { stageCsv } = await import('@/lib/finance/import/adapters');
+    expect(await stageImport('booking_com_reservations', 'statement.csv', text, 'ops@example.com')).toMatchObject({ ok: false, reason: 'rejected' });
+    const r = await stageCsv('booking_com_reservations', text);
+    const staged = { ok: true as const, validRows: r.validRows, errorRows: r.errorRows };
+    if (r.validRows === 0) return { staged, committed: null };
+    const q = (v: unknown) => `'${JSON.stringify(v).replace(/'/g, "''")}'::jsonb`;
+    const batchId = h.sql(`insert into bolagio_finance_import_batches (source_type, adapter, adapter_version, filename, sha256, byte_size, row_count, valid_rows, error_rows, duplicate_rows, status, created_by)
+      values ('booking_com_reservations', 'booking_com_reservations', '0.1', 'historical.csv', md5(random()::text) || md5(random()::text), ${text.length}, ${r.rowCount}, ${r.validRows}, ${r.errorRows}, ${r.duplicateRows}, 'validated', 'ops@example.com') returning id`).split('\n')[0];
+    for (const row of r.rows) h.sql(`insert into bolagio_finance_import_rows (batch_id, row_no, raw, parsed, status, error) values ('${batchId}', ${row.rowNo}, ${q(row.raw)}, ${row.parsed ? q(row.parsed) : 'null'}, '${row.status}', ${row.error ? `'${row.error.replace(/'/g, "''")}'` : 'null'})`);
+    return { staged, committed: await commitImport(batchId, 'ops@example.com') };
   }
 
   it('is recorded as a cancellation charge parked for review, never as 7 % accommodation', async () => {

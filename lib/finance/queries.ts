@@ -31,6 +31,8 @@ import { buildPl, type PlReport } from '@/lib/finance/reports/pl';
 import { buildCashFlow, cashNow, projectCash, type CashMonth, type CashProjection } from '@/lib/finance/reports/cash-flow';
 import { buildChannelEconomics, buildProfitability, type ChannelEconomics, type ProfitabilityReport } from '@/lib/finance/reports/profitability';
 import { deriveInbox, type InboxItem } from '@/lib/finance/inbox';
+import { filterSettlements, groupPayouts, previewSettlements, summarizeSettlements, type PayoutGroup, type PreviewLine, type SettlementFilter, type SettlementRow, type SettlementSummary } from '@/lib/finance/settlements';
+import type { StagedOtaSettlement } from '@/lib/finance/import/adapters';
 import { proposeMatches, type MatchProposal } from '@/lib/finance/reconciliation';
 import { invoiceRequirements, type InvoiceDraft } from '@/lib/finance/invoices';
 import { datevGate, proposeDatevRows, type DatevGate, type DatevRowProposal } from '@/lib/finance/export/datev';
@@ -520,8 +522,79 @@ export async function loadImports(): Promise<QueryResult<{ batches: ImportBatchR
   return guard(async () => ({ batches: await (await financeRowSource()).importBatches(50) }));
 }
 
-export async function loadImportBatch(id: string): Promise<QueryResult<{ batch: ImportBatchRow; rows: ImportRowRow[] } | null>> {
-  return guard(async () => (await financeRowSource()).importBatch(id));
+/** What a Booking.com finance-statement batch adds to its page: the preview before commit, the lines after. */
+export interface SettlementBatchView {
+  /** The same match and reconciliation rules the commit applies, against the reservations as they are now. */
+  preview: { lines: Array<PreviewLine<StagedOtaSettlement> & { rowNo: number }>; summary: SettlementSummary; payouts: PayoutGroup[] };
+  /** Lines this batch created (after commit). Recognised duplicates point at an earlier batch's line. */
+  committed: SettlementRow[];
+  units: UnitLookup;
+}
+
+export async function loadImportBatch(id: string): Promise<QueryResult<{ batch: ImportBatchRow; rows: ImportRowRow[]; settlement?: SettlementBatchView } | null>> {
+  return guard(async () => {
+    const source = await financeRowSource();
+    const found = await source.importBatch(id);
+    if (!found || found.batch.adapter !== 'booking_com_finance_statement') return found;
+    const staged = found.rows
+      .filter((r) => (r.status === 'valid' || r.status === 'imported' || r.status === 'skipped') && (r.parsed as { target?: string } | null)?.target === 'ota_settlement')
+      .map((r) => ({ rowNo: r.row_no, line: r.parsed as unknown as StagedOtaSettlement }));
+    const [reservations, committed, units] = await Promise.all([
+      source.reservationsByChannelReference(staged.map((s) => s.line.bookingNumber)),
+      source.otaSettlements({ batchId: id }),
+      source.units(),
+    ]);
+    const preview = previewSettlements(staged.map((s) => s.line), reservations);
+    return {
+      ...found,
+      settlement: {
+        preview: { lines: preview.lines.map((l, i) => ({ ...l, rowNo: staged[i].rowNo })), summary: preview.summary, payouts: preview.payouts },
+        committed,
+        units,
+      },
+    };
+  });
+}
+
+/* ── Booking.com finance ─────────────────────────────────────────────── */
+
+export interface BookingComFinanceScreen {
+  range: DateRange;
+  filter: SettlementFilter;
+  rows: SettlementRow[];
+  summary: SettlementSummary;
+  payouts: Array<PayoutGroup & { bankState: string }>;
+  /** Amended lines waiting for a person, each beside the line it would replace. */
+  amendments: Array<{ amendment: SettlementRow; original: SettlementRow | null }>;
+  /** Every payout ID in the period, for the filter. */
+  payoutIds: string[];
+  units: UnitLookup;
+}
+
+/**
+ * Booking.com settlement economics for a period: statement gross,
+ * commission, payment-service fee, net, payouts, and how each line
+ * reconciles against the local reservation. Current lines only in every
+ * total; amendments are listed apart and never summed.
+ */
+export async function loadBookingComFinance(range: DateRange, filter: Omit<SettlementFilter, 'from' | 'to'>): Promise<QueryResult<BookingComFinanceScreen>> {
+  return guard(async () => {
+    const source = await financeRowSource();
+    const basis = filter.basis ?? 'payout';
+    const [all, payoutRows, units] = await Promise.all([source.otaSettlements({ from: range.from, to: range.to, basis }), source.otaPayouts(), source.units()]);
+    const full: SettlementFilter = { ...filter, basis, from: range.from, to: range.to };
+    const rows = filterSettlements(all, full);
+    const bank = new Map(payoutRows.map((p) => [p.payout_id, p.bank_state]));
+    const conflicts = all.filter((r) => r.amendment_state === 'conflict');
+    const originals = conflicts.length > 0 ? await source.otaSettlements({ ids: conflicts.map((c) => c.supersedes_id).filter((x): x is string => Boolean(x)) }) : [];
+    return {
+      range, filter: full, rows, summary: summarizeSettlements(rows),
+      payouts: groupPayouts(rows).map((g) => ({ ...g, bankState: bank.get(g.payoutId) ?? 'awaiting_bank' })),
+      amendments: conflicts.map((a) => ({ amendment: a, original: originals.find((o) => o.id === a.supersedes_id) ?? null })),
+      payoutIds: Array.from(new Set(all.filter((r) => r.amendment_state === 'current').map((r) => r.payout_id))).sort().reverse(),
+      units,
+    };
+  });
 }
 
 export interface InvoicesScreen { rows: InvoiceRow[]; total: number; config: FinanceConfigSnapshot; requirementsForDraft: (d: InvoiceDraft) => ReturnType<typeof invoiceRequirements>; eligibleStays: StayRow[] }

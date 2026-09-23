@@ -38,3 +38,13 @@ transaction and booking pages show the linked payments and the rule that linked 
 `tests/finance/engines.test.ts` (R1 exact and split, R2/R3, direction and currency, R4 window, R5
 uniqueness, R6 bundle, ignored rows, `openReason`), `tests/integration/finance.test.ts` (a real paid
 stay reconciles by R1; a refund reconciles its outgoing payment).
+
+## Booking.com settlements and payouts
+
+Booking.com statement lines are reconciled on their own layer (`booking-com-statement.md`), not by the
+rules above: each line is matched to a local reservation by the exact Booking.com number (matched /
+unmatched / ambiguous) and its statement gross compared with the local gross (reconciled / gross
+differs / no local amount). The ledger transactions it posts carry `reconciliation_state =
+not_applicable`, so R1–R6 never try to match a stay's gross against a payout's net. The payout's cash
+is reconciled **once per payout group** against the bank receipt (`bolagio_finance_ota_payouts.
+bank_payment_id`); R6 remains for payouts recorded by the retired payout adapter only.

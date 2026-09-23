@@ -36,9 +36,9 @@ export default async function ImportsPage() {
           <Section title="Adapters" meta="production-readiness is declared per adapter and shown everywhere" id="adapters">
             <table className="bc-mini-table mt-2">
               <thead><tr><th>Adapter</th><th>Readiness</th><th>Required columns</th></tr></thead>
-              <tbody>{ADAPTERS.map((a) => <tr key={a.id}><td>{a.label}<div className="bc-meta">{a.description}</div></td><td><span className="bc-badge" data-tone={a.readiness === 'validated' ? 'positive' : 'caution'}>{a.readiness}</span></td><td className="bc-mono bc-meta">{a.requiredHeaders.join(' · ')}</td></tr>)}</tbody>
+              <tbody>{ADAPTERS.map((a) => <tr key={a.id}><td>{a.label}<div className="bc-meta">{a.description}</div></td><td><span className="bc-badge" data-tone={a.readiness === 'validated' ? 'positive' : a.readiness === 'retired' ? 'muted' : 'caution'}>{a.readiness}</span></td><td className="bc-mono bc-meta">{a.requiredHeaders.join(' · ')}</td></tr>)}</tbody>
             </table>
-            <p className="bc-meta mt-2" style={{ fontSize: 12 }}>Experimental adapters were built from documented column names and not validated against a live export. Preview every row before importing; the header check is strict and refuses a file that is not the format.</p>
+            <p className="bc-meta mt-2" style={{ fontSize: 12 }}>Experimental adapters were built from documented column names and not validated against a live export. Preview every row before importing; the header check is strict and refuses a file that is not the format. Retired adapters accept no new upload; they remain listed so batches staged with them stay readable.</p>
           </Section>
         </div>
         <div>

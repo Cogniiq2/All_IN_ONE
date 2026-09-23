@@ -37,7 +37,7 @@ export function Provenance({ value, size }: { value: string; size?: 'lg' }) {
   );
 }
 
-export function StateBadge({ table, value, ghost }: { table: 'review' | 'document' | 'payment' | 'reconciliation' | 'txstatus' | 'period' | 'taxperiod' | 'stage' | 'batch' | 'charge' | 'invoice'; value: string | null | undefined; ghost?: boolean }) {
+export function StateBadge({ table, value, ghost }: { table: 'review' | 'document' | 'payment' | 'reconciliation' | 'txstatus' | 'period' | 'taxperiod' | 'stage' | 'batch' | 'charge' | 'invoice' | 'settlement' | 'payoutbank'; value: string | null | undefined; ghost?: boolean }) {
   const p = present(table, value);
   return (
     <span className={`bc-badge ${ghost ? 'ghost' : ''}`} data-tone={p.tone} title={p.summary}>

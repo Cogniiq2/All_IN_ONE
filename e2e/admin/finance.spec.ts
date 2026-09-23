@@ -14,7 +14,7 @@ const HEADINGS: Record<string, string> = {
   '/admin/finance': 'Finance', '/admin/finance/inbox': 'Finance inbox', '/admin/finance/revenue': 'Revenue', '/admin/finance/expenses': 'Expenses',
   '/admin/finance/transactions': 'Transactions', '/admin/finance/documents': 'Documents', '/admin/finance/vat': 'VAT', '/admin/finance/taxes': 'Taxes',
   '/admin/finance/profit-loss': 'Profit & loss', '/admin/finance/cash-flow': 'Cash flow', '/admin/finance/properties': 'Property profitability',
-  '/admin/finance/reconciliation': 'Reconciliation', '/admin/finance/minibar': 'Minibar', '/admin/finance/invoices': 'Invoices',
+  '/admin/finance/reconciliation': 'Reconciliation', '/admin/finance/booking-com': 'Booking.com', '/admin/finance/minibar': 'Minibar', '/admin/finance/invoices': 'Invoices',
   '/admin/finance/imports': 'Imports', '/admin/finance/accountant': 'Accountant', '/admin/finance/settings': 'Settings',
 };
 

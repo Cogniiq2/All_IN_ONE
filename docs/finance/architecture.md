@@ -80,7 +80,7 @@ hashes the booking table before and after an ingestion pass and proves it.
 |---|---|
 | Schema, guards, command functions, seeds | `supabase/migrations/20260922120000_finance_foundation.sql` |
 | Ops | `supabase/ops/preflight.sql`, `verify.sql`, `rollback_20260922.sql`; `tests/sql/finance.sql` (81 assertions), `tests/sql/finance-reset.sql` (test-only) |
-| Pure domain | `lib/finance/{money,periods,tax-codes,categories,reconciliation,categorization,inbox,invoices,ingestion-rules,documents,e-invoice}.ts`, `lib/finance/tax/*`, `lib/finance/reports/*`, `lib/finance/import/*`, `lib/finance/export/*` |
+| Pure domain | `lib/finance/{money,periods,tax-codes,categories,reconciliation,settlements,categorization,inbox,invoices,ingestion-rules,documents,e-invoice}.ts`, `lib/finance/tax/*`, `lib/finance/reports/*`, `lib/finance/import/*`, `lib/finance/export/*` |
 | Data access | `lib/finance/rows.ts` (row shapes + `FinanceRowSource`), `source-supabase.ts`, `fixtures.ts`, `source.ts` (mode switch) |
 | Commands and actions | `lib/finance/commands.ts` (RPC wrappers, ingestion, reconciliation runner, imports, invoices, estimates), `lib/finance/actions.ts` (server actions: gate → validate → command → audit → revalidate) |
 | Read models | `lib/finance/queries.ts`, `attention.ts` (global attention + alert inputs), `search-action.ts` |

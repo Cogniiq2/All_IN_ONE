@@ -40,6 +40,8 @@ MIGRATIONS=(
   supabase/migrations/20260920120000_booking_production_hardening.sql
   supabase/migrations/20260921120000_platform_completion.sql
   supabase/migrations/20260922120000_finance_foundation.sql
+  # verify.sql asserts the reservation table (20260923); without it the first verify fails.
+  supabase/migrations/20260923120000_reservation_import.sql
 )
 
 echo "── preflight on an empty database (must not error) ──"
@@ -52,6 +54,16 @@ echo "── seed ──"
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/seed/bolagio_booking_units.sql
 echo "── verify ──"
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/ops/verify.sql 2>&1 | grep -E "ok —|FAILED|passed" | tail -3
+echo "── apply 20260926 (Booking.com statement); roll it back and re-apply it twice ──"
+psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260926120000_booking_com_finance_statement.sql
+psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/ops/verify.sql 2>&1 | grep -E "20260926|FAILED|passed" | tail -2
+psql "$TEST" -1 -v ON_ERROR_STOP=1 -q -f supabase/ops/rollback_20260926.sql
+psql "$TEST" -Atc "select case when to_regclass('public.bolagio_finance_ota_settlements') is null and to_regclass('public.bolagio_finance_import_rows') is not null and to_regclass('public.bolagio_reservations') is not null then 'ok — 20260926 rolled back, finance and reservations intact' else 'ERROR: 20260926 rollback incomplete' end;"
+psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260926120000_booking_com_finance_statement.sql
+psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260926120000_booking_com_finance_statement.sql
+psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/ops/verify.sql 2>&1 | grep -E "FAILED|passed" | tail -1
+# 20260926 references the finance tables of 20260922: roll it back before the older sections below.
+psql "$TEST" -1 -v ON_ERROR_STOP=1 -q -f supabase/ops/rollback_20260926.sql
 echo "── rollback 20260922 (finance) in one transaction, then re-apply it twice (idempotent) ──"
 psql "$TEST" -1 -v ON_ERROR_STOP=1 -q -f supabase/ops/rollback_20260922.sql
 psql "$TEST" -Atc "select case when to_regclass('public.bolagio_finance_transactions') is null and to_regclass('public.bolagio_booking_intents') is not null then 'ok — 20260922 rolled back, booking core intact' else 'ERROR: finance rollback incomplete' end;"
@@ -77,6 +89,9 @@ psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260920120000_booking
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260920120000_booking_production_hardening.sql
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260921120000_platform_completion.sql
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260922120000_finance_foundation.sql
+# Rolling back 20260920 dropped the scheduler table 20260923 widens; re-apply the later ones (idempotent).
+psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260923120000_reservation_import.sql
+psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260926120000_booking_com_finance_statement.sql
 echo "── verify again ──"
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/ops/verify.sql 2>&1 | grep -E "FAILED|passed" | tail -1
 psql "$DATABASE_URL" -q -c "drop database if exists bolagio_ops_check;"

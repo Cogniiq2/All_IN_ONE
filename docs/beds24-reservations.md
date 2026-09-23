@@ -445,8 +445,14 @@ changed. Where the amount is shown in the interface it is labelled
 `gross (provider)`.
 
 Joining reservations to real revenue is a finance-domain decision that needs
-the Booking.com commission invoice and the payout statement, which the finance
-ingestion already models. It is not guessed here.
+the Booking.com commission invoice and the payout statement. It is not guessed here.
+
+**Since 20260926** the Booking.com finance-statement import *reads* this table,
+read-only, to match each statement line to a reservation by the exact
+Booking.com number in `channel_reference`, and snapshots `total_amount_cents`
+beside the statement gross to show a discrepancy. It never writes a
+reservation, and it never treats a Beds24 `commission = 0` as a commission. See
+`docs/finance/booking-com-statement.md`.
 
 ---
 

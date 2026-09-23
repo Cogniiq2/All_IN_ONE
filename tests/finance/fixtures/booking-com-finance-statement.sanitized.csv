@@ -1,0 +1,6 @@
+Type,Booking number,Check-in,Checkout,Guest name,Payments service provider,Reservation status,Currency,Payment status,Amount,Commission,Payments Service Fee,Net,Payout date,Payout ID
+Reservation,9990000001,4 Sept 2026,6 Sept 2026,Test Guest Alpha,Booking.com B.V.,ok,EUR,by_booking,412.80,-59.44,-5.78,347.58,8 Sept 2026,TESTPAYOUT0001
+Reservation,9990000002,11 Sept 2026,13 Sept 2026,"Mustermann, Erika",Booking.com B.V.,ok,EUR,by_booking,598.40,-86.17,-8.38,503.85,15 Sept 2026,TESTPAYOUT0002
+Reservation,9990000003,11 Sept 2026,14 Sept 2026,Test Guest Gamma,Booking.com B.V.,ok,EUR,by_booking,367.20,-52.88,-5.14,309.18,15 Sept 2026,TESTPAYOUT0002
+Reservation,9990000004,18 Sept 2026,21 Sept 2026,Test Guest Delta,Booking.com B.V.,ok,EUR,by_booking,689.76,-99.33,-9.66,580.77,22 Sept 2026,TESTPAYOUT0003
+Reservation,9990000005,17 Sept 2026,20 Sept 2026,Test Guest Epsilon,Booking.com B.V.,ok,EUR,by_booking,424.00,-61.14,-5.93,356.93,22 Sept 2026,TESTPAYOUT0003

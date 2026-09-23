@@ -17,7 +17,8 @@ import { supabaseAdmin } from '@/lib/supabase/server';
 import { classifyExpense } from '@/lib/finance/categorization';
 import { proposeMatches, type MatchProposal } from '@/lib/finance/reconciliation';
 import { capturePayment, expectedTurnoverCost, refundCashFact, refundPosting, revenuePosting, type BookingFact } from '@/lib/finance/ingestion-rules';
-import { stageCsv, type AdapterId, type StagedRow } from '@/lib/finance/import/adapters';
+import { adapterSpec, stageCsv, type AdapterId, type StagedOtaSettlement, type StagedRow } from '@/lib/finance/import/adapters';
+import { compareGross, matchReservation, SETTLEMENT_RULES_VERSION, type ReservationCandidate, type SettlementRow } from '@/lib/finance/settlements';
 import { sha256Hex } from '@/lib/finance/documents';
 import { buildDraft, canIssue, type InvoiceDraft, type StayForInvoice } from '@/lib/finance/invoices';
 import { issuerIdentity, financeConfig } from '@/lib/finance/config';
@@ -339,10 +340,11 @@ export async function stageImport(adapterId: AdapterId, filename: string, text: 
   const bytes = new TextEncoder().encode(text);
   const sha = await sha256Hex(bytes);
   const db = supabaseAdmin();
+  const spec = adapterSpec(adapterId);
+  if (spec.readiness === 'retired') return { ok: false, reason: 'rejected', detail: `${spec.label} is retired and no longer accepts uploads.` };
   const { data: dup } = await db.from('bolagio_finance_import_batches').select('id, status').eq('sha256', sha).maybeSingle();
   if (dup) return { ok: false, reason: 'duplicate_file', detail: `This exact file was already uploaded (batch ${dup.id}, ${dup.status}).` };
   const staged = await stageCsv(adapterId, text);
-  const spec = (await import('@/lib/finance/import/adapters')).adapterSpec(adapterId);
   const { data: batch, error } = await db.from('bolagio_finance_import_batches').insert({
     source_type: spec.sourceType, adapter: spec.id, adapter_version: spec.version, filename: filename.slice(0, 255), sha256: sha, byte_size: bytes.byteLength,
     row_count: staged.rowCount, valid_rows: staged.validRows, error_rows: staged.errorRows, duplicate_rows: staged.duplicateRows,
@@ -357,7 +359,15 @@ export async function stageImport(adapterId: AdapterId, filename: string, text: 
   return { ok: true, batchId: batch.id, rowCount: staged.rowCount, validRows: staged.validRows, errorRows: staged.errorRows, duplicateRows: staged.duplicateRows, readiness: staged.readiness };
 }
 
-export interface CommitResult { posted: number; skipped: number; errors: string[] }
+export interface CommitResult {
+  posted: number;
+  skipped: number;
+  errors: string[];
+  /** Settlement lines already imported from an earlier file (same identity AND figures): nothing written. */
+  alreadyImported: number;
+  /** Settlement lines Booking.com has changed since an earlier import: kept beside the original, awaiting review. */
+  amendments: number;
+}
 
 /** Post the valid rows of a validated batch. Each row is idempotent on its own key. */
 export async function commitImport(batchId: string, actor: string): Promise<CommitResult> {
@@ -367,10 +377,41 @@ export async function commitImport(batchId: string, actor: string): Promise<Comm
   if (!found) throw new Error('batch not found');
   if (found.batch.status !== 'validated') throw new Error(`batch is ${found.batch.status}`);
   const [registry, units] = await Promise.all([source.counterparties(), source.units()]);
-  const result: CommitResult = { posted: 0, skipped: 0, errors: [] };
+  const result: CommitResult = { posted: 0, skipped: 0, errors: [], alreadyImported: 0, amendments: 0 };
+  // One read of the local reservations for every settlement line in the
+  // batch, by exact Booking.com reservation number.
+  const settlementNumbers = found.rows.filter((r) => r.status === 'valid' && (r.parsed as { target?: string } | null)?.target === 'ota_settlement').map((r) => String((r.parsed as { bookingNumber: string }).bookingNumber));
+  const candidates = settlementNumbers.length > 0 ? await reservationCandidates(settlementNumbers) : [];
   for (const row of found.rows) {
     if (row.status !== 'valid' || !row.parsed) { result.skipped += 1; continue; }
     const parsed = row.parsed as unknown as StagedRow;
+    if (parsed.target === 'ota_settlement') {
+      try {
+        const rec = await recordSettlement(parsed, batchId, row.id, actor, candidates);
+        if (rec.outcome === 'duplicate') {
+          // Overlapping exports are normal: the same line, the same figures,
+          // already a fact. Nothing is written; a line whose ledger posting
+          // failed earlier is retried here.
+          if (rec.ledger_state === 'pending' && rec.amendment_state === 'current') await postSettlementLedger(rec.id, actor, registry);
+          await db.from('bolagio_finance_import_rows').update({ status: 'skipped', settlement_id: rec.id, error: 'Already imported from an earlier statement: same reservation, payout and figures. Nothing written.' }).eq('id', row.id);
+          result.skipped += 1; result.alreadyImported += 1;
+          continue;
+        }
+        if (rec.outcome === 'amendment') {
+          await db.from('bolagio_finance_import_rows').update({ status: 'imported', settlement_id: rec.id, error: 'Amendment: Booking.com changed this line since an earlier import. Kept beside the original; nothing posted until a person accepts it.' }).eq('id', row.id);
+          result.amendments += 1;
+          continue;
+        }
+        const posted = await postSettlementLedger(rec.id, actor, registry);
+        await db.from('bolagio_finance_import_rows').update({ status: 'imported', settlement_id: rec.id, transaction_id: posted.revenueTransactionId }).eq('id', row.id);
+        result.posted += 1;
+      } catch (cause) {
+        const msg = errorMessage(cause);
+        result.errors.push(`row ${row.row_no}: ${msg}`);
+        await db.from('bolagio_finance_import_rows').update({ status: 'error', error: msg }).eq('id', row.id);
+      }
+      continue;
+    }
     try {
       const ids = await postStagedRow(parsed, batchId, actor, registry, units);
       await db.from('bolagio_finance_import_rows').update({ status: 'imported', transaction_id: ids.transactionId ?? null, payment_id: ids.paymentId ?? null }).eq('id', row.id);
@@ -387,7 +428,7 @@ export async function commitImport(batchId: string, actor: string): Promise<Comm
   return result;
 }
 
-async function postStagedRow(row: StagedRow, batchId: string, actor: string, registry: CounterpartyRow[], units: Array<{ id: string; slug: string }>): Promise<{ transactionId?: string; paymentId?: string }> {
+async function postStagedRow(row: Exclude<StagedRow, StagedOtaSettlement>, batchId: string, actor: string, registry: CounterpartyRow[], units: Array<{ id: string; slug: string }>): Promise<{ transactionId?: string; paymentId?: string }> {
   if (row.target === 'payment') {
     const r = await recordPayment({ direction: row.direction, source: row.source, provider_reference: row.providerReference, amount_cents: row.amountCents, fee_cents: row.feeCents, currency: row.currency, occurred_at: row.occurredAt, value_date: row.valueDate, counterparty_label: row.counterpartyLabel, reference_text: row.referenceText, booking_reference: row.bookingReference, import_batch_id: batchId, kind: row.kind }, actor);
     return { paymentId: r.id };
@@ -435,6 +476,188 @@ async function postStagedRow(row: StagedRow, batchId: string, actor: string, reg
     }, [{ line_no: 1, category: 'ota_commission', description: 'Commission per statement (invoice to follow)', tax_code: 'DE_REVERSE_CHARGE', rate_bp: 1900, net_cents: row.commissionCents, vat_cents: 0, gross_cents: row.commissionCents, reverse_charge_vat_cents: fromNet(row.commissionCents, 1900).vat, input_vat_treatment: 'reverse_charge', unit_id: unitId, allocation_method: unitId ? 'direct' : 'unallocated', classification: 'suggested' }], actor);
   }
   return { transactionId: r.id };
+}
+
+/* ── Booking.com finance statement: settlements ───────────────────────── */
+//
+// A statement line becomes, in this order and each idempotently:
+//   1. a SETTLEMENT row (evidence: gross, commission, PSP fee, net, payout),
+//      recorded atomically by `bolagio_finance_record_ota_settlement`, which
+//      answers created / duplicate / amendment
+//   2. for a created, current line: up to three LEDGER transactions —
+//      revenue (statement gross), commission, payment-service fee — each
+//      under its own source key, VAT parked on DE_REVIEW_REQUIRED
+// and never a payment: the payout's cash is the bank's fact.
+
+export const SETTLEMENT_SOURCE_SYSTEM = 'booking_com_statement';
+const RESERVATION_MATCH_COLUMNS = 'id, unit_id, channel_reference, source, provider_status, status_class, check_in, check_out, currency, total_amount_cents';
+
+/** Local reservations whose persisted Booking.com reference is one of these numbers. Exact equality; no guest field is read. */
+export async function reservationCandidates(bookingNumbers: string[]): Promise<ReservationCandidate[]> {
+  const unique = Array.from(new Set(bookingNumbers.map((b) => b.trim()).filter(Boolean)));
+  const out: ReservationCandidate[] = [];
+  for (let i = 0; i < unique.length; i += 200) {
+    const { data, error } = await supabaseAdmin().from('bolagio_reservations').select(RESERVATION_MATCH_COLUMNS).in('channel_reference', unique.slice(i, i + 200));
+    if (error) throw asFinanceError('reservations.select', error);
+    for (const r of (data ?? []) as ReservationCandidate[]) out.push({ ...r, total_amount_cents: r.total_amount_cents === null ? null : Number(r.total_amount_cents) });
+  }
+  return out;
+}
+
+function matchFields(bookingNumber: string, grossCents: number, currency: string, candidates: readonly ReservationCandidate[]): Json {
+  const match = matchReservation(bookingNumber, candidates);
+  const gross = compareGross(grossCents, currency, match.reservation);
+  return {
+    reservation_id: match.reservation?.id ?? null, unit_id: match.reservation?.unit_id ?? null, match_state: match.state, match_candidates: match.candidates,
+    local_gross_cents: gross.localGrossCents, local_currency: gross.localCurrency, gross_delta_cents: gross.deltaCents, gross_state: gross.state,
+    match_rule_version: SETTLEMENT_RULES_VERSION,
+  };
+}
+
+interface RecordOutcome { ok: boolean; outcome: 'created' | 'duplicate' | 'amendment'; id: string; ledger_state: string; amendment_state?: string; supersedes_id?: string | null }
+
+export async function recordSettlement(line: StagedOtaSettlement, batchId: string, importRowId: string | null, actor: string, candidates: readonly ReservationCandidate[]): Promise<RecordOutcome> {
+  return rpc<RecordOutcome>('bolagio_finance_record_ota_settlement', {
+    p_row: {
+      provider: line.provider, identity_key: line.identityKey, content_sha256: line.contentSha256, row_type: line.rowType, booking_number: line.bookingNumber,
+      payout_id: line.payoutId, payout_date: line.payoutDate, check_in: line.checkIn, check_out: line.checkOut, currency: line.currency,
+      gross_cents: line.grossCents, commission_cents: line.commissionCents, payment_service_fee_cents: line.paymentServiceFeeCents, net_cents: line.netCents,
+      source_commission_cents: line.sourceCommissionCents, source_payment_service_fee_cents: line.sourcePaymentServiceFeeCents,
+      reservation_status: line.reservationStatus, payment_status: line.paymentStatus, payments_service_provider: line.paymentsServiceProvider,
+      import_batch_id: batchId, import_row_id: importRowId, ...matchFields(line.bookingNumber, line.grossCents, line.currency, candidates),
+    },
+    p_actor: actor,
+  });
+}
+
+const SETTLEMENT_COLUMNS = 'id, provider, identity_key, content_sha256, row_type, booking_number, payout_id, payout_date, check_in, check_out, currency, gross_cents, commission_cents, payment_service_fee_cents, net_cents, source_commission_cents, source_payment_service_fee_cents, reservation_status, payment_status, payments_service_provider, reservation_id, unit_id, match_state, match_candidates, local_gross_cents, local_currency, gross_delta_cents, gross_state, matched_at, amendment_state, supersedes_id, ledger_state, revenue_transaction_id, commission_transaction_id, fee_transaction_id, import_batch_id, import_row_id, created_by, created_at';
+
+async function settlementById(id: string): Promise<SettlementRow | null> {
+  const { data, error } = await supabaseAdmin().from('bolagio_finance_ota_settlements').select(SETTLEMENT_COLUMNS).eq('id', id).maybeSingle();
+  if (error) throw asFinanceError('ota_settlements.select', error);
+  return data as unknown as SettlementRow | null;
+}
+
+/**
+ * The ledger facts of one current settlement line. Idempotent: every
+ * transaction's source key is the line's identity plus its content hash,
+ * so a retry, a second batch or a race posts nothing twice, and an accepted
+ * amendment (different content) posts under different keys after the
+ * original's facts were reversed.
+ *
+ * VAT is NOT decided here. Every line is posted on DE_REVIEW_REQUIRED
+ * (rate 0, counted in no VAT figure) and `needs_review`: the statement says
+ * what was charged, not how it is taxed — accommodation vs. cleaning, a
+ * cancellation charge, and the input-VAT treatment of Booking.com's
+ * commission and payment fee are the adviser's decisions.
+ */
+export async function postSettlementLedger(settlementId: string, actor: string, registry?: CounterpartyRow[]): Promise<{ revenueTransactionId: string | null; state: string }> {
+  const s = await settlementById(settlementId);
+  if (!s) throw new Error('settlement not found');
+  if (s.amendment_state !== 'current' || s.ledger_state !== 'pending') return { revenueTransactionId: s.revenue_transaction_id, state: s.ledger_state };
+  const db = supabaseAdmin();
+  // The retired reservation-statement adapter posted Booking.com revenue
+  // under `bcom:<book number>`. If it ever did for this reservation, posting
+  // again would double the revenue: record that and post nothing.
+  const { data: legacy, error: lerr } = await db.from('bolagio_finance_transactions').select('id').eq('source_system', 'booking_com_reservations').eq('booking_reference', s.booking_number).eq('status', 'posted').limit(1);
+  if (lerr) throw asFinanceError('finance_transactions.select', lerr);
+  if ((legacy ?? []).length > 0) {
+    await db.from('bolagio_finance_ota_settlements').update({ ledger_state: 'legacy_posted' }).eq('id', s.id).throwOnError();
+    return { revenueTransactionId: null, state: 'legacy_posted' };
+  }
+  const reg = registry ?? await supabaseFinanceSource().counterparties();
+  const bcom = reg.find((c) => c.name.toLowerCase().includes('booking.com'));
+  const key = `${s.identity_key}#${s.content_sha256.slice(0, 16)}`;
+  const unitId = s.unit_id;
+  const cancelled = s.reservation_status !== 'ok';
+  const stay = `${s.booking_number} · ${s.check_in} – ${s.check_out}`;
+  const unitNote = unitId ? null : 'No local reservation matched this Booking.com number when it was imported; the unit is unallocated.';
+  const vatNote = 'VAT treatment not yet classified: the Booking.com statement states amounts, not tax. Classify once the adviser has confirmed the rule.';
+  const base = {
+    service_from: s.check_in, service_to: s.check_out, currency: s.currency, channel: 'booking_com', booking_reference: s.booking_number, unit_id: unitId,
+    source_type: 'import', source_system: SETTLEMENT_SOURCE_SYSTEM, import_batch_id: s.import_batch_id, review_state: 'needs_review',
+    // Settled by Booking.com: commission and fee are deducted, the net is paid
+    // out in payout `payout_id`. Cash is reconciled per payout group against
+    // the bank, never per stay, so none of these is an open item on its own.
+    payment_state: 'not_applicable', reconciliation_state: 'not_applicable',
+  };
+  const line = (category: string, description: string, cents: number, cost: boolean) => ({
+    line_no: 1, category, description, tax_code: REVIEW_REQUIRED_CODE, rate_bp: 0, net_cents: cents, vat_cents: 0, gross_cents: cents, reverse_charge_vat_cents: 0,
+    input_vat_treatment: cost ? 'review_required' : 'not_applicable', unit_id: unitId, allocation_method: unitId ? 'direct' : 'unallocated', classification: 'needs_review',
+  });
+  let revenueId: string | null = null;
+  let commissionId: string | null = null;
+  let feeId: string | null = null;
+  if (s.gross_cents !== 0) {
+    const r = await postTransaction({
+      ...base, kind: 'revenue', booked_on: s.check_out, document_state: 'complete', source_reference: key,
+      description: `${cancelled ? 'Booking.com cancellation charge' : 'Booking.com stay'} ${stay} (statement gross)`,
+      note: [`Booking.com statement, payout ${s.payout_id} on ${s.payout_date}.`, cancelled ? `Reservation status "${s.reservation_status}": a charge on a reservation that did not happen as booked, not a night sold.` : null, vatNote, unitNote].filter(Boolean).join(' '),
+    }, [line(cancelled ? 'other_guest_charges' : 'accommodation_revenue', cancelled ? 'Cancellation / no-show charge per Booking.com statement' : 'Stay per Booking.com statement (whole amount; components not itemised by the statement)', s.gross_cents, false)], actor);
+    revenueId = r.id;
+  }
+  if (s.commission_cents !== 0) {
+    const r = await postTransaction({
+      ...base, kind: 'commission', booked_on: s.check_out, counterparty_id: bcom?.id ?? null, counterparty_label: 'Booking.com B.V.', document_state: 'missing', source_reference: `${key}:commission`,
+      description: `Booking.com commission · ${stay}`, note: `Deducted in payout ${s.payout_id}. The commission invoice from Booking.com is the document. ${vatNote}`,
+    }, [line('ota_commission', 'Commission per Booking.com statement', s.commission_cents, true)], actor);
+    commissionId = r.id;
+  }
+  if (s.payment_service_fee_cents !== 0) {
+    const r = await postTransaction({
+      ...base, kind: 'fee', booked_on: s.check_out, counterparty_id: bcom?.id ?? null, counterparty_label: 'Booking.com B.V.', document_state: 'missing', source_reference: `${key}:payment_service_fee`,
+      description: `Booking.com payment service fee · ${stay}`, note: `Deducted in payout ${s.payout_id}. ${vatNote}`,
+    }, [line('payment_fees', 'Payments Service Fee per Booking.com statement', s.payment_service_fee_cents, true)], actor);
+    feeId = r.id;
+  }
+  const state = revenueId || commissionId || feeId ? 'posted' : 'not_posted';
+  await db.from('bolagio_finance_ota_settlements').update({ ledger_state: state, revenue_transaction_id: revenueId, commission_transaction_id: commissionId, fee_transaction_id: feeId }).eq('id', s.id).throwOnError();
+  return { revenueTransactionId: revenueId, state };
+}
+
+export interface SettlementRematchReport { scanned: number; changed: number; matched: number; unmatched: number; ambiguous: number; ledgerPosted: number; errors: string[] }
+
+/**
+ * Re-run the match for every current line — after a reservation backfill, a
+ * Beds24 correction, or a fixed channel reference. Only the match columns
+ * change; the statement's figures and the reservation are never written.
+ * Also posts any current line whose ledger posting is still pending.
+ */
+export async function rematchSettlements(actor: string): Promise<SettlementRematchReport> {
+  const db = supabaseAdmin();
+  const { data, error } = await db.from('bolagio_finance_ota_settlements').select(SETTLEMENT_COLUMNS).eq('amendment_state', 'current').limit(10_000);
+  if (error) throw asFinanceError('ota_settlements.select', error);
+  const rows = (data ?? []) as unknown as SettlementRow[];
+  const candidates = await reservationCandidates(rows.map((r) => r.booking_number));
+  const report: SettlementRematchReport = { scanned: rows.length, changed: 0, matched: 0, unmatched: 0, ambiguous: 0, ledgerPosted: 0, errors: [] };
+  for (const r of rows) {
+    const f = matchFields(r.booking_number, Number(r.gross_cents), r.currency, candidates);
+    report[f.match_state as 'matched' | 'unmatched' | 'ambiguous'] += 1;
+    const changed = f.reservation_id !== r.reservation_id || f.match_state !== r.match_state || f.match_candidates !== r.match_candidates
+      || f.local_gross_cents !== (r.local_gross_cents === null ? null : Number(r.local_gross_cents)) || f.gross_state !== r.gross_state || f.local_currency !== r.local_currency;
+    if (changed) {
+      const { error: uerr } = await db.from('bolagio_finance_ota_settlements').update({ ...f, matched_at: new Date().toISOString() }).eq('id', r.id);
+      if (uerr) report.errors.push(`${r.booking_number}: ${errorMessage(uerr)}`); else report.changed += 1;
+    }
+    if (r.ledger_state === 'pending') {
+      try { if ((await postSettlementLedger(r.id, actor)).state === 'posted') report.ledgerPosted += 1; } catch (cause) { report.errors.push(`${r.booking_number}: ${errorMessage(cause)}`); }
+    }
+  }
+  await observe(report.errors.length > 0 ? 'ota_settlement.rematch.failure' : 'ota_settlement.rematch.success', `${report.scanned} lines, ${report.changed} changed, ${report.unmatched} unmatched, ${report.ambiguous} ambiguous`);
+  return report;
+}
+
+/**
+ * Accept a Booking.com amendment: the original's ledger facts are reversed
+ * (dated today, or the original's date if later), the original becomes
+ * superseded, the amendment current — all in one database transaction —
+ * and the amendment's own facts are then posted under their own keys.
+ */
+export async function acceptSettlementAmendment(settlementId: string, reason: string, actor: string): Promise<{ ok: boolean; code?: string; detail?: string; revenueTransactionId?: string | null }> {
+  const r = await rpc<{ ok: boolean; code?: string; detail?: string }>('bolagio_finance_accept_ota_amendment', { p_id: settlementId, p_reason: reason, p_actor: actor });
+  if (!r.ok) return r;
+  const posted = await postSettlementLedger(settlementId, actor);
+  return { ok: true, revenueTransactionId: posted.revenueTransactionId };
 }
 
 /* ── Manual expense posting (the expense form) ────────────────────────── */

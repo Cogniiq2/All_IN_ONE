@@ -74,6 +74,7 @@ export const FINANCE_SECTIONS: Array<{ href: string; label: string; short?: stri
   { href: '/admin/finance/cash-flow', label: 'Cash flow' },
   { href: '/admin/finance/properties', label: 'Properties' },
   { href: '/admin/finance/reconciliation', label: 'Reconciliation' },
+  { href: '/admin/finance/booking-com', label: 'Booking.com' },
   { href: '/admin/finance/minibar', label: 'Minibar' },
   { href: '/admin/finance/invoices', label: 'Invoices' },
   { href: '/admin/finance/imports', label: 'Imports' },

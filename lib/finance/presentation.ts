@@ -71,6 +71,19 @@ const TABLES: Record<string, Record<string, StatePresentation>> = {
     rejected: { label: 'Rejected', tone: 'muted', glyph: 'dash', summary: 'Not this format, or rejected by a person.' },
     failed: { label: 'Failed', tone: 'critical', glyph: 'alert', summary: 'The import did not complete.' },
   },
+  settlement: {
+    reconciled: { label: 'Reconciled', tone: 'positive', glyph: 'check', summary: 'Matched to exactly one local reservation, and the statement gross equals its gross.' },
+    discrepancy: { label: 'Gross differs', tone: 'critical', glyph: 'alert', summary: 'Matched, but the statement gross differs from the local reservation gross. Both are kept; a person decides why.' },
+    no_local_gross: { label: 'No local amount', tone: 'caution', glyph: 'question', summary: 'Matched, but Beds24 supplied no amount for the reservation to compare against.' },
+    unmatched: { label: 'Unmatched', tone: 'caution', glyph: 'ring', summary: 'No local reservation carries this Booking.com number yet. Kept; re-match after the reservation history is imported.' },
+    ambiguous: { label: 'Ambiguous', tone: 'critical', glyph: 'alert', summary: 'Several local reservations carry this Booking.com number. None was chosen.' },
+    amendment: { label: 'Amendment', tone: 'caution', glyph: 'alert', summary: 'Booking.com changed this line since it was imported. Nothing is posted until a person accepts it.' },
+  },
+  payoutbank: {
+    awaiting_bank: { label: 'Awaiting bank', tone: 'neutral', glyph: 'clock', summary: 'Booking.com reports this payout; no bank receipt is linked to it yet.' },
+    matched: { label: 'In bank', tone: 'positive', glyph: 'check', summary: 'The bank receipt for this payout is linked.' },
+    mismatch: { label: 'Bank differs', tone: 'critical', glyph: 'alert', summary: 'A bank receipt is linked but its amount differs from the payout net.' },
+  },
   charge: {
     not_applicable: { label: '—', tone: 'muted', glyph: 'dash', summary: 'No charge.' },
     unpaid: { label: 'Unpaid', tone: 'caution', glyph: 'clock', summary: 'Consumed, not yet paid.' },

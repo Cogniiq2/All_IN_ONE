@@ -5,7 +5,8 @@
 | Source | How it enters | Idempotency key |
 |---|---|---|
 | Direct stays (website, PayPal) | `ingestBookingFacts` reads `bolagio_booking_intents` after every operations pass | `booking:<intent id>` |
-| Booking.com stays | reservation statement import (experimental adapter) or manual posting | `bcom:<book number>` |
+| Booking.com stays | Booking.com **finance statement** import: statement gross, commission and payment-service fee per settlement line, VAT parked on `DE_REVIEW_REQUIRED` (`booking-com-statement.md`) | `booking_com_statement` / `<identity>#<content hash>` (+ `:commission`, `:payment_service_fee`) |
+| Booking.com stays (historical) | the retired reservation-statement adapter | `bcom:<book number>` — a later statement line for the same reservation posts nothing (`legacy_posted`) |
 | Minibar | `bolagio_minibar_record_movement` (sale) | `<booking>:<sku>` or the caller's key |
 | Manual / corporate | expense/revenue forms | `manual:<hash>` |
 
@@ -35,9 +36,11 @@ Gross is split into net and VAT with half-up rounding; the header equals the sum
 ## Channels
 
 `direct`, `booking_com`, `airbnb`, `manual`, `other`. Booking.com commission is a separate
-`commission` transaction (kind `commission`, category `ota_commission`) so gross revenue, commission
-and net proceeds are all visible; the payout is a cash fact that the R6 rule bundles against the
-stays.
+`commission` transaction (kind `commission`, category `ota_commission`) and the payment-service fee a
+separate `fee` transaction (category `payment_fees`), so gross revenue, commission, fee and net
+proceeds are all visible. The payout is **not** posted as a cash fact from the statement: its cash is
+the bank's, reconciled once per payout group (`booking-com-statement.md` §8). Beds24 reservations are
+never ingested into the ledger, and Beds24's `commission = 0` is never read as a commission.
 
 ## Refunds
 

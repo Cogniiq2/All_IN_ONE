@@ -37,6 +37,8 @@ Migration: `supabase/migrations/20260922120000_finance_foundation.sql` (idempote
 | `assets` | asset candidates confirmed by the adviser: acquisition, useful life, method | |
 | `exports` | every export: kind, period, format, generator + version, row count, `sha256`, parameters, who/when | append-only |
 | `import_batches`, `import_rows` | staged files: adapter + version, filename, `sha256` (duplicate file refused), counts, status (validated/imported/rejected/failed), per-row raw + parsed + status + error | |
+| `ota_settlements` | Booking.com finance-statement lines: identity key + content hash, booking number, stay, statuses, currency, gross / commission / payment-service fee / net (costs positive) with the file's signed values, payout, match to `bolagio_reservations` (FK) with local-gross snapshot and delta, amendment state, ledger links, batch/row provenance (20260926) | `net = gross − commission − fee`; `cost = −source`; one `current` line per identity; evidence columns immutable; delete refused (`BLG20`) |
+| `ota_payouts` | one row per payout ID: date, currency, bank receipt link (`bank_payment_id`, `bank_state`) — totals come from the view `ota_payout_totals`, never stored | identity immutable; a line with another date/currency for the same payout refused (`BLG21`) |
 | `turnover_costs` | expected cleaning cost per turnover (an expectation, never an expense) | |
 | `minibar_products`, `minibar_movements` | products with purchase cost, selling price, tax code; signed movements (purchase +, sale/waste/complimentary −, adjustment/correction any) with charge state and the posted transaction | sign constraint; append-only |
 
@@ -52,7 +54,8 @@ excluded by sign, not by filter), `pl_monthly`, `vat_monthly`, `cash_monthly`, `
 `reclassify_line(line, patch, reason, actor, as_accountant)` · `set_transaction_state(id, patch, actor, reason)` ·
 `record_payment(payment, actor)` · `record_match(match, actor)` · `register_document(doc, actor)` ·
 `link_document(doc, target_type, target_id, actor)` · `set_period_status(period, to, actor, as_accountant, note)` ·
-`record_tax_stage(…)` · `bolagio_minibar_record_movement(move, actor)` · helpers `period_key`,
+`record_tax_stage(…)` · `bolagio_minibar_record_movement(move, actor)` ·
+`record_ota_settlement(row, actor)` · `accept_ota_amendment(id, reason, actor)` · helpers `period_key`,
 `ensure_period`, `period_locked`.
 
 Session GUCs used by the guards: `bolagio.finance_posting`, `finance_override`, `finance_accountant`,
@@ -68,6 +71,8 @@ Session GUCs used by the guards: `bolagio.finance_posting`, `finance_override`, 
 | `BLG12` | immutable field |
 | `BLG13` | accountant-locked (or a change that must go through the override path) |
 | `BLG14` | tax code inconsistent with rate or side |
+| `BLG20` | settlement line / payout evidence changed or deleted, or an amendment state changed outside its function |
+| `BLG21` | a payout ID recorded with another date or currency |
 
 ## Retention
 

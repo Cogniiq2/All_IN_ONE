@@ -11,8 +11,12 @@ expenses or revenue.
 | `bolagio_bank_csv` | bank statement in the BoLaGio template (Buchungstag; Valuta; Betrag; Auftraggeber/Empfaenger; Verwendungszweck; Transaktions-ID) | **validated** (unit + integration tests) |
 | `bolagio_expenses_csv` | expenses template (Datum; Rechnungsdatum; Faellig; Lieferant; Land; USt-ID; Rechnungsnummer; Beschreibung; Kategorie; Einheit; Netto; USt; Brutto) | **validated** |
 | `paypal_activity` | PayPal → Activity → Download (English headers) | **experimental** — not validated against a live download |
-| `booking_com_reservations` | Extranet reservation statement | **experimental** |
-| `booking_com_payouts` | Extranet payout report | **experimental** |
+| `booking_com_finance_statement` | Booking.com Extranet → Finance → statement export, as downloaded (15 columns incl. Amount, Commission, Payments Service Fee, Net, Payout date, Payout ID) | **validated** against a live export — see [`booking-com-statement.md`](booking-com-statement.md) |
+| `booking_com_reservations` | assumed "reservation statement" columns that no real export carries | **retired** — kept only so historical batches render |
+| `booking_com_payouts` | assumed "payout report" columns; recorded each payout as a cash fact, which double counts against the bank | **retired** — kept only so historical batches render |
+
+Readiness `retired` means: still resolvable for a batch staged with it (label, rows, evidence), never
+offered in the upload form, never auto-detected, and refused by the stage action and command.
 
 Experimental adapters are labelled so on the screen and in the batch row; their header check is
 strict, and a file of the wrong shape is *rejected* with the missing columns named. Nothing is
@@ -36,6 +40,9 @@ inspected and committed against a test database.
 
 ## Flow
 
+0. **Choose** the adapter, or leave "Detect from the file's columns": detection reads the header line
+   only and never picks a retired adapter. The upload must be a `.csv`/`.txt` text file up to 5 MB and
+   20 000 rows.
 1. **Stage** (`stageImport`): hash the file (the same bytes are refused as `duplicate_file`), parse,
    detect duplicates *within* the file (same provider reference / same expense key), count valid /
    error / duplicate rows, store every row with its raw values, parsed values, status and error.
@@ -48,12 +55,32 @@ inspected and committed against a test database.
 Bank rows without a transaction id get a deterministic key from date, amount, purpose and
 counterparty, so re-importing an overlapping statement duplicates nothing.
 
+Booking.com finance-statement rows do not go through the payment/expense/revenue path: each becomes a
+**settlement line** (`bolagio_finance_ota_settlements`) recorded idempotently on its logical identity
+(reservation number + payout ID + row type) and content hash — overlapping exports are skipped, amended
+lines are held for review — and only then posted to the ledger. See
+[`booking-com-statement.md`](booking-com-statement.md).
+
+Row numbers are the record's own number in the file: a malformed row no longer shifts the numbers of
+the rows after it (which could collide on the batch's unique `row_no`).
+
 ## Privacy
 
-Booking.com guest names are reduced to an initial at staging; PayPal payer names are kept only as a
-short counterparty label on the payment row; nothing from an import appears in a URL.
+An adapter may declare **redacted columns**: their values are replaced by `[redacted]` in the raw row
+*before* it is stored. The Booking.com finance statement redacts `Guest name` — the finance record
+does not need it and nothing matches on it. (The retired reservation adapter reduced the name to an
+initial.) PayPal payer names are kept only as a short counterparty label on the payment row. Raw rows
+of bank and PayPal files can still contain counterparty names; they are finance evidence behind
+`finance.view`, never logged, and follow the finance retention class (`lib/retention/policy.ts`).
+Nothing from an import appears in a URL.
 
 ## Tests
+
+Booking.com finance statement: `tests/finance/booking-com-statement.test.ts` (fixture, parser, dates,
+money, currency, arithmetic, identity, matching, reconciliation, aggregation),
+`tests/finance/booking-com-security.test.ts` (who may stage/commit/re-match/accept; no client access
+to the service role), `tests/integration/booking-com-statement.test.ts` (real schema: totals, payouts,
+idempotency, amendments, re-match, guards, screens).
 
 `tests/finance/imports-invoices.test.ts` (parser, delimiter detection, round trip, dates, adapter
 readiness, rejection, bank rows incl. tax and payout kinds and hash keys, expense arithmetic check,

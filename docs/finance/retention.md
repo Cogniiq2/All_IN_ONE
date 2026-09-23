@@ -25,6 +25,12 @@ Guest personal data inside finance (recipient name and address on an issued invo
 with the invoice for its statutory period; the booking core's own guest-data retention applies to the
 booking row.
 
+Raw import rows (`bolagio_finance_import_rows.raw`) are the evidence of what was posted and can hold
+names from a source file (a bank counterparty, a PayPal payer). The Booking.com finance statement's
+guest name is **redacted before storage**; its settlement lines hold no guest data at all. Raw rows
+are readable only through the finance screens (`finance.view`), are never logged, and follow the
+finance retention class above — no separate deletion period is set in code.
+
 GoBD (BMF letter of 28 Nov 2019 as amended 11 Mar 2024 and 14 Jul 2025): unchangeability is met by
 append-only tables and hashes, traceability by actor and reason on every override and status change,
 completeness by idempotent ingestion keys, and the procedural documentation is this `docs/finance/`

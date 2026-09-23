@@ -83,6 +83,19 @@ do $$ begin
   else
     raise notice 'finance (20260922) is not applied: finance assertions skipped';
   end if;
+  if to_regclass('public.bolagio_finance_ota_settlements') is not null then
+    perform pg_temp.v_assert(to_regprocedure('bolagio_finance_record_ota_settlement(jsonb,text)') is not null, 'bolagio_finance_record_ota_settlement exists');
+    perform pg_temp.v_assert(to_regprocedure('bolagio_finance_accept_ota_amendment(uuid,text,text)') is not null, 'bolagio_finance_accept_ota_amendment exists');
+    perform pg_temp.v_assert(exists (select 1 from pg_indexes where indexname = 'bolagio_finance_ota_settlements_current_uq'), 'one current settlement line per identity');
+    perform pg_temp.v_assert(exists (select 1 from pg_trigger where tgname = 'bolagio_finance_ota_settlement_guard'), 'the settlement guard trigger is present');
+    perform pg_temp.v_assert(not exists (select 1 from bolagio_finance_ota_settlements where net_cents <> gross_cents - commission_cents - payment_service_fee_cents), 'every settlement line balances: gross − commission − fee = net');
+    perform pg_temp.v_assert(not exists (select 1 from bolagio_finance_ota_settlements where amendment_state = 'current' group by identity_key having count(*) > 1), 'no settlement identity has two current lines');
+    perform pg_temp.v_assert(not exists (select 1 from bolagio_finance_ota_settlements s where not exists (select 1 from bolagio_finance_ota_payouts p where p.provider = s.provider and p.payout_id = s.payout_id)), 'every settlement line belongs to a recorded payout');
+    perform pg_temp.v_assert(not exists (select 1 from bolagio_finance_payments p join bolagio_finance_ota_payouts o on o.payout_id = p.provider_reference where p.source = 'booking_com_payout' and o.bank_payment_id is not null), 'no Booking.com payout is both a provider payment and linked to a bank receipt');
+    raise notice 'ok — Booking.com finance statement (20260926) verified';
+  else
+    raise notice 'Booking.com finance statement (20260926) is not applied: its assertions skipped';
+  end if;
   perform pg_temp.v_assert(not exists (
     select 1 from bolagio_booking_intents where refund_state = 'completed' and (refund_id is null or refunded_amount_cents <= 0)), 'no completed refund without evidence');
   perform pg_temp.v_assert(not exists (

@@ -145,7 +145,27 @@ export function CreateDraftButton({ intentId, reference }: { intentId: string; r
 }
 
 export function CommitImportButton({ batchId }: { batchId: string }) {
-  return <ActionButton label="Import valid rows" pendingLabel="Importing…" className="bc-btn primary" confirm="Post the valid rows into the ledger? Each row is idempotent on its own reference." run={() => actions.commitImportAction(batchId)} success={(r) => `${r.posted} rows posted${(r.errors as string[]).length ? `; ${(r.errors as string[]).length} errors` : ''}. Reconciliation ran afterwards.`} />;
+  return <ActionButton label="Import valid rows" pendingLabel="Importing…" className="bc-btn primary" confirm="Post the valid rows into the ledger? Each row is idempotent on its own reference." run={() => actions.commitImportAction(batchId)} success={(r) => `${r.posted} rows posted${Number(r.alreadyImported) ? `; ${r.alreadyImported} already imported earlier (nothing written)` : ''}${Number(r.amendments) ? `; ${r.amendments} amended by Booking.com, held for review` : ''}${(r.errors as string[]).length ? `; ${(r.errors as string[]).length} errors` : ''}. Reconciliation ran afterwards.`} />;
+}
+
+export function RematchSettlementsButton() {
+  return <ActionButton label="Re-match reservations" pendingLabel="Matching…" className="bc-btn sm" run={actions.rematchSettlementsAction} success={(r) => { const rep = r.report as { scanned: number; changed: number; matched: number; unmatched: number; ambiguous: number; ledgerPosted: number; errors: string[] }; return `${rep.scanned} lines: ${rep.matched} matched, ${rep.unmatched} unmatched, ${rep.ambiguous} ambiguous; ${rep.changed} changed${rep.ledgerPosted ? `, ${rep.ledgerPosted} pending lines posted` : ''}${rep.errors.length ? `; ${rep.errors.length} errors` : ''}. No reservation was written.`; }} />;
+}
+
+export function AcceptAmendmentButton({ settlementId }: { settlementId: string }) {
+  const [pending, start] = useTransition();
+  const [result, setResult] = useState<ActionResult<Record<string, unknown>> | null>(null);
+  const router = useRouter();
+  return (
+    <div className="grid gap-1">
+      <button type="button" className="bc-btn sm" disabled={pending} data-pending={pending ? 'true' : undefined} onClick={() => {
+        const reason = window.prompt('Why accept Booking.com’s amended figures? The original line’s ledger postings are reversed (recorded with this reason) and the amended ones posted.');
+        if (!reason) return;
+        start(async () => { const r = await actions.acceptSettlementAmendmentAction(settlementId, reason); setResult(r); if (r.ok) router.refresh(); });
+      }}>Accept amendment…</button>
+      <ResultNotice result={result} success={() => 'Accepted: original reversed, amendment posted.'} />
+    </div>
+  );
 }
 
 export function NoticeStatusButtons({ id, status }: { id: string; status: string }) {

@@ -85,7 +85,7 @@ Legal and public routes already exist — preserve them.
 
 Internal (authenticated, noindex, not in the sitemap): `/admin` · `/admin/calendar` ·
 `/admin/bookings` · `/admin/bookings/[reference]` · `/admin/operations` · `/admin/properties` ·
-`/admin/payments` · `/admin/system` · `/admin/login` · `/admin/finance` and its 17 sections
+`/admin/payments` · `/admin/system` · `/admin/login` · `/admin/finance` and its 18 sections
 (Finance & Tax — see `docs/finance/architecture.md`; never linked from the public site).
 
 ### Commands

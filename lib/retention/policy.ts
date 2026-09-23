@@ -263,7 +263,13 @@ function financeClasses(): RetentionClass[] {
     c('bolagio_finance_counterparties', 'configuration', 'Suppliers, OTAs, providers, authorities and their classification defaults. Business entities, not persons.', `As long as the business relationship plus the retention of the vouchers that name them — ${NEEDS}`),
     c('bolagio_finance_accounts', 'configuration', 'Money accounts (bank, PayPal, cash); IBAN masked.', reference),
     c('bolagio_finance_import_batches', 'transaction_evidence', 'Provenance of imported statements: file name, hash, counts.', voucher),
-    c('bolagio_finance_import_rows', 'transaction_evidence', 'Staged rows of an import, kept as the raw source of what was posted.', `${voucher}; raw rows of REJECTED batches may be removed after review — ${NEEDS}`),
+    // The one finance table whose raw column can carry names from a source file:
+    // a bank counterparty, a PayPal payer. A Booking.com statement's guest name
+    // is redacted before the row is stored (adapter `redactColumns`). Access is
+    // the finance screens behind `finance.view`; the raw row is never logged.
+    c('bolagio_finance_import_rows', 'transaction_evidence', 'Staged rows of an import, kept as the raw source of what was posted. Raw values may include counterparty or payer names from bank and PayPal files; Booking.com guest names are redacted before storage.', `${voucher}; raw rows of REJECTED batches may be removed after review — ${NEEDS}`, ['raw'], 'Art. 6(1)(c) GDPR with § 147 AO (evidence of what was posted); data minimisation by redaction at staging (Art. 5(1)(c))'),
+    c('bolagio_finance_ota_settlements', 'transaction_evidence', 'Booking.com finance-statement lines: statement gross, commission, payment-service fee, net and payout per reservation, with the match to the local reservation. No guest data: the reservation number is the key.', voucher),
+    c('bolagio_finance_ota_payouts', 'transaction_evidence', 'One row per Booking.com payout ID: the anchor a bank receipt is reconciled against.', voucher),
     c('bolagio_finance_documents', 'transaction_evidence', 'Registry of invoices, statements, notices and contracts (hash, type, retention class).', `Per retention_class on the row: invoices/vouchers 8 years, annual accounts/notices/contracts 10 years, letters 6 years — ${NEEDS}`),
     c('bolagio_finance_document_links', 'transaction_evidence', 'Which document evidences which record.', voucher),
     c('bolagio_finance_transactions', 'transaction_evidence', 'The economic facts: revenue, expenses, refunds, commissions, with provenance to their source.', books),

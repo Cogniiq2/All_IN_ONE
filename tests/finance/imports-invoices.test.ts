@@ -42,9 +42,9 @@ describe('csv parser', () => {
 /* ---------- adapters ---------- */
 
 describe('import adapters', () => {
-  it('only the BoLaGio templates are labelled validated; provider downloads stay experimental', () => {
+  it('only the BoLaGio templates and the live-validated Booking.com statement are validated; the assumed Booking.com formats are retired', () => {
     const readiness = Object.fromEntries(ADAPTERS.map((a) => [a.id, a.readiness]));
-    expect(readiness).toEqual({ bolagio_bank_csv: 'validated', bolagio_expenses_csv: 'validated', paypal_activity: 'experimental', booking_com_reservations: 'experimental', booking_com_payouts: 'experimental' });
+    expect(readiness).toEqual({ bolagio_bank_csv: 'validated', bolagio_expenses_csv: 'validated', paypal_activity: 'experimental', booking_com_finance_statement: 'validated', booking_com_reservations: 'retired', booking_com_payouts: 'retired' });
   });
 
   it('detects an adapter by required headers and rejects a file of the wrong shape', async () => {

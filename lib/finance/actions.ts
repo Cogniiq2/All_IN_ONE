@@ -35,7 +35,8 @@ import { category as categoryOf } from '@/lib/finance/categories';
 import { ACCEPTED_MIME, MAX_DOCUMENT_BYTES, detectStructuredFormat, sha256Hex } from '@/lib/finance/documents';
 import { documentBucket } from '@/lib/finance/config';
 import { supabaseAdmin } from '@/lib/supabase/server';
-import { ADAPTERS, type AdapterId } from '@/lib/finance/import/adapters';
+import { ADAPTERS, detectAdapter, type AdapterId } from '@/lib/finance/import/adapters';
+import { parseCsv } from '@/lib/finance/import/csv';
 import * as builders from '@/lib/finance/export/builders';
 import { loadCashFlow, loadExpenses, loadPl, loadProperties, loadRevenue, loadTaxes, loadVat, unitNamer } from '@/lib/finance/queries';
 import { periodRange } from '@/lib/finance/periods';
@@ -478,32 +479,80 @@ export async function addTaxRateAction(fd: FormData): Promise<ActionResult> {
 
 /* ── Imports ──────────────────────────────────────────────────────────── */
 
+/** A CSV by name and by declared type. Browsers report CSV inconsistently (Excel on Windows says vnd.ms-excel), so the type is an allow-list, and the content is then parsed as data only. */
+const CSV_EXTENSIONS = /\.(csv|txt)$/i;
+const CSV_MIME = new Set(['', 'text/csv', 'text/plain', 'application/csv', 'application/vnd.ms-excel', 'text/comma-separated-values', 'application/octet-stream']);
+const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
+
 export async function stageImportAction(fd: FormData): Promise<ActionResult<{ batchId?: string; summary: string }>> {
   const g = await gate('finance.edit');
   if (!g.ok) return g;
-  const adapter = str(fd, 'adapter', 40) as AdapterId;
-  if (!ADAPTERS.some((a) => a.id === adapter)) return { ok: false, reason: 'invalid', detail: 'Unknown adapter.' };
+  const requested = str(fd, 'adapter', 40);
   const file = fd.get('file');
-  if (!(file instanceof File) || file.size === 0 || file.size > 5 * 1024 * 1024) return { ok: false, reason: 'invalid', detail: 'A CSV file up to 5 MB is required.' };
+  if (!(file instanceof File) || file.size === 0 || file.size > MAX_IMPORT_BYTES) return { ok: false, reason: 'invalid', detail: 'A CSV file up to 5 MB is required.' };
+  if (!CSV_EXTENSIONS.test(file.name) || !CSV_MIME.has(file.type.toLowerCase())) return { ok: false, reason: 'invalid', detail: 'Only a .csv (or .txt) text export is accepted.' };
   try {
     const text = await file.text();
+    let adapter: AdapterId;
+    if (requested === 'auto') {
+      // Detection reads the header line only, and never picks a retired adapter.
+      const detected = detectAdapter(parseCsv(text.slice(0, 4096).split(/\r?\n/)[0] ?? '').headers);
+      if (!detected) return { ok: false, reason: 'refused', detail: 'The file’s columns match no adapter. Choose the adapter explicitly to see which columns are missing.' };
+      adapter = detected.id;
+    } else {
+      const spec = ADAPTERS.find((a) => a.id === requested);
+      if (!spec) return { ok: false, reason: 'invalid', detail: 'Unknown adapter.' };
+      if (spec.readiness === 'retired') return { ok: false, reason: 'refused', detail: `${spec.label} no longer accepts uploads.` };
+      adapter = spec.id;
+    }
     const r = await commands.stageImport(adapter, file.name, text, g.actor);
-    await audit({ operator: g.operator, action: 'finance.import.stage', outcome: r.ok ? 'ok' : r.reason, detail: { adapter, filename: file.name, bytes: file.size } });
+    // Counts and the filename only: never a row, a header value or a name from the file.
+    await audit({ operator: g.operator, action: 'finance.import.stage', outcome: r.ok ? 'ok' : r.reason, detail: { adapter, detected: requested === 'auto', filename: file.name.slice(0, 120), bytes: file.size, ...(r.ok ? { rows: r.rowCount, valid: r.validRows, errors: r.errorRows, duplicates: r.duplicateRows } : {}) } });
     refreshFinance(['/admin/finance/imports']);
     if (!r.ok) return { ok: false, reason: 'refused', detail: r.detail };
-    return { ok: true, batchId: r.batchId, summary: `${r.validRows} valid, ${r.errorRows} error, ${r.duplicateRows} duplicate rows (${r.readiness} adapter).` };
+    const label = ADAPTERS.find((a) => a.id === adapter)?.label ?? adapter;
+    return { ok: true, batchId: r.batchId, summary: `${label}: ${r.validRows} valid, ${r.errorRows} error, ${r.duplicateRows} duplicate rows (${r.readiness} adapter).` };
   } catch (cause) { return fail(cause); }
 }
 
-export async function commitImportAction(batchId: string): Promise<ActionResult<{ posted: number; errors: string[] }>> {
+export async function commitImportAction(batchId: string): Promise<ActionResult<{ posted: number; errors: string[]; alreadyImported: number; amendments: number }>> {
   const g = await gate('finance.edit');
   if (!g.ok) return g;
   if (!/^[0-9a-f-]{36}$/.test(batchId)) return { ok: false, reason: 'invalid' };
   try {
     const r = await commands.commitImport(batchId, g.actor);
-    await audit({ operator: g.operator, action: 'finance.import.commit', targetType: 'finance_import_batch', targetRef: batchId, outcome: r.errors.length ? 'partial' : 'ok', detail: { posted: r.posted, errors: r.errors.length } });
-    refreshFinance(['/admin/finance/imports', `/admin/finance/imports/${batchId}`]);
-    return { ok: true, posted: r.posted, errors: r.errors };
+    await audit({ operator: g.operator, action: 'finance.import.commit', targetType: 'finance_import_batch', targetRef: batchId, outcome: r.errors.length ? 'partial' : 'ok', detail: { posted: r.posted, skipped: r.skipped, alreadyImported: r.alreadyImported, amendments: r.amendments, errors: r.errors.length } });
+    refreshFinance(['/admin/finance/imports', `/admin/finance/imports/${batchId}`, '/admin/finance/booking-com']);
+    return { ok: true, posted: r.posted, errors: r.errors, alreadyImported: r.alreadyImported, amendments: r.amendments };
+  } catch (cause) { return fail(cause); }
+}
+
+/* ── Booking.com settlements ──────────────────────────────────────────── */
+
+/** Re-run the reservation match for every current Booking.com line (after a reservation backfill) and post any pending ledger facts. */
+export async function rematchSettlementsAction(): Promise<ActionResult<{ report: commands.SettlementRematchReport }>> {
+  const g = await gate('finance.edit');
+  if (!g.ok) return g;
+  try {
+    const report = await commands.rematchSettlements(g.actor);
+    await audit({ operator: g.operator, action: 'finance.settlement.rematch', outcome: report.errors.length ? 'partial' : 'ok', detail: { scanned: report.scanned, changed: report.changed, matched: report.matched, unmatched: report.unmatched, ambiguous: report.ambiguous, ledgerPosted: report.ledgerPosted, errors: report.errors.length } });
+    refreshFinance(['/admin/finance/booking-com']);
+    return { ok: true, report };
+  } catch (cause) { return fail(cause); }
+}
+
+/** Accept an amended Booking.com line: reverse the original's ledger facts, supersede it, post the amendment. A reason is required. */
+export async function acceptSettlementAmendmentAction(settlementId: string, reason: string): Promise<ActionResult<{ revenueTransactionId: string | null }>> {
+  const g = await gate('finance.review');
+  if (!g.ok) return g;
+  const why = String(reason ?? '').trim().slice(0, 500);
+  if (!/^[0-9a-f-]{36}$/.test(settlementId) || why.length < 3) return { ok: false, reason: 'invalid', detail: 'A reason is required.' };
+  try {
+    const r = await commands.acceptSettlementAmendment(settlementId, why, g.actor);
+    await audit({ operator: g.operator, action: 'finance.settlement.accept_amendment', targetType: 'finance_ota_settlement', targetRef: settlementId, outcome: r.ok ? 'ok' : (r.code ?? 'refused'), detail: { reason: why } });
+    refreshFinance(['/admin/finance/booking-com']);
+    if (!r.ok) return { ok: false, reason: 'refused', detail: r.code === 'STALE' ? 'The line this amendment replaces is no longer current.' : r.code === 'NOT_AN_AMENDMENT' ? 'This line is not an amendment awaiting review.' : 'Not found.' };
+    return { ok: true, revenueTransactionId: r.revenueTransactionId ?? null };
   } catch (cause) { return fail(cause); }
 }
 

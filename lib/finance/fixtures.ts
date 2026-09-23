@@ -29,7 +29,7 @@ import { requireTaxCode, TAX_CODES } from '@/lib/finance/tax-codes';
 import { CATEGORIES } from '@/lib/finance/categories';
 import { TAX_RATE_SEED } from '@/lib/finance/tax/rates';
 import type {
-  AccountRow, AssetRow, CashMonthlyRow, CounterpartyRow, DocumentLinkRow, DocumentRow, ExceptionCountsRow, ExportRow, FinanceRowSource, ImportBatchRow, ImportRowRow,
+  AccountRow, AssetRow, CashMonthlyRow, CounterpartyRow, DocumentLinkRow, DocumentRow, ExceptionCountsRow, ExportRow, FinanceRowSource, ImportBatchRow, ImportRowRow, OtaPayoutRow, ReservationCandidate, SettlementRow,
   InvoiceLineRow, InvoiceRow, LineRow, MinibarMovementRow, MinibarProductRow, MinibarStockRow, OverrideRow, PaymentRow, PeriodRow, PlMonthlyRow, PolicyRow, ReconciliationRow,
   ReserveRow, StayRow, TaxAdjustmentRow, TaxEstimateRow, TaxNoticeRow, TaxPaymentRow, TaxPeriodRow, TransactionQuery, TransactionRow, TurnoverCostRow, UnitMonthlyRow,
 } from '@/lib/finance/rows';
@@ -591,6 +591,51 @@ export function fixtureLedger() {
   return { transactions: TX, lines: LINES, payments: PAYMENTS, reconciliations: RECON, documents: DOCS, stays: STAY_ROWS, movements: MOVEMENTS, products: PRODUCTS };
 }
 
+/* Booking.com finance-statement lines: the sanitized fixture's figures, with
+   every reconciliation state represented once, and one amendment waiting. */
+const SETTLEMENT_LINES: Array<[string, number, number, string, number, number, number, string, number, string | null, 'matched' | 'unmatched' | 'ambiguous', number | null]> = [
+  // booking, ci, co, payout, gross, commission, fee, payout id, payout date offset, unit, match, local gross
+  ['9990000001', -19, -17, 'FIXTUREPAYOUT01', 41280, 5944, 578, 'FIXTUREPAYOUT01', -15, 'u-s1', 'matched', 41280],
+  ['9990000002', -12, -10, 'FIXTUREPAYOUT02', 59840, 8617, 838, 'FIXTUREPAYOUT02', -8, 'u-s2', 'matched', 59840],
+  ['9990000003', -12, -9, 'FIXTUREPAYOUT02', 36720, 5288, 514, 'FIXTUREPAYOUT02', -8, 'u-s1', 'matched', 35720],
+  ['9990000004', -5, -2, 'FIXTUREPAYOUT03', 68976, 9933, 966, 'FIXTUREPAYOUT03', -1, null, 'unmatched', null],
+  ['9990000005', -6, -3, 'FIXTUREPAYOUT03', 42400, 6114, 593, 'FIXTUREPAYOUT03', -1, null, 'ambiguous', null],
+];
+const SETTLEMENTS: SettlementRow[] = SETTLEMENT_LINES.map(([booking, ci, co, , gross, commission, fee, payout, po, unit, match, local], i) => {
+  const grossState = match !== 'matched' ? 'not_applicable' : local === gross ? 'exact' : 'discrepancy';
+  return {
+    id: `st-${i + 1}`, provider: 'booking_com', identity_key: `booking_com|${booking}|${payout}|reservation`, content_sha256: String(i + 1).repeat(64), row_type: 'Reservation', booking_number: booking,
+    payout_id: payout, payout_date: d(po), check_in: d(ci), check_out: d(co), currency: 'EUR', gross_cents: gross, commission_cents: commission, payment_service_fee_cents: fee,
+    net_cents: gross - commission - fee, source_commission_cents: -commission, source_payment_service_fee_cents: -fee, reservation_status: 'ok', payment_status: 'by_booking',
+    payments_service_provider: 'Booking.com B.V.', reservation_id: match === 'matched' ? `res-${i + 1}` : null, unit_id: unit, match_state: match, match_candidates: match === 'matched' ? 1 : match === 'ambiguous' ? 2 : 0,
+    local_gross_cents: local, local_currency: local === null ? null : 'EUR', gross_delta_cents: local === null ? null : gross - local, gross_state: grossState, matched_at: ts(po), amendment_state: 'current',
+    supersedes_id: null, ledger_state: 'posted', revenue_transaction_id: null, commission_transaction_id: null, fee_transaction_id: null, import_batch_id: 'imp-bcom', import_row_id: null,
+    created_by: 'ops@example.com', created_at: ts(po + 1),
+  } satisfies SettlementRow;
+});
+SETTLEMENTS.push({ ...SETTLEMENTS[1], id: 'st-amend', content_sha256: 'a'.repeat(64), gross_cents: 61840, net_cents: 61840 - 8617 - 838, amendment_state: 'conflict', supersedes_id: 'st-2', ledger_state: 'not_posted', gross_delta_cents: 2000, gross_state: 'discrepancy', created_at: ts(0) });
+const OTA_PAYOUTS: OtaPayoutRow[] = Array.from(new Set(SETTLEMENTS.map((s) => s.payout_id))).map((id) => {
+  const first = SETTLEMENTS.find((s) => s.payout_id === id)!;
+  return { id: `po-${id}`, provider: 'booking_com', payout_id: id, payout_date: first.payout_date, currency: 'EUR', bank_state: 'awaiting_bank', bank_payment_id: null, bank_matched_at: null, first_import_batch_id: 'imp-bcom', created_at: first.created_at };
+});
+
+IMPORTS.unshift({ id: 'imp-bcom', source_type: 'booking_com_finance_statement', adapter: 'booking_com_finance_statement', adapter_version: '1.0', filename: 'booking-com-finance-statement.csv', sha256: 'c0de'.repeat(16), byte_size: 1_214, row_count: 5, valid_rows: 5, error_rows: 0, duplicate_rows: 0, status: 'imported', error: null, imported_at: ts(-1), created_by: 'ops@example.com', created_at: ts(-1) });
+SETTLEMENTS.filter((st) => st.amendment_state === 'current').forEach((st, i) => {
+  IMPORT_ROWS.push({
+    id: `ir-bcom-${i + 1}`, batch_id: 'imp-bcom', row_no: i + 2, status: 'imported', error: null, transaction_id: null, payment_id: null, settlement_id: st.id,
+    raw: { Type: 'Reservation', 'Booking number': st.booking_number, 'Guest name': '[redacted]', Amount: (st.gross_cents / 100).toFixed(2), 'Payout ID': st.payout_id },
+    parsed: { target: 'ota_settlement', provider: 'booking_com', identityKey: st.identity_key, contentSha256: st.content_sha256, rowType: st.row_type, bookingNumber: st.booking_number, checkIn: st.check_in, checkOut: st.check_out,
+      reservationStatus: st.reservation_status, paymentStatus: st.payment_status, paymentsServiceProvider: st.payments_service_provider, currency: st.currency, grossCents: st.gross_cents, commissionCents: st.commission_cents,
+      paymentServiceFeeCents: st.payment_service_fee_cents, netCents: st.net_cents, sourceCommissionCents: st.source_commission_cents, sourcePaymentServiceFeeCents: st.source_payment_service_fee_cents, payoutId: st.payout_id, payoutDate: st.payout_date },
+  });
+});
+/* The local reservations the fixture lines match against: one per matched line, two for the ambiguous one. No guest data. */
+const RESERVATION_CANDIDATES: ReservationCandidate[] = SETTLEMENTS.filter((st) => st.amendment_state === 'current' && st.match_state !== 'unmatched').flatMap((st) =>
+  Array.from({ length: st.match_state === 'ambiguous' ? 2 : 1 }, (_, k) => ({
+    id: `${st.reservation_id ?? `res-amb-${st.id}`}-${k}`, unit_id: st.unit_id ?? (k === 0 ? 'u-s1' : 'u-s2'), channel_reference: st.booking_number, source: 'booking_com', provider_status: 'confirmed', status_class: 'active',
+    check_in: st.check_in, check_out: st.check_out, currency: 'EUR', total_amount_cents: st.local_gross_cents ?? st.gross_cents,
+  })));
+
 export function fixtureFinanceSource(): FinanceRowSource {
   const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
   return {
@@ -671,6 +716,13 @@ export function fixtureFinanceSource(): FinanceRowSource {
     async exceptionCounts() { return exceptionCounts(); },
     async stays(from, to) { return clone(STAY_ROWS.filter((s) => s.check_in < to && s.check_out > from)); },
     async units() { return clone(FIXTURE_UNITS); },
+    async otaSettlements(f) {
+      const col = (r: SettlementRow) => (f.basis === 'checkout' ? r.check_out : r.payout_date);
+      const rows = f.batchId ? SETTLEMENTS.filter((r) => r.import_batch_id === f.batchId) : f.ids ? SETTLEMENTS.filter((r) => f.ids!.includes(r.id)) : SETTLEMENTS.filter((r) => r.amendment_state !== 'superseded' && (!f.from || col(r) >= f.from) && (!f.to || col(r) < f.to));
+      return clone(rows);
+    },
+    async otaPayouts() { return clone(OTA_PAYOUTS); },
+    async reservationsByChannelReference(refs) { return clone(RESERVATION_CANDIDATES.filter((r) => refs.includes(r.channel_reference ?? ''))); },
     async ingestionSignals() { return [{ signal: 'booking_ingestion.success', observed_at: ts(0, 6), detail: '7 stays, 0 new' }, { signal: 'import.booking_com_reservations.success', observed_at: ts(-29), detail: 'reservations-2026-08.csv' }, { signal: 'import.paypal_activity.success', observed_at: ts(-1), detail: '11 rows' }, { signal: 'reconciliation.success', observed_at: ts(0, 6), detail: '2 proposals' }]; },
   };
 }

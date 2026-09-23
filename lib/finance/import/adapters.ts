@@ -19,16 +19,29 @@
  *   bolagio_bank_csv        our own documented bank template (validated)
  *   bolagio_expenses_csv    our own documented expense template (validated)
  *   paypal_activity         PayPal "Activity download" (experimental)
- *   booking_com_reservations Booking.com reservations statement (experimental)
- *   booking_com_payouts     Booking.com payout report (experimental)
+ *   booking_com_finance_statement
+ *                           Booking.com Extranet → Finance statement export
+ *                           (validated against a live export; see
+ *                           `booking-com-statement.ts`)
+ *   booking_com_reservations RETIRED — assumed columns, never matched a real
+ *   booking_com_payouts      export; kept resolvable for historical batches,
+ *                            no longer offered for a new upload
+ *
+ *   retired       kept so a batch staged with it still renders and its
+ *                 evidence stays readable; refused for new uploads and never
+ *                 auto-detected
  * ══════════════════════════════════════════════════════════════════════════
  */
 
 import { parseDecimalToCents } from '@/lib/finance/money';
 import { parseCsv, parseDateLoose, type ParsedCsv } from '@/lib/finance/import/csv';
+import { BOOKING_COM_STATEMENT_HEADERS, BOOKING_COM_STATEMENT_REDACT, parseStatementRow, settlementContentString, settlementIdentityKey } from '@/lib/finance/import/booking-com-statement';
 
-export type AdapterId = 'bolagio_bank_csv' | 'bolagio_expenses_csv' | 'paypal_activity' | 'booking_com_reservations' | 'booking_com_payouts';
-export type AdapterReadiness = 'validated' | 'experimental';
+export type AdapterId = 'bolagio_bank_csv' | 'bolagio_expenses_csv' | 'paypal_activity' | 'booking_com_finance_statement' | 'booking_com_reservations' | 'booking_com_payouts';
+export type AdapterReadiness = 'validated' | 'experimental' | 'retired';
+
+/** Bounds on one upload, on top of the 5 MB byte limit the action enforces. */
+export const MAX_IMPORT_ROWS = 20_000;
 
 export interface StagedPayment {
   target: 'payment';
@@ -88,7 +101,40 @@ export interface StagedRevenue {
   guestLabel: string | null;
 }
 
-export type StagedRow = StagedPayment | StagedExpense | StagedRevenue;
+/**
+ * One Booking.com finance-statement line, staged: reservation-level
+ * economics (gross, commission, payment-service fee, net) plus the payout it
+ * was settled in. NOT a payment — the payout's cash is the bank's fact — and
+ * not a revenue posting yet: the command layer decides what it becomes.
+ * No guest data: identity is the reservation number.
+ */
+export interface StagedOtaSettlement {
+  target: 'ota_settlement';
+  provider: 'booking_com';
+  /** `booking_com|<booking number>|<payout id>|<row type>` — stable across overlapping exports. */
+  identityKey: string;
+  /** SHA-256 of the line's financial content; a changed hash under the same identity is an amendment. */
+  contentSha256: string;
+  rowType: string;
+  bookingNumber: string;
+  checkIn: string;
+  checkOut: string;
+  reservationStatus: string;
+  paymentStatus: string | null;
+  paymentsServiceProvider: string | null;
+  currency: string;
+  grossCents: number;
+  /** Positive = a cost. The file's signed value is `sourceCommissionCents`. */
+  commissionCents: number;
+  paymentServiceFeeCents: number;
+  netCents: number;
+  sourceCommissionCents: number;
+  sourcePaymentServiceFeeCents: number;
+  payoutId: string;
+  payoutDate: string;
+}
+
+export type StagedRow = StagedPayment | StagedExpense | StagedRevenue | StagedOtaSettlement;
 
 export interface StagingResult {
   adapter: AdapterId;
@@ -109,17 +155,20 @@ export interface AdapterSpec {
   label: string;
   readiness: AdapterReadiness;
   version: string;
-  sourceType: 'bank_csv' | 'supplier_csv' | 'paypal_activity' | 'booking_com_reservations' | 'booking_com_payouts';
+  sourceType: 'bank_csv' | 'supplier_csv' | 'paypal_activity' | 'booking_com_finance_statement' | 'booking_com_reservations' | 'booking_com_payouts';
   requiredHeaders: string[];
   description: string;
+  /** Columns whose VALUES are personal data the finance record does not need: replaced before anything is stored. */
+  redactColumns?: readonly string[];
 }
 
 export const ADAPTERS: readonly AdapterSpec[] = [
   { id: 'bolagio_bank_csv', label: 'Bank statement (BoLaGio template)', readiness: 'validated', version: '1.0', sourceType: 'bank_csv', requiredHeaders: ['Buchungstag', 'Betrag', 'Verwendungszweck'], description: 'Columns: Buchungstag; Valuta (optional); Betrag (signed, German decimal); Auftraggeber/Empfaenger; Verwendungszweck; Transaktions-ID (optional, else a hash of the row). Export any bank CSV into this shape.' },
   { id: 'bolagio_expenses_csv', label: 'Expenses (BoLaGio template)', readiness: 'validated', version: '1.0', sourceType: 'supplier_csv', requiredHeaders: ['Datum', 'Lieferant', 'Brutto', 'Beschreibung'], description: 'Columns: Datum; Rechnungsdatum; Faellig; Lieferant; Land; USt-ID; Rechnungsnummer; Beschreibung; Kategorie; Einheit; Netto; USt; Brutto.' },
   { id: 'paypal_activity', label: 'PayPal activity download', readiness: 'experimental', version: '0.1', sourceType: 'paypal_activity', requiredHeaders: ['Date', 'Type', 'Gross', 'Fee', 'Net', 'Transaction ID'], description: 'PayPal → Activity → Download, "all transactions" CSV, English headers. Not validated against a live download; check the preview.' },
-  { id: 'booking_com_reservations', label: 'Booking.com reservation statement', readiness: 'experimental', version: '0.1', sourceType: 'booking_com_reservations', requiredHeaders: ['Book number', 'Check-in', 'Check-out', 'Status', 'Price', 'Commission amount'], description: 'Extranet → Reservations → Download, CSV. Not validated against a live export; the header check is strict.' },
-  { id: 'booking_com_payouts', label: 'Booking.com payout report', readiness: 'experimental', version: '0.1', sourceType: 'booking_com_payouts', requiredHeaders: ['Payout date', 'Payout amount', 'Payout ID'], description: 'Extranet → Finance → Payouts, CSV. Not validated against a live export.' },
+  { id: 'booking_com_finance_statement', label: 'Booking.com finance statement', readiness: 'validated', version: '1.0', sourceType: 'booking_com_finance_statement', requiredHeaders: [...BOOKING_COM_STATEMENT_HEADERS], redactColumns: BOOKING_COM_STATEMENT_REDACT, description: 'Extranet → Finance → statement export, CSV, exactly as downloaded. One row per reservation settlement: Amount, Commission, Payments Service Fee, Net, Payout date, Payout ID. Validated against a live export. Guest names are never stored.' },
+  { id: 'booking_com_reservations', label: 'Booking.com reservation statement (retired)', readiness: 'retired', version: '0.1', sourceType: 'booking_com_reservations', requiredHeaders: ['Book number', 'Check-in', 'Check-out', 'Status', 'Price', 'Commission amount'], description: 'Built from assumed column names that no real export carries. Superseded by the finance statement adapter. Kept only so historical batches stay readable.' },
+  { id: 'booking_com_payouts', label: 'Booking.com payout report (retired)', readiness: 'retired', version: '0.1', sourceType: 'booking_com_payouts', requiredHeaders: ['Payout date', 'Payout amount', 'Payout ID'], description: 'Built from assumed column names. Recorded each payout as a cash fact, which double counts once the bank statement carries the same receipt. Superseded; kept only so historical batches stay readable.' },
 ];
 
 export function adapterSpec(id: AdapterId): AdapterSpec {
@@ -128,10 +177,15 @@ export function adapterSpec(id: AdapterId): AdapterSpec {
   return a;
 }
 
-/** Choose an adapter by headers, or null when nothing fits. */
+/** The adapters a person may choose for a NEW upload. Retired ones are not among them. */
+export function offeredAdapters(): readonly AdapterSpec[] {
+  return ADAPTERS.filter((a) => a.readiness !== 'retired');
+}
+
+/** Choose an adapter by headers, or null when nothing fits. Never picks a retired adapter. */
 export function detectAdapter(headers: string[]): AdapterSpec | null {
   const set = new Set(headers.map((h) => h.trim()));
-  return ADAPTERS.find((a) => a.requiredHeaders.every((h) => set.has(h))) ?? null;
+  return offeredAdapters().find((a) => a.requiredHeaders.every((h) => set.has(h))) ?? null;
 }
 
 async function sha256Hex(text: string): Promise<string> {
@@ -146,22 +200,37 @@ export async function stageCsv(adapterId: AdapterId, text: string): Promise<Stag
   const base: StagingResult = { adapter: spec.id, adapterVersion: spec.version, readiness: spec.readiness, headers: csv.headers, rows: [], rowCount: 0, validRows: 0, errorRows: 0, duplicateRows: 0, rejected: null };
   const missing = spec.requiredHeaders.filter((h) => !csv.headers.includes(h));
   if (missing.length > 0) return { ...base, rejected: `Not a ${spec.label} file: missing column${missing.length === 1 ? '' : 's'} ${missing.join(', ')}.` };
-  const seen = new Set<string>();
+  if (csv.rows.length + csv.malformed.length > MAX_IMPORT_ROWS) return { ...base, rejected: `The file has more than ${MAX_IMPORT_ROWS} rows. Export a shorter period.` };
+  const seen = new Map<string, { index: number; content: string }>();
   const out = base;
+  const redact = new Set(spec.redactColumns ?? []);
   const push = (rowNo: number, raw: Record<string, string>, parsed: StagedRow | null, error: string | null) => {
     let status: 'valid' | 'error' | 'duplicate' = parsed && !error ? 'valid' : 'error';
-    const key = parsed ? (parsed.target === 'payment' ? `${parsed.source}:${parsed.providerReference}` : parsed.sourceReference) : null;
+    let message = error;
+    const key = parsed ? (parsed.target === 'payment' ? `${parsed.source}:${parsed.providerReference}` : parsed.target === 'ota_settlement' ? parsed.identityKey : parsed.sourceReference) : null;
+    // Content decides whether a repeated key is the same line twice or two
+    // different lines claiming one identity. For a settlement the second case
+    // is NOT a duplicate to drop: dropping it would silently lose money.
+    const content = parsed ? (parsed.target === 'ota_settlement' ? parsed.contentSha256 : key ?? '') : '';
     if (key) {
-      if (seen.has(key)) status = 'duplicate';
-      seen.add(key);
+      const prior = seen.get(key);
+      if (prior && prior.content === content) { status = 'duplicate'; message = 'Duplicate of an earlier row in this file.'; }
+      else if (prior) {
+        status = 'error';
+        message = `Row ${out.rows[prior.index].rowNo} has the same reservation, payout and row type with different figures; neither can be identified uniquely.`;
+        const p = out.rows[prior.index];
+        if (p.status === 'valid') { out.validRows -= 1; out.errorRows += 1; }
+        out.rows[prior.index] = { ...p, status: 'error', error: `Row ${rowNo} has the same reservation, payout and row type with different figures; neither can be identified uniquely.` };
+      } else seen.set(key, { index: out.rows.length, content });
     }
-    out.rows.push({ rowNo, raw, parsed, status, error: status === 'duplicate' ? 'Duplicate of an earlier row in this file.' : error });
+    const stored = redact.size === 0 ? raw : Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, redact.has(k) && v ? '[redacted]' : v]));
+    out.rows.push({ rowNo, raw: stored, parsed, status, error: message });
     out.rowCount += 1;
     if (status === 'valid') out.validRows += 1; else if (status === 'error') out.errorRows += 1; else out.duplicateRows += 1;
   };
   for (let idx = 0; idx < csv.rows.length; idx += 1) {
     const raw = csv.rows[idx];
-    const rowNo = idx + 2;
+    const rowNo = csv.rowNumbers[idx];
     try {
       const parsed = await parseRow(spec, raw, csv);
       push(rowNo, raw, parsed.row, parsed.error);
@@ -215,6 +284,12 @@ async function parseRow(spec: AdapterSpec, r: Record<string, string>, csv: Parse
       if (ppCurrency !== 'EUR') return { row: null, error: `Currency ${ppCurrency} is not EUR; nothing here converts currency.` };
       const time = (r.Time ?? '12:00:00').trim();
       return { row: { target: 'payment', direction: gross > 0 ? 'in' : 'out', source: 'paypal', providerReference: id, amountCents: Math.abs(gross), feeCents: Math.abs(fee), currency: ppCurrency, occurredAt: `${date}T${time}+02:00`, valueDate: date, counterpartyLabel: (r.Name ?? '').trim().slice(0, 200) || null, referenceText: ((r['Invoice Number'] ?? '') + ' ' + (r.Note ?? '') + ' ' + (r.Subject ?? '')).trim().slice(0, 300) || null, bookingReference: /BLG-[0-9A-Z]{6}/.exec(`${r['Invoice Number']} ${r.Note} ${r.Subject}`.toUpperCase())?.[0] ?? null, kind }, error: null };
+    }
+    case 'booking_com_finance_statement': {
+      const parsed = parseStatementRow(r);
+      if (!parsed.ok) return { row: null, error: parsed.error };
+      const l = parsed.line;
+      return { row: { target: 'ota_settlement', provider: 'booking_com', identityKey: settlementIdentityKey(l), contentSha256: await sha256Hex(settlementContentString(l)), ...l }, error: null };
     }
     case 'booking_com_reservations': {
       const ci = parseDateLoose(r['Check-in']);
