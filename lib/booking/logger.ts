@@ -67,6 +67,7 @@ export type BookingLogEvent =
   /* ── Guest privileges. Outcomes and ids only; an address never appears. ── */
   | 'privileges.signup'
   | 'privileges.verify'
+  | 'privileges.unsubscribe'
   | 'privileges.resolve'
   | 'scheduler.heartbeat'
   | 'config.validation'

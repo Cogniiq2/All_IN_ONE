@@ -14,6 +14,8 @@ import 'server-only';
 import { supabaseAdmin } from '@/lib/supabase/server';
 import type { Campaign, Grant } from '@/lib/privileges/benefit';
 import { hashVerificationToken, mintVerificationToken, MAX_VERIFICATION_SENDS, VERIFICATION_TTL_HOURS } from '@/lib/privileges/tokens';
+import { consentPendingConfirmation, isMarketable, marketingSendingBlockers, unsubscribeLinks, type ConsentState } from '@/lib/privileges/marketing';
+import { MARKETING_CONSENT_APPROVAL } from '@/lib/legal/messaging';
 
 const CAMPAIGN_COLUMNS =
   'id, code, name, active, unit_id, discount_percent_bp, discount_fixed_cents, max_discount_cents,' +
@@ -122,30 +124,47 @@ export async function upsertIdentityForSignup(input: {
 
   const { data: existing, error: readError } = await db
     .from('bolagio_guest_identities')
-    .select('id, email_normalized, verified_at, verification_sent_at, verification_attempts, marketing_consent_at')
+    .select(
+      'id, email_normalized, verified_at, verification_sent_at, verification_attempts,' +
+        ' marketing_consent_at, marketing_consent_confirmed_at, marketing_withdrawn_at'
+    )
     .eq('email_normalized', input.emailNormalized)
     .maybeSingle();
   if (readError) throw readError;
 
-  const consentPatch = input.marketingConsent
-    ? {
-        marketing_consent_at: now.toISOString(),
-        marketing_consent_source: input.consentSource,
-        marketing_consent_version: input.consentVersion,
-        // A fresh, explicit consent lifts an earlier withdrawal. Recorded as
-        // a new consent with its own timestamp, never as an edit of the old.
-        marketing_withdrawn_at: null,
+  const existingRow = existing as unknown as
+    | {
+        id: string;
+        email_normalized: string;
+        verified_at: string | null;
+        verification_sent_at: string | null;
+        verification_attempts: number;
+        marketing_consent_at: string | null;
+        marketing_consent_confirmed_at: string | null;
+        marketing_withdrawn_at: string | null;
       }
-    : {};
+    | null;
 
-  if (existing) {
-    const row = existing as unknown as {
-      id: string;
-      email_normalized: string;
-      verified_at: string | null;
-      verification_sent_at: string | null;
-      verification_attempts: number;
-    };
+  const alreadyMarketable = existingRow ? isMarketable(consentStateOf(existingRow)) : false;
+
+  /*
+   * A tick records a PENDING consent: when, where, which wording. It becomes
+   * marketing consent only when the mailbox owner clicks the confirmation link
+   * (verifyIdentity). An earlier withdrawal is NOT erased — it stays as
+   * evidence; the newer consent simply post-dates it. A tick on an address
+   * that is already confirmed-and-marketable changes nothing.
+   */
+  const consentPatch =
+    input.marketingConsent && !alreadyMarketable
+      ? {
+          marketing_consent_at: now.toISOString(),
+          marketing_consent_source: input.consentSource,
+          marketing_consent_version: input.consentVersion,
+        }
+      : {};
+
+  if (existingRow) {
+    const row = existingRow;
     const identity: IdentityRecord = {
       id: row.id,
       emailNormalized: row.email_normalized,
@@ -154,12 +173,17 @@ export async function upsertIdentityForSignup(input: {
       verificationAttempts: row.verification_attempts,
     };
 
-    // Already verified: record any new consent, send nothing.
+    // Already verified and nothing new to confirm: send nothing.
+    //
+    // Already verified WITH a new consent tick: the address is proven, the
+    // consent is not — anyone could have typed this address. So the consent
+    // is recorded as pending and a confirmation link goes to the mailbox,
+    // within the same lifetime send limit that bounds relay abuse.
     if (row.verified_at !== null) {
-      if (input.marketingConsent) {
-        await db.from('bolagio_guest_identities').update({ ...consentPatch, updated_at: now.toISOString() }).eq('id', row.id);
+      const needsConfirmation = input.marketingConsent && !alreadyMarketable;
+      if (!needsConfirmation || row.verification_attempts >= MAX_VERIFICATION_SENDS) {
+        return { identity, token: null, created: false };
       }
-      return { identity, token: null, created: false };
     }
 
     // Unverified and out of sends: the mailbox has had enough from us.
@@ -240,7 +264,10 @@ export async function verifyIdentity(token: string): Promise<{ ok: boolean; iden
 
   const { data, error } = await db
     .from('bolagio_guest_identities')
-    .select('id, verified_at, verification_expires_at, signup_campaign_code, signup_unit_id')
+    .select(
+      'id, verified_at, verification_expires_at, signup_campaign_code, signup_unit_id,' +
+        ' marketing_consent_at, marketing_consent_confirmed_at, marketing_withdrawn_at'
+    )
     .eq('verification_token_hash', hash)
     .maybeSingle();
   if (error) throw error;
@@ -252,29 +279,37 @@ export async function verifyIdentity(token: string): Promise<{ ok: boolean; iden
     verification_expires_at: string | null;
     signup_campaign_code: string | null;
     signup_unit_id: string | null;
+    marketing_consent_at: string | null;
+    marketing_consent_confirmed_at: string | null;
+    marketing_withdrawn_at: string | null;
   };
 
   const expiresMs = row.verification_expires_at ? Date.parse(row.verification_expires_at) : NaN;
-  // Fail closed: an unreadable or passed expiry is an expired link.
-  if (row.verified_at === null && (!Number.isFinite(expiresMs) || expiresMs <= now.getTime())) {
+  // Fail closed: an unreadable or passed expiry is an expired link — for a
+  // consent confirmation on an already-verified address as much as for a
+  // first verification.
+  if (!Number.isFinite(expiresMs) || expiresMs <= now.getTime()) {
     return { ok: false };
   }
 
-  if (row.verified_at === null) {
-    const { error: updateError } = await db
-      .from('bolagio_guest_identities')
-      .update({
-        verified_at: now.toISOString(),
-        // Consumed. The link cannot be replayed, and the row no longer holds
-        // anything that could verify this address again.
-        verification_token_hash: null,
-        updated_at: now.toISOString(),
-      })
-      .eq('id', row.id)
-      // Only if still unverified: two simultaneous clicks, one winner.
-      .is('verified_at', null);
-    if (updateError) throw updateError;
-  }
+  // The click confirms the ADDRESS (if not yet) and any PENDING consent. It
+  // never creates a consent that was not ticked.
+  const confirmsConsent = consentPendingConfirmation(consentStateOf(row));
+  const { error: updateError } = await db
+    .from('bolagio_guest_identities')
+    .update({
+      ...(row.verified_at === null ? { verified_at: now.toISOString() } : {}),
+      ...(confirmsConsent ? { marketing_consent_confirmed_at: now.toISOString() } : {}),
+      // Consumed. The link cannot be replayed, and the row no longer holds
+      // anything that could verify this address again.
+      verification_token_hash: null,
+      updated_at: now.toISOString(),
+    })
+    .eq('id', row.id)
+    // Only if the token is still the one we read: two simultaneous clicks,
+    // one winner.
+    .eq('verification_token_hash', hash);
+  if (updateError) throw updateError;
 
   const campaigns = await campaignsForSignup({
     campaignCode: row.signup_campaign_code ?? undefined,
@@ -363,4 +398,122 @@ export async function loadGrantsForEmail(emailNormalized: string): Promise<{ ide
   }
 
   return { identity: { id: identity.id, verifiedAt: identity.verified_at }, grants };
+}
+
+/* ── Marketing consent: withdrawal and the (gated) audience ─────────────── */
+
+function consentStateOf(row: {
+  verified_at: string | null;
+  marketing_consent_at: string | null;
+  marketing_consent_confirmed_at: string | null;
+  marketing_withdrawn_at: string | null;
+}): ConsentState {
+  return {
+    verifiedAt: row.verified_at,
+    marketingConsentAt: row.marketing_consent_at,
+    marketingConsentConfirmedAt: row.marketing_consent_confirmed_at,
+    marketingWithdrawnAt: row.marketing_withdrawn_at,
+  };
+}
+
+export type WithdrawalSource = 'unsubscribe_link' | 'one_click' | 'operator' | 'guest_request';
+
+/**
+ * Withdraw marketing consent for an identity.
+ *
+ * Idempotent: an identity with no consent, or one already withdrawn, is left
+ * as it is and the call still succeeds — the caller answers the same either
+ * way, so the unsubscribe endpoint reveals nothing about the identity.
+ */
+export async function withdrawMarketingConsent(identityId: string, source: WithdrawalSource): Promise<{ changed: boolean }> {
+  const db = supabaseAdmin();
+  const { data, error } = await db
+    .from('bolagio_guest_identities')
+    .select('id, verified_at, marketing_consent_at, marketing_consent_confirmed_at, marketing_withdrawn_at')
+    .eq('id', identityId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return { changed: false };
+
+  const row = data as unknown as {
+    id: string;
+    verified_at: string | null;
+    marketing_consent_at: string | null;
+    marketing_consent_confirmed_at: string | null;
+    marketing_withdrawn_at: string | null;
+  };
+  if (!row.marketing_consent_at) return { changed: false };
+  const withdrawnMs = row.marketing_withdrawn_at ? Date.parse(row.marketing_withdrawn_at) : NaN;
+  if (Number.isFinite(withdrawnMs) && withdrawnMs >= Date.parse(row.marketing_consent_at)) return { changed: false };
+
+  const now = new Date().toISOString();
+  const { error: updateError } = await db
+    .from('bolagio_guest_identities')
+    .update({ marketing_withdrawn_at: now, marketing_withdrawal_source: source, updated_at: now })
+    .eq('id', row.id);
+  if (updateError) throw updateError;
+  return { changed: true };
+}
+
+export interface MarketingRecipient {
+  identityId: string;
+  email: string;
+  locale: 'de' | 'en';
+  unsubscribeUrl: string;
+  headers: { 'List-Unsubscribe': string; 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' };
+}
+
+export class MarketingBlockedError extends Error {
+  constructor(readonly blockers: string[]) {
+    super(`marketing sending is blocked: ${blockers.join('; ')}`);
+    this.name = 'MarketingBlockedError';
+  }
+}
+
+/**
+ * The ONLY way to read a marketing audience.
+ *
+ * Refuses outright unless an unsubscribe mechanism exists and the consent
+ * wording is approved. Returns only identities whose consent was CONFIRMED by
+ * the double opt-in, under an approved wording version, and not withdrawn —
+ * each with the unsubscribe link and one-click headers its email must carry.
+ * Booking tables are never read: a booking address is not consent.
+ */
+export async function marketingRecipients(limit = 500): Promise<MarketingRecipient[]> {
+  const blockers = marketingSendingBlockers();
+  if (blockers.length > 0) throw new MarketingBlockedError(blockers);
+  const approvedVersions = new Set(MARKETING_CONSENT_APPROVAL?.versions ?? []);
+
+  const { data, error } = await supabaseAdmin()
+    .from('bolagio_guest_identities')
+    .select('id, email_normalized, signup_locale, verified_at, marketing_consent_at, marketing_consent_confirmed_at, marketing_withdrawn_at, marketing_consent_version')
+    .not('marketing_consent_confirmed_at', 'is', null)
+    .limit(Math.min(Math.max(limit, 1), 5000));
+  if (error) throw error;
+
+  const rows = (data ?? []) as unknown as Array<{
+    id: string;
+    email_normalized: string;
+    signup_locale: string | null;
+    verified_at: string | null;
+    marketing_consent_at: string | null;
+    marketing_consent_confirmed_at: string | null;
+    marketing_withdrawn_at: string | null;
+    marketing_consent_version: string | null;
+  }>;
+
+  const out: MarketingRecipient[] = [];
+  for (const row of rows) {
+    if (!isMarketable(consentStateOf(row))) continue;
+    if (!row.marketing_consent_version || !approvedVersions.has(row.marketing_consent_version)) continue;
+    const links = await unsubscribeLinks(row.id);
+    out.push({
+      identityId: row.id,
+      email: row.email_normalized,
+      locale: row.signup_locale === 'en' ? 'en' : 'de',
+      unsubscribeUrl: links.url,
+      headers: links.headers,
+    });
+  }
+  return out;
 }

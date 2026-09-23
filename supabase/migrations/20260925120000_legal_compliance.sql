@@ -29,8 +29,17 @@
 -- Marketable = consent confirmed at or after the latest consent tick AND not
 -- withdrawn since. lib/privileges/marketing.ts is the only reader.
 --
--- Additive only: two nullable columns on intents/identities, one text column,
--- three check constraints, one partial index. No row is rewritten.
+-- ── 3. A re-consent no longer erases the withdrawal ────────────────────────
+-- `bolagio_guest_identity_consent_order` required withdrawn_at >= consent_at,
+-- which forced the application to NULL an earlier withdrawal when the same
+-- guest later consented again — destroying the evidence that the withdrawal
+-- was honoured. It is replaced by "a withdrawal needs a consent to withdraw";
+-- the ORDER of the two timestamps is now meaning (withdrawn after the latest
+-- consent = not marketable), not an invariant.
+--
+-- Additive apart from §3: nullable columns, check constraints, one partial
+-- index, and one constraint replaced by a strictly weaker one. No row is
+-- rewritten and no existing row can violate the new constraints.
 -- Rollback: supabase/ops/rollback_20260925.sql.
 -- ════════════════════════════════════════════════════════════════════════════
 
@@ -69,6 +78,18 @@ begin
       add constraint bolagio_guest_identity_withdrawal_source
       check (marketing_withdrawal_source is null
              or marketing_withdrawal_source in ('unsubscribe_link', 'one_click', 'operator', 'guest_request'));
+  end if;
+end $$;
+
+do $$
+begin
+  if exists (select 1 from pg_constraint where conname = 'bolagio_guest_identity_consent_order') then
+    alter table bolagio_guest_identities drop constraint bolagio_guest_identity_consent_order;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'bolagio_guest_identity_withdrawal_needs_consent') then
+    alter table bolagio_guest_identities
+      add constraint bolagio_guest_identity_withdrawal_needs_consent
+      check (marketing_withdrawn_at is null or marketing_consent_at is not null);
   end if;
 end $$;
 

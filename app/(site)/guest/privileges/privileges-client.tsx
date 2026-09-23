@@ -28,19 +28,19 @@ const COPY = {
     eyebrow: 'Residence Privileges',
     title: 'Ihr Aufenthalt endet nicht beim Check-out.',
     lede:
-      'Gäste, die wieder bei uns wohnen, buchen direkt — zu Konditionen, die wir Portalen nicht geben. Hinterlassen Sie Ihre E-Mail-Adresse, und wir hinterlegen Ihre Vorteile.',
+      'Gäste, die wieder bei uns wohnen, buchen direkt — mit Vorteilen für wiederkehrende Gäste. Hinterlassen Sie Ihre E-Mail-Adresse, und wir hinterlegen Ihre Vorteile.',
     benefitsTitle: 'Was dazugehört',
     benefits: [
-      ['Direktbucher-Rate', 'Unser bester Preis, ohne Portal dazwischen.'],
+      ['Vorteil für Direktbucher', 'Ein Vorteil für Ihre nächste Direktbuchung, ohne Portal dazwischen.'],
       ['Früher ankommen, später gehen', 'Bevorzugte Berücksichtigung, wenn die Wohnung es zulässt.'],
       ['Direkter Draht', 'Sie schreiben uns, nicht einem Callcenter.'],
     ],
     emailLabel: 'E-Mail-Adresse',
     emailHint: 'Bitte die Adresse, mit der Sie später buchen möchten.',
     consent:
-      'Ich möchte gelegentlich Nachrichten zu Angeboten und Neuigkeiten von BoLaGio erhalten. Die Einwilligung kann ich jederzeit widerrufen.',
+      'Ja, die BoLaGio GmbH darf mir gelegentlich per E-Mail Angebote und Neuigkeiten zu ihren Apartments in Bayreuth senden. Meine Einwilligung wird erst wirksam, wenn ich sie über den Link in der Bestätigungs-E-Mail bestätige, und ich kann sie jederzeit mit Wirkung für die Zukunft widerrufen — über den Abmeldelink in jeder E-Mail oder formlos per Nachricht an BoLaGio.',
     consentNote:
-      'Optional. Ihre Vorteile erhalten Sie auch ohne dieses Häkchen — wir senden Ihnen dann ausschließlich die Bestätigungs-E-Mail.',
+      'Freiwillig. Ihre Vorteile erhalten Sie auch ohne dieses Häkchen — wir senden Ihnen dann ausschließlich die Bestätigungs-E-Mail für Ihre Adresse.',
     submit: 'Vorteile freischalten',
     sending: 'Einen Moment …',
     sentTitle: 'Prüfen Sie bitte Ihr Postfach.',
@@ -62,19 +62,19 @@ const COPY = {
     eyebrow: 'Residence Privileges',
     title: 'Your stay needn’t end at checkout.',
     lede:
-      'Guests who come back book with us directly — on terms we do not give the portals. Leave your email address and we will put your benefits on file.',
+      'Guests who come back book with us directly — with benefits for returning guests. Leave your email address and we will put your benefits on file.',
     benefitsTitle: 'What that includes',
     benefits: [
-      ['The direct rate', 'Our best price, with no portal in between.'],
+      ['A direct-booking benefit', 'A benefit on your next direct booking, with no portal in between.'],
       ['Arrive early, leave late', 'Preference where the apartment allows it.'],
       ['A direct line', 'You write to us, not to a call centre.'],
     ],
     emailLabel: 'Email address',
     emailHint: 'Please use the address you would like to book with.',
     consent:
-      'I would like to receive occasional news and offers from BoLaGio. I can withdraw this consent at any time.',
+      'Yes, BoLaGio GmbH may occasionally send me offers and news about its apartments in Bayreuth by email. My consent takes effect only once I confirm it via the link in the confirmation email, and I can withdraw it at any time with effect for the future — via the unsubscribe link in every email or simply by writing to BoLaGio.',
     consentNote:
-      'Optional. Your benefits are put on file either way — without this, we send only the confirmation email.',
+      'Voluntary. Your benefits are put on file either way — without this, we send only the confirmation email for your address.',
     submit: 'Unlock my benefits',
     sending: 'One moment…',
     sentTitle: 'Please check your inbox.',
@@ -194,14 +194,16 @@ export default function PrivilegesClient({
                 <div className="flex gap-3">
                   <input
                     id="privileges-consent"
+                    name="marketingConsent"
                     type="checkbox"
+                    aria-describedby="privileges-consent-note"
                     checked={consent}
                     onChange={(e) => setConsent(e.target.checked)}
                     className="mt-1 h-4 w-4 shrink-0 accent-[hsl(var(--primary))]"
                   />
                   <label htmlFor="privileges-consent" className="text-sm leading-relaxed">
                     {t.consent}
-                    <span className="mt-1 block text-[hsl(var(--muted-foreground))]">{t.consentNote}</span>
+                    <span id="privileges-consent-note" className="mt-1 block text-[hsl(var(--muted-foreground))]">{t.consentNote}</span>
                   </label>
                 </div>
 

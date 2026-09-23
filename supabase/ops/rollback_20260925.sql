@@ -33,6 +33,21 @@ end $$;
 
 drop index if exists bolagio_guest_identity_marketable_idx;
 
+-- Restore the original ordering constraint. NOT VALID, because a guest who
+-- withdrew and later consented again is a legitimate row the old constraint
+-- cannot express; new writes are checked, existing rows are left as evidence.
+alter table bolagio_guest_identities
+  drop constraint if exists bolagio_guest_identity_withdrawal_needs_consent;
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'bolagio_guest_identity_consent_order') then
+    alter table bolagio_guest_identities
+      add constraint bolagio_guest_identity_consent_order
+      check (marketing_withdrawn_at is null
+             or (marketing_consent_at is not null and marketing_withdrawn_at >= marketing_consent_at)) not valid;
+  end if;
+end $$;
+
 alter table bolagio_guest_identities
   drop constraint if exists bolagio_guest_identity_withdrawal_source,
   drop constraint if exists bolagio_guest_identity_confirm_needs_consent,

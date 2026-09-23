@@ -208,10 +208,41 @@ A campaign that discounts nothing is refused by a check constraint. So is a
 * Retention is classified in `lib/retention/policy.ts` and the periods are
   **proposed, not decided** — see `LEGAL_REVIEW_REQUIRED.md` §8 and §9.
 
-**Not implemented: unsubscribe.** No marketing email can be sent yet, so
-nothing is unlawful today — but **the first marketing send requires a working
-one-click withdrawal first.** `marketing_withdrawn_at` exists and is
-constrained; the endpoint and the link are not built.
+### The double opt-in confirms CONSENT, not only the address (2026-09-25)
+
+A tick records a **pending** consent (`marketing_consent_at`, source, wording
+version). It becomes marketing consent only when the mailbox owner clicks the
+confirmation link, which sets `marketing_consent_confirmed_at`. A tick on an
+address that is **already verified** does not become consent either — anyone
+could have typed that address — it sends a fresh confirmation link instead
+(`purpose: 'confirm_marketing_consent'`), within the same lifetime send limit.
+
+The single definition of "may receive marketing" is `isMarketable()` in
+`lib/privileges/marketing.ts`: verified, consent confirmed at or after the
+latest tick, not withdrawn since. A **booking** email address is never
+consent; nothing in the marketing path reads booking tables.
+
+The confirmation email is **transactional**: it asks for one click and must
+contain no advertising (a confirmation mail that advertises is itself
+unsolicited advertising). The n8n template must be written that way.
+
+### Unsubscribe — built before any marketing can be sent
+
+| piece | where |
+|---|---|
+| signed link | `unsubscribeLinks(identityId)` — HMAC-SHA256 over the identity id, keyed by `PRIVILEGES_UNSUBSCRIBE_SECRET` (≥ 32 chars). No email address in the link. |
+| headers | `List-Unsubscribe: <url>` and `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058) on every marketing email |
+| `GET /api/guest/privileges/unsubscribe` | **never** unsubscribes (mail scanners follow links); redirects to `/guest/privileges/unsubscribe`, a page with one button |
+| `POST /api/guest/privileges/unsubscribe` | withdraws: from the page (JSON) or a mail client's one-click (form body) |
+| answer | always `200 {status:'unsubscribed'}` — valid, forged, unknown or failed alike |
+| evidence | `marketing_withdrawn_at` + `marketing_withdrawal_source`; a later re-consent no longer erases the withdrawal (migration `20260925120000`) |
+
+**The gate.** `marketingRecipients()` in `lib/privileges/repository.ts` is the
+only way to read an audience. It refuses — before any database read — unless
+`PRIVILEGES_UNSUBSCRIBE_SECRET` is configured **and** the consent wording is
+approved in `lib/legal/messaging.ts` (`MARKETING_CONSENT_APPROVAL`, listing the
+wording versions it covers). It returns only confirmed, non-withdrawn identities
+under an approved version, each with its unsubscribe URL and headers.
 
 ---
 
@@ -238,7 +269,8 @@ event_type     guest_privileges_verify
 event_version  1
 aggregate_type guest_identity
 aggregate_id   <identity uuid>
-payload        { token, locale, campaign? }
+payload        { token, locale, purpose, campaign? }
+               purpose = verify_address | confirm_marketing_consent
 ```
 
 **The payload carries no email address.** The outbox is documented as holding

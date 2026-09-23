@@ -77,7 +77,13 @@ export async function POST(request: NextRequest) {
       // The outbox row carries the identity id and NOT the address or the
       // token; the delivery worker resolves the recipient through the
       // internal API, as guest messaging already does.
-      await emitPrivilegeVerification({ identityId: identity.id, token, locale: context.locale, campaignCode: context.campaignCode });
+      await emitPrivilegeVerification({
+        identityId: identity.id,
+        token,
+        locale: context.locale,
+        campaignCode: context.campaignCode,
+        purpose: identity.verifiedAt ? 'confirm_marketing_consent' : 'verify_address',
+      });
     }
 
     // Counts and ids only. No address, ever, in a log line.

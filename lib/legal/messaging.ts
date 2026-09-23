@@ -27,3 +27,20 @@ export interface ConfirmedLegalBasis {
 
 /** NEEDS CONFIRMATION — see LEGAL_REVIEW_REQUIRED.md. `null` suppresses the email. */
 export const REVIEW_REQUEST_BASIS: ConfirmedLegalBasis | null = null;
+
+/**
+ * Approval of the marketing-consent wording on /guest/privileges and of the
+ * double opt-in email that confirms it (which must itself contain no
+ * advertising). `null` blocks every marketing send — see
+ * lib/privileges/marketing.ts. When approved, `versions` lists the
+ * MARKETING_CONSENT_VERSION values the approval covers; a consent recorded
+ * under any other wording version is not marketable.
+ */
+export interface MarketingConsentApproval {
+  versions: readonly string[];
+  approvedAt: string;
+  approvedBy: string;
+}
+
+/** NEEDS APPROVAL — see LEGAL_REVIEW_REQUIRED.md. */
+export const MARKETING_CONSENT_APPROVAL: MarketingConsentApproval | null = null;
