@@ -67,6 +67,8 @@ import { useUnitFlow } from '@/components/units/unit-flow-context';
 import { CtaButton } from '@/components/ui-kit/cta';
 import { ContactFields, EMAIL_PATTERN } from '@/components/enquiry/enquiry-fields';
 import { AddToCalendar } from '@/components/booking/add-to-calendar';
+import { CheckoutSummary, checkoutReady, ORDER_BUTTON_LABEL } from '@/components/booking/checkout-summary';
+import { versionsOf } from '@/lib/legal/booking-terms';
 
 /**
  * `paying` is the state where the inventory is HELD and the PayPal button is
@@ -318,7 +320,9 @@ export function BookingModal() {
    * typed still in place.
    */
   const book = async () => {
-    if (!unit || !quote) return;
+    // Fail closed: no approved terms on screen, no booking. The button is
+    // already withheld; this is the second line, not the first.
+    if (!unit || !checkoutReady(quote)) return;
     setStatus('sending');
     setNotice(null);
     setStay({ arrival: dates.arrival, departure: dates.departure, guests });
@@ -343,6 +347,10 @@ export function BookingModal() {
           locale,
         },
         attemptId: attemptId.current,
+        // Exactly the versions rendered above the button. The server refuses
+        // the booking if they are no longer the ones in force, and stores
+        // them with the booking as evidence of what the guest agreed to.
+        acceptedTerms: versionsOf(quote.terms),
       });
 
       setReference(intent.reference);
@@ -393,6 +401,11 @@ export function BookingModal() {
         setDates((d) => ({ arrival: d.arrival, departure: undefined }));
         setDirection(-1);
         setStep(2);
+      }
+      // The terms changed under the guest: fetch the current ones so they are
+      // what is on screen when the button is pressed again.
+      if (cause instanceof BookingRequestError && (cause.code === 'terms_changed' || cause.code === 'terms_unavailable')) {
+        loadQuote();
       }
     }
   };
@@ -467,6 +480,11 @@ export function BookingModal() {
           : upcoming
           ? de ? 'Wir sagen Ihnen Bescheid, sobald dieses Apartment buchbar ist.'
               : 'We will let you know as soon as this apartment can be booked.'
+          : bookable
+          // § 312j Abs. 1 BGB: the accepted means of payment, stated at the
+          // start of the ordering process rather than discovered at the end.
+          ? de ? 'Vier Schritte. Bezahlung sicher per PayPal.'
+              : 'Four steps. Payment securely via PayPal.'
           : de ? 'Vier Schritte. Alles außer Ihren Kontaktdaten wählen Sie aus.'
               : 'Four steps. Everything but your contact details is a choice.'
       }
@@ -603,13 +621,17 @@ export function BookingModal() {
                       // submit against a price that is being replaced. The
                       // real duplicate-submit guarantee is the server's
                       // idempotency key, not this attribute.
-                      disabled={status === 'sending' || (bookable && (quoteLoading || !quote))}
+                      // Withheld, not merely styled, while there is no quote
+                      // with approved terms: no cancellation terms on screen
+                      // means no booking and no payment. The server refuses
+                      // independently (lib/legal/readiness.ts).
+                      disabled={status === 'sending' || (bookable && (quoteLoading || !checkoutReady(quote)))}
                       onClick={submit}
                     >
                       {status === 'sending'
                         ? <Sending />
                         : bookable
-                        ? de ? 'Verbindlich buchen' : 'Book now'
+                        ? ORDER_BUTTON_LABEL[locale]
                         : de ? 'Buchung anfragen' : 'Request booking'}
                     </CtaButton>
                   )}
@@ -621,8 +643,8 @@ export function BookingModal() {
                    style={{ color: 'hsl(var(--muted-foreground))' }}>
                   {bookable
                     ? de
-                      ? 'Die Zahlung läuft gesichert über PayPal. Ihr Zeitraum ist bis zum Abschluss für Sie reserviert.'
-                      : 'Payment runs securely through PayPal. Your dates are held for you until you complete it.'
+                      ? 'Nach „Zahlungspflichtig buchen“ reservieren wir Ihren Zeitraum, und Sie bezahlen den Gesamtpreis sicher über PayPal.'
+                      : 'After “Book and pay” we hold your dates and you pay the total price securely via PayPal.'
                     : de
                     ? 'Mit dem Absenden entsteht noch kein Vertrag und es wird nichts abgebucht. Wir prüfen Ihren Zeitraum und schicken Ihnen Bestätigung und Zahlungsweg.'
                     : 'Submitting creates no contract and charges nothing. We check your dates and send you confirmation and the payment details.'}
@@ -946,13 +968,24 @@ function StepContact({
           values={contact}
           onChange={(k, v) => setContact((c) => ({ ...c, [k]: v }))}
           touched={touched}
+          phoneRequired
         />
       </div>
       {touched && !valid && (
-        <p className="mt-3 text-[12px]" style={{ color: 'hsl(var(--destructive))' }}>
+        <p role="alert" className="mt-3 text-[12px]" style={{ color: 'hsl(var(--destructive))' }}>
           {de ? 'Bitte ergänzen Sie Name, E-Mail und Telefonnummer.' : 'Please add your name, email and phone number.'}
         </p>
       )}
+      {/* Art. 13 GDPR: the notice is reachable at the point of collection. */}
+      <p className="mt-4 text-[12px] leading-relaxed" style={{ color: 'hsl(var(--muted-foreground))' }}>
+        {de
+          ? 'Wir verwenden Ihre Angaben, um Ihre Buchung bzw. Anfrage zu bearbeiten. Mehr dazu in unserer '
+          : 'We use your details to process your booking or enquiry. More in our '}
+        <a href="/datenschutz" className="underline underline-offset-2" target="_blank" rel="noopener noreferrer">
+          {de ? 'Datenschutzerklärung' : 'privacy notice'}
+        </a>
+        .
+      </p>
     </div>
   );
 }
@@ -979,46 +1012,18 @@ function StepPayment({
     <div>
       <h3 className="display-3 text-[20px]">{de ? 'Wie möchten Sie zahlen?' : 'How would you like to pay?'}</h3>
 
-      <div className="mt-5 p-4" style={{ background: 'hsl(var(--secondary) / 0.55)', borderRadius: 'var(--radius-md)' }}>
-        <dl className="space-y-1.5 text-[13.5px]">
-          <Row label={de ? 'Apartment' : 'Apartment'} value={unitName} />
-          <Row label={de ? 'Zeitraum' : 'Dates'} value={`${fmt(arrival)} – ${fmt(departure)}`} />
-          <Row label={de ? 'Nächte' : 'Nights'} value={nights ? String(nights) : '—'} />
-          <Row label={de ? 'Personen' : 'Guests'} value={String(guests)} />
-
-          {/*
-            Line items, exactly as the provider priced them. Nothing is derived
-            here and no tax breakdown is invented — different items carry
-            different treatment and this site does not guess which.
-          */}
-          {quote?.components.map((component) => (
-            <Row
-              key={component.code}
-              label={component.label[locale]}
-              value={formatMoney(component.amountCents, quote.currency, locale)}
-            />
-          ))}
-
-          <div className="pt-2" style={{ borderTop: '1px solid hsl(var(--border))' }}>
-            <Row
-              label={de ? 'Gesamt' : 'Total'}
-              value={
-                quote
-                  ? formatMoney(quote.totalCents, quote.currency, locale)
-                  : quoteLoading
-                  ? de ? 'wird geprüft …' : 'checking …'
-                  : de ? 'auf Anfrage' : 'on request'
-              }
-              muted={!quote}
-            />
-          </div>
-        </dl>
-
-        {quote?.cancellationPolicy && (
-          <p className="mt-3 text-[12px] leading-relaxed" style={{ color: 'hsl(var(--muted-foreground))' }}>
-            {quote.cancellationPolicy[locale]}
-          </p>
-        )}
+      <div className="mt-5">
+        <CheckoutSummary
+          locale={locale}
+          unitName={unitName}
+          arrival={arrival}
+          departure={departure}
+          nights={nights}
+          guests={guests}
+          quote={quote}
+          quoteLoading={quoteLoading}
+          bookable={bookable}
+        />
       </div>
 
       <div className="mt-6 flex flex-col gap-2.5">
@@ -1057,30 +1062,6 @@ function StepPayment({
         })}
       </div>
 
-      {/*
-        The contractual furniture. Germany requires the terms and the privacy
-        notice to be reachable before a booking is concluded, and they are the
-        site's own existing pages — nothing legal is invented here. Consent to
-        them is given by completing the booking, which is stated rather than
-        hidden behind a pre-ticked box; there is no marketing opt-in on this
-        screen at all, pre-selected or otherwise.
-      */}
-      {bookable && (
-        <p className="mt-5 text-[12px] leading-relaxed" style={{ color: 'hsl(var(--muted-foreground))' }}>
-          {de ? 'Mit der Buchung akzeptieren Sie unsere ' : 'By booking you accept our '}
-          <a href="/agb" className="underline underline-offset-2" target="_blank" rel="noopener noreferrer">
-            {de ? 'Allgemeinen Geschäftsbedingungen' : 'terms and conditions'}
-          </a>
-          {de ? ' und unsere ' : ' and our '}
-          <a href="/datenschutz" className="underline underline-offset-2" target="_blank" rel="noopener noreferrer">
-            {de ? 'Datenschutzerklärung' : 'privacy policy'}
-          </a>
-          {de
-            ? '. Die Stornierungsbedingungen entnehmen Sie den AGB.'
-            : '. Cancellation conditions are set out in the terms.'}
-        </p>
-      )}
-
       {!bookable && (
         <p className="mt-5 text-[12px] leading-relaxed" style={{ color: 'hsl(var(--muted-foreground))' }}>
           {de
@@ -1088,18 +1069,6 @@ function StepPayment({
             : 'Nothing is paid here. You are only choosing how you would like to pay later — we send the payment details with your confirmation.'}
         </p>
       )}
-    </div>
-  );
-}
-
-function Row({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) {
-  return (
-    <div className="flex justify-between gap-4">
-      <dt style={{ color: 'hsl(var(--muted-foreground))' }}>{label}</dt>
-      <dd className="text-right font-medium"
-          style={{ color: muted ? 'hsl(var(--muted-foreground))' : 'hsl(var(--foreground))' }}>
-        {value}
-      </dd>
     </div>
   );
 }

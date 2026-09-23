@@ -42,6 +42,10 @@ const STATUS_BY_CODE: Record<BookingErrorCode, number> = {
   not_bookable: 404,
   payment_handoff_failed: 502,
   booking_disabled: 403,
+  // The approved terms are missing: a launch gate, like booking_disabled.
+  terms_unavailable: 403,
+  // The terms moved under the guest: show the current ones, press again.
+  terms_changed: 409,
   // 202-shaped semantics with an error body: the guest must WAIT, not retry.
   // A 409 here would invite the browser to try again, which is the one thing
   // an uncertain provider outcome must not do.

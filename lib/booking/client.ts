@@ -16,6 +16,7 @@
  */
 
 import type {
+  AcceptedTermsVersions,
   AvailabilityCalendar,
   BookingErrorCode,
   BookingIntentView,
@@ -110,6 +111,8 @@ export function createBookingIntent(
     children: number;
     guest: GuestDetails;
     attemptId: string;
+    /** The versions of the terms rendered on screen when the button was pressed. */
+    acceptedTerms: AcceptedTermsVersions;
   },
   signal?: AbortSignal
 ): Promise<{ intent: BookingIntentView; quote: BookingQuote }> {

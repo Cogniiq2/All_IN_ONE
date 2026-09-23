@@ -31,7 +31,10 @@ import { beginMessageDelivery, completeMessageDelivery, type DeliveryClaim } fro
 import { messagingContact, testCompletionsAllowed } from '@/lib/booking/config';
 import { formatDateOrDash } from '@/lib/booking/date-format';
 import type { BookingLogger } from '@/lib/booking/logger';
-import { findIntentByReference, findUnitBySlug } from '@/lib/booking/repository';
+import { findIntentByReference, findUnitBySlug, readTermsEvidence } from '@/lib/booking/repository';
+import { cancellationPolicyByVersion, withdrawalNoticeByVersion } from '@/lib/legal/booking-terms';
+import { REVIEW_REQUEST_BASIS } from '@/lib/legal/messaging';
+import { contractingPartyLine } from '@/lib/legal/company';
 import { nightsBetween } from '@/lib/booking/stay-rules';
 import { brand, contact, SITE_URL } from '@/lib/content/brand';
 import { getRentalUnit } from '@/lib/content/apartments';
@@ -80,6 +83,33 @@ function money(cents: number | null, currency: string, locale: 'de' | 'en'): str
  * `sequence` > 1 is a deliberate resend (an operator's decision), which gets
  * its own ledger row rather than overwriting the record of the first send.
  */
+/**
+ * The contract-term variables for a booking confirmation, by stored version.
+ *
+ * Never "the current policy": a guest who booked under version 1 gets version
+ * 1 in their confirmation even if version 2 was approved an hour later.
+ */
+async function contractTermsFor(intentId: string, logger: BookingLogger): Promise<Record<string, string | undefined>> {
+  try {
+    const evidence = await readTermsEvidence(intentId);
+    if (!evidence) return {};
+    const locale = evidence.locale;
+    const cancellation = cancellationPolicyByVersion(evidence.versions.cancellation);
+    const withdrawal = withdrawalNoticeByVersion(evidence.versions.withdrawal);
+    const party = contractingPartyLine();
+    return {
+      contractingParty: party ?? undefined,
+      cancellationPolicy: cancellation?.text[locale],
+      withdrawalNotice: withdrawal?.text[locale],
+      termsUrl: `${SITE_URL}/agb`,
+      privacyUrl: `${SITE_URL}/datenschutz`,
+    };
+  } catch (cause) {
+    logger.error('message.delivery', cause, { outcome: 'terms_evidence_unreadable' });
+    return {};
+  }
+}
+
 /** Whole days from the property's today to the arrival date; never negative. */
 function daysUntil(checkIn: string, timezone: string): number {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
@@ -104,6 +134,18 @@ export async function prepareGuestMessage(
   if (!intent.guest?.email) {
     return { outcome: 'suppressed', reason: 'booking has no guest email' };
   }
+
+  // A feedback request is advertising in German law. Nothing leaves until a
+  // legal basis is recorded — see lib/legal/messaging.ts.
+  if (input.kind === 'review_request' && !REVIEW_REQUEST_BASIS) {
+    logger.info('message.delivery', { reference: input.reference, eventType: input.kind, outcome: 'suppressed' });
+    return { outcome: 'suppressed', reason: 'review_request has no confirmed legal basis (lib/legal/messaging.ts)' };
+  }
+
+  // The confirmation carries the contract terms the guest was SHOWN, looked up
+  // by the versions stored at checkout. Unreadable evidence leaves them
+  // undefined, and the template — which requires them — refuses to render.
+  const contractTerms = input.kind === 'booking_confirmation' ? await contractTermsFor(intent.id, logger) : {};
 
   const unit = await findUnitBySlug(intent.unitSlug);
   const content = getRentalUnit(intent.unitSlug);
@@ -132,6 +174,7 @@ export async function prepareGuestMessage(
       contactPhone: messagingContact().phone ?? contact.phone,
       siteUrl: SITE_URL,
       daysUntilArrival: daysUntil(intent.checkIn, unit?.timezone ?? 'Europe/Berlin'),
+      ...contractTerms,
     });
   } catch (cause) {
     // A template that cannot be rendered is a configuration fault, not a

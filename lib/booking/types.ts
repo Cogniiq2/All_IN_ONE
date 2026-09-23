@@ -17,6 +17,7 @@
 
 import { isConfirmed, reservesInventory } from '@/lib/booking/states';
 import type { BookingState, PaymentState } from '@/lib/booking/states';
+import type { AcceptedTermsVersions, CheckoutTerms } from '@/lib/legal/booking-terms';
 
 /** ISO `YYYY-MM-DD`. The only date shape that crosses a boundary. */
 export type IsoDate = string;
@@ -103,8 +104,23 @@ export interface BookingQuote {
   components: QuoteComponent[];
   /** ISO timestamp after which this quote must be refetched. */
   expiresAt: string;
-  /** Cancellation wording the provider returned, when it returns one. */
+  /**
+   * Cancellation wording the PROVIDER returned, when it returns one.
+   *
+   * Never shown to a guest and never sent to the browser: the service strips
+   * it. Beds24's text is single-language, unreviewed and may be absent — the
+   * checkout used to render nothing at all when it was. BoLaGio's approved,
+   * versioned policy in `terms` is the only one a guest sees.
+   */
   cancellationPolicy?: { de: string; en: string };
+  /**
+   * The approved BoLaGio terms for this checkout: cancellation policy,
+   * no-withdrawal notice, AGB and privacy versions, the price statement and
+   * the contracting party. `null` (or absent) means one of them is not
+   * approved yet — the checkout then renders that gap and offers NO payment.
+   * See lib/legal/readiness.ts.
+   */
+  terms?: CheckoutTerms | null;
 }
 
 /* ── Booking intent ────────────────────────────────────────────────────── */
@@ -123,6 +139,8 @@ export type PaymentStatus = PaymentState;
 export type PaymentProvider = 'stripe' | 'paypal';
 
 export type BookingSource = 'direct' | 'booking_com' | 'airbnb' | 'manual';
+
+export type { AcceptedTermsVersions, CheckoutTerms };
 
 /** The guest details a booking actually needs. Nothing more is collected. */
 export interface GuestDetails {
@@ -215,6 +233,16 @@ export type BookingErrorCode =
   | 'rate_limited'
   /** Direct booking is switched off. Not a fault; a launch gate. */
   | 'booking_disabled'
+  /**
+   * The approved booking terms (cancellation policy, withdrawal notice, AGB)
+   * are not configured. Fail closed: no hold, no payment.
+   */
+  | 'terms_unavailable'
+  /**
+   * The terms changed between the moment the guest saw them and the moment
+   * they pressed the button. They are shown the current ones and press again.
+   */
+  | 'terms_changed'
   /**
    * We cannot tell what a provider did. The guest is told to wait and NOT to
    * retry, because retrying is exactly what would double-book or double-charge

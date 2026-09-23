@@ -121,9 +121,26 @@ describe('with the flag set but the environment contradictory', () => {
     await expectDisabled(() => capturePaymentOrder('BLG-AAAAAA', logger));
   });
 
-  it('accepts the flag only with every prerequisite present', async () => {
+  it('stays shut with every technical prerequisite present but no approved checkout terms', async () => {
     vi.stubEnv('DIRECT_BOOKING_ENABLED', 'true');
     vi.stubEnv('PAYPAL_MODE', 'live');
+    vi.stubEnv('PAYPAL_CLIENT_ID', 'id');
+    vi.stubEnv('PAYPAL_CLIENT_SECRET', 's');
+    vi.stubEnv('PAYPAL_WEBHOOK_ID', 'w');
+    vi.stubEnv('BEDS24_MODE', 'live');
+    vi.stubEnv('BEDS24_REFRESH_TOKEN', 't');
+    vi.stubEnv('BOOKING_SYNC_SECRET', 'x');
+    // The cancellation policy, withdrawal notice and AGB are not approved in
+    // lib/legal/booking-terms.ts, so the third lock holds the gate shut.
+    await expectDisabled(() => createPaymentOrder('BLG-AAAAAA', 'paypal', logger));
+    await expectDisabled(() => capturePaymentOrder('BLG-AAAAAA', logger));
+  });
+
+  it('opens with every prerequisite present, including the (staging-only) sandbox terms', async () => {
+    vi.stubEnv('APP_ENV', 'staging');
+    vi.stubEnv('DIRECT_BOOKING_ENABLED', 'true');
+    vi.stubEnv('BOOKING_TEST_TERMS', 'true');
+    vi.stubEnv('PAYPAL_MODE', 'sandbox');
     vi.stubEnv('PAYPAL_CLIENT_ID', 'id');
     vi.stubEnv('PAYPAL_CLIENT_SECRET', 's');
     vi.stubEnv('PAYPAL_WEBHOOK_ID', 'w');

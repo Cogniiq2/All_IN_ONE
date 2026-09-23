@@ -60,6 +60,14 @@ export const MESSAGE_VARIABLES = [
   'contactPhone',
   'siteUrl',
   'daysUntilArrival',
+  // The contract terms, for the booking confirmation on a durable medium
+  // (§ 312f Abs. 2 BGB). Resolved BY VERSION from the terms the guest was
+  // shown at checkout — never from whatever is current when the mail goes out.
+  'contractingParty',
+  'cancellationPolicy',
+  'withdrawalNotice',
+  'termsUrl',
+  'privacyUrl',
 ] as const;
 export type MessageVariable = (typeof MESSAGE_VARIABLES)[number];
 
@@ -76,14 +84,23 @@ export interface MessageTemplate {
 
 const CORE: readonly MessageVariable[] = ['firstName', 'reference', 'unitName', 'checkInDate', 'checkOutDate', 'brandName', 'contactEmail'];
 
+/**
+ * A booking confirmation without its contract terms is not a confirmation the
+ * law recognises (§ 312f Abs. 2 BGB, Art. 246a EGBGB): the trader's identity,
+ * the cancellation terms and the withdrawal notice must reach the guest on a
+ * durable medium. Required, so a missing one refuses to render rather than
+ * sending a confirmation with a hole where the terms should be.
+ */
+const CONTRACT_TERMS: readonly MessageVariable[] = ['contractingParty', 'cancellationPolicy', 'withdrawalNotice', 'termsUrl', 'privacyUrl'];
+
 export const MESSAGE_TEMPLATES: readonly MessageTemplate[] = [
   /* ── Booking confirmation ─────────────────────────────────────────────── */
   {
     id: 'booking_confirmation.de',
     kind: 'booking_confirmation',
     locale: 'de',
-    version: '1',
-    required: [...CORE, 'nights', 'totalAmount', 'checkInTime', 'checkOutTime'],
+    version: '2',
+    required: [...CORE, 'nights', 'totalAmount', 'checkInTime', 'checkOutTime', ...CONTRACT_TERMS],
     subject: 'Ihre Buchung {{reference}} bei {{brandName}} ist bestätigt',
     text: `Guten Tag {{firstName}},
 
@@ -96,6 +113,17 @@ Abreise: {{checkOutDate}} bis {{checkOutTime}} Uhr
 Nächte: {{nights}}
 Gesamtbetrag: {{totalAmount}}
 
+Ihr Vertragspartner: {{contractingParty}}
+
+Stornierungsbedingungen:
+{{cancellationPolicy}}
+
+Widerrufsrecht:
+{{withdrawalNotice}}
+
+Es gelten unsere Allgemeinen Geschäftsbedingungen: {{termsUrl}}
+Datenschutzerklärung: {{privacyUrl}}
+
 Wir melden uns kurz vor Ihrer Anreise mit allen Details zum Check-in.
 
 Bei Fragen erreichen Sie uns unter {{contactEmail}}.
@@ -107,8 +135,8 @@ Herzliche Grüße
     id: 'booking_confirmation.en',
     kind: 'booking_confirmation',
     locale: 'en',
-    version: '1',
-    required: [...CORE, 'nights', 'totalAmount', 'checkInTime', 'checkOutTime'],
+    version: '2',
+    required: [...CORE, 'nights', 'totalAmount', 'checkInTime', 'checkOutTime', ...CONTRACT_TERMS],
     subject: 'Your booking {{reference}} at {{brandName}} is confirmed',
     text: `Dear {{firstName}},
 
@@ -120,6 +148,17 @@ Arrival: {{checkInDate}} from {{checkInTime}}
 Departure: {{checkOutDate}} by {{checkOutTime}}
 Nights: {{nights}}
 Total: {{totalAmount}}
+
+Your contracting party: {{contractingParty}}
+
+Cancellation terms:
+{{cancellationPolicy}}
+
+Right of withdrawal:
+{{withdrawalNotice}}
+
+Our terms and conditions apply: {{termsUrl}}
+Privacy notice: {{privacyUrl}}
 
 We will be in touch shortly before your arrival with the check-in details.
 

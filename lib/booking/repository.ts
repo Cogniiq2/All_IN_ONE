@@ -26,6 +26,7 @@ import type {
   QuoteComponent,
 } from '@/lib/booking/types';
 import type { ProviderUnitRef } from '@/lib/integrations/provider';
+import { parseAcceptedVersions, type AcceptedTermsVersions } from '@/lib/legal/booking-terms';
 import { HOUSE_RULES, PROPERTY_TIMEZONE } from '@/lib/booking/property-config';
 
 /* ── Units and provider mapping ─────────────────────────────────────────── */
@@ -341,6 +342,43 @@ export interface CreateIntentInput {
   guest: GuestDetails;
   idempotencyKey: string;
   source: BookingSource;
+  /**
+   * Which versions of the cancellation policy, withdrawal notice, AGB,
+   * privacy notice and price statement the guest was shown when they pressed
+   * the booking button — the evidence of what they agreed to. Written once,
+   * with the row. See lib/legal/booking-terms.ts.
+   */
+  termsEvidence?: TermsEvidence;
+}
+
+export interface TermsEvidence {
+  versions: AcceptedTermsVersions;
+  acceptedAt: string;
+  locale: 'de' | 'en';
+}
+
+/**
+ * The terms evidence of one booking, read on its own.
+ *
+ * Deliberately NOT part of INTENT_COLUMNS: every admin screen reads intents
+ * through that list, and a column that only exists after the 2026-09-25
+ * migration must not be able to break them on a database that has not had it
+ * yet. Only the confirmation email reads this, and it refuses to render when
+ * the evidence cannot be read — which is the fail-closed direction.
+ */
+export async function readTermsEvidence(intentId: string): Promise<TermsEvidence | null> {
+  const { data, error } = await supabaseAdmin()
+    .from('bolagio_booking_intents')
+    .select('terms_evidence')
+    .eq('id', intentId)
+    .maybeSingle();
+  if (error) throw error;
+  const raw = (data as { terms_evidence?: unknown } | null)?.terms_evidence;
+  if (typeof raw !== 'object' || raw === null) return null;
+  const evidence = raw as Record<string, unknown>;
+  const versions = parseAcceptedVersions(evidence.versions);
+  if (!versions || typeof evidence.acceptedAt !== 'string') return null;
+  return { versions, acceptedAt: evidence.acceptedAt, locale: evidence.locale === 'en' ? 'en' : 'de' };
 }
 
 /**
@@ -371,6 +409,7 @@ export async function createIntent(input: CreateIntentInput): Promise<IntentReco
       idempotency_key: input.idempotencyKey,
       source: input.source,
       status: 'draft',
+      ...(input.termsEvidence ? { terms_evidence: input.termsEvidence } : {}),
     })
     .select(INTENT_COLUMNS)
     .single();

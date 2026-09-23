@@ -5,7 +5,7 @@
  * BEFORE any money moves. Returns the guest-facing reference and the
  * authoritative quote.
  *
- *   { unitSlug, checkIn, checkOut, adults, children, guest{…}, attemptId? }
+ *   { unitSlug, checkIn, checkOut, adults, children, guest{…}, acceptedTerms, attemptId? }
  *   → { intent: BookingIntentView, quote: BookingQuote }
  *
  * ── What it will not accept ──────────────────────────────────────────────
@@ -32,6 +32,7 @@ import {
 } from '@/lib/booking/http';
 import { BookingError, startBooking } from '@/lib/booking/service';
 import type { GuestDetails } from '@/lib/booking/types';
+import { parseAcceptedVersions } from '@/lib/legal/booking-terms';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -56,6 +57,9 @@ export async function POST(request: NextRequest) {
         children: int(body.children, 0),
         guest: guest(body.guest),
         attemptId: typeof body.attemptId === 'string' ? body.attemptId.slice(0, 64) : undefined,
+        // The term versions the guest was shown. Malformed reads as absent,
+        // which the service refuses as `terms_changed` — never as accepted.
+        acceptedTerms: parseAcceptedVersions(body.acceptedTerms),
       },
       logger
     );

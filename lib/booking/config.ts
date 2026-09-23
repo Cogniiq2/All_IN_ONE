@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { appEnvironment, refusals, validateEnvironment } from '@/lib/config/environment';
+import { bookingLegalGaps } from '@/lib/legal/readiness';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -131,7 +132,14 @@ export function directBookingEnabled(): boolean {
 export function directBookingPermitted(): { permitted: boolean; refusals: string[] } {
   if (!directBookingEnabled()) return { permitted: false, refusals: [] };
   const report = validateEnvironment();
-  return { permitted: report.directBookingPermitted, refusals: refusals(report).map((f) => f.code) };
+  // The third lock: every text a guest must see before paying is approved.
+  // An unapproved cancellation policy shuts the gate exactly as a missing
+  // webhook id does — see lib/legal/readiness.ts.
+  const legal = bookingLegalGaps().map((g) => g.code);
+  return {
+    permitted: report.directBookingPermitted && legal.length === 0,
+    refusals: [...refusals(report).map((f) => f.code), ...legal],
+  };
 }
 
 /* ── PayPal ────────────────────────────────────────────────────────────── */

@@ -9,8 +9,15 @@ import path from 'node:path';
  * wrong means a night sold twice or a guest charged twice. Rendering tests are
  * deliberately absent; a snapshot of a calendar proves nothing a human eye
  * does not prove faster.
+ *
+ * The one exception is the LEGAL surface — the checkout summary, the consent
+ * checkbox — where "is the cancellation block there, is the box unticked" is
+ * a compliance property, not a look. Those few components are rendered to a
+ * string with react-dom/server (no DOM needed), which is why JSX is compiled
+ * with the automatic runtime here.
  */
 export default defineConfig({
+  esbuild: { jsx: 'automatic' },
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],

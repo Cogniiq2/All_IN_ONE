@@ -23,6 +23,7 @@ import {
 import { isUsableSecret } from '@/lib/admin/session';
 import { appEnv, isPreviewDemoEnabled } from '@/lib/admin/preview';
 import { appEnvironment, validateEnvironment, type AppEnvironment, type EnvironmentFinding } from '@/lib/config/environment';
+import { bookingLegalGaps } from '@/lib/legal/readiness';
 
 function env(name: string): string | undefined {
   const value = process.env[name];
@@ -128,14 +129,20 @@ export function adminPosture(): AdminPosture {
   const beds24 = beds24Config();
   const supabase = supabaseConfig();
   const report = validateEnvironment();
+  // Legal gaps are refusals in the same vocabulary as the environment's, so
+  // the System page shows "LEGAL_CANCELLATION_POLICY_UNAPPROVED" beside
+  // "DIRECT_BOOKING_WITHOUT_WEBHOOK" and the operator sees one list.
+  const legal: EnvironmentFinding[] = directBookingEnabled()
+    ? bookingLegalGaps().map((g) => ({ code: g.code, severity: 'refuse' as const, message: g.message }))
+    : [];
   return {
     mode: adminMode(),
     appEnv: appEnv(),
     environment: appEnvironment(),
     previewDemo: isPreviewDemoEnabled(),
     directBookingEnabled: directBookingEnabled(),
-    directBookingPermitted: report.directBookingPermitted,
-    configFindings: report.findings,
+    directBookingPermitted: report.directBookingPermitted && legal.length === 0,
+    configFindings: [...report.findings, ...legal],
     paypalMode: paypalMode() ?? 'unconfigured',
     paypalCredentialsConfigured: Boolean(paypal.clientId && paypal.clientSecret),
     paypalWebhookConfigured: Boolean(paypal.webhookId),

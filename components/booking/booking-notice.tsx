@@ -85,6 +85,14 @@ const MESSAGES: Record<BookingErrorCode, Copy> = {
     de: 'Einen Moment bitte — versuchen Sie es gleich noch einmal.',
     en: 'One moment please — try again in a few seconds.',
   },
+  terms_unavailable: {
+    de: 'Eine Online-Buchung ist für diese Residenz noch nicht möglich, weil unsere Buchungsbedingungen noch nicht freigegeben sind. Es wurde nichts abgebucht. Schreiben Sie uns — wir bestätigen Ihren Zeitraum persönlich.',
+    en: 'Online booking is not yet possible for this residence because our booking terms have not been released. Nothing has been charged. Write to us and we will confirm your dates personally.',
+  },
+  terms_changed: {
+    de: 'Unsere Buchungsbedingungen wurden soeben aktualisiert. Bitte lesen Sie die aktuelle Fassung oben und buchen Sie dann erneut. Es wurde nichts abgebucht.',
+    en: 'Our booking terms have just been updated. Please read the current version above and then book again. Nothing has been charged.',
+  },
   booking_disabled: {
     de: 'Die Online-Buchung ist noch nicht freigeschaltet. Schreiben Sie uns — wir bestätigen Ihre Daten persönlich.',
     en: 'Online booking is not open yet. Write to us and we will confirm your dates personally.',
@@ -111,6 +119,7 @@ const MESSAGES: Record<BookingErrorCode, Copy> = {
  */
 const OFFER_CONTACT = new Set<BookingErrorCode>([
   'not_bookable',
+  'terms_unavailable',
   'booking_disabled',
   'pending_verification',
   'payment_handoff_failed',
@@ -133,6 +142,7 @@ export function BookingNotice({
   // line when the server supplied it. Nothing else from `meta` is rendered.
   const minNights = typeof meta?.minNights === 'number' ? meta.minNights : undefined;
   const maxGuests = typeof meta?.maxGuests === 'number' ? meta.maxGuests : undefined;
+  const maxNights = typeof meta?.maxNights === 'number' ? meta.maxNights : undefined;
 
   // An expiry is a matter of time passing, not a fault; it gets the softer
   // clock mark rather than the alert mark.
@@ -160,6 +170,13 @@ export function BookingNotice({
             {de
               ? `Mindestaufenthalt: ${minNights} ${minNights === 1 ? 'Nacht' : 'Nächte'}.`
               : `Minimum stay: ${minNights} ${minNights === 1 ? 'night' : 'nights'}.`}
+          </p>
+        )}
+        {maxNights !== undefined && (
+          <p className="mt-1 text-[12px] leading-relaxed" style={{ color: 'hsl(var(--muted-foreground))' }}>
+            {de
+              ? `Online buchbar bis ${maxNights} Nächte. Für längere Aufenthalte senden Sie uns bitte eine Anfrage.`
+              : `Bookable online for up to ${maxNights} nights. For longer stays, please send us an enquiry.`}
           </p>
         )}
         {maxGuests !== undefined && (

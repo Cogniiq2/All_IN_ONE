@@ -51,16 +51,24 @@ export function ContactFields({
   values,
   onChange,
   touched,
+  phoneRequired = false,
 }: {
   locale: Locale;
   idPrefix: string;
   values: { name: string; email: string; phone: string };
   onChange: (key: 'name' | 'email' | 'phone', value: string) => void;
   touched: boolean;
+  /**
+   * The direct booking needs a phone number (the reservation is refused
+   * without one); an enquiry does not. The label, the required state and the
+   * error message must say the same thing the validation does.
+   */
+  phoneRequired?: boolean;
 }) {
   const de = locale === 'de';
   const nameValid = values.name.trim().length >= 2;
   const emailValid = EMAIL_PATTERN.test(values.email.trim());
+  const phoneValid = !phoneRequired || values.phone.trim().length >= 5;
 
   return (
     <>
@@ -112,16 +120,26 @@ export function ContactFields({
 
       <div>
         <label htmlFor={`${idPrefix}-phone`} className={labelClass}>
-          {de ? 'Telefon' : 'Phone'} <OptionalHint locale={locale} />
+          {de ? 'Telefon' : 'Phone'}{' '}
+          {phoneRequired ? <span aria-hidden="true">*</span> : <OptionalHint locale={locale} />}
         </label>
         <input
           id={`${idPrefix}-phone`}
           type="tel"
           autoComplete="tel"
+          required={phoneRequired}
+          aria-required={phoneRequired || undefined}
+          aria-invalid={touched && !phoneValid}
+          aria-describedby={touched && !phoneValid ? `${idPrefix}-phone-error` : undefined}
           value={values.phone}
           onChange={(e) => onChange('phone', e.target.value)}
           className={inputClass}
         />
+        {touched && !phoneValid && (
+          <FieldError id={`${idPrefix}-phone-error`}>
+            {de ? 'Bitte tragen Sie Ihre Telefonnummer ein.' : 'Please enter your phone number.'}
+          </FieldError>
+        )}
       </div>
     </>
   );

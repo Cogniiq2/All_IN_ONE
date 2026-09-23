@@ -65,6 +65,8 @@ import type {
   IsoDate,
 } from '@/lib/booking/types';
 import { bookingProvider } from '@/lib/integrations/beds24';
+import { resolveCheckoutTerms } from '@/lib/legal/readiness';
+import { sameVersions, versionsOf as versionsOfTerms, type AcceptedTermsVersions } from '@/lib/legal/booking-terms';
 import { ProviderError } from '@/lib/integrations/provider';
 
 /** Thrown out of the service; route handlers turn it into a JSON body. */
@@ -206,8 +208,9 @@ export async function getQuote(
   if (cacheError) throw fromBody(cacheError);
 
   const started = Date.now();
+  let quote: BookingQuote;
   try {
-    const quote = await bookingProvider().fetchOffer({
+    quote = await bookingProvider().fetchOffer({
       unit: unit.providerRef!,
       unitSlug: unit.slug,
       checkIn: input.checkIn,
@@ -223,7 +226,6 @@ export async function getQuote(
       currency: quote.currency,
       durationMs: Date.now() - started,
     });
-    return quote;
   } catch (cause) {
     const error = fromProvider(cause);
     logger.warn('beds24.offer', {
@@ -233,6 +235,30 @@ export async function getQuote(
     });
     throw error;
   }
+  return withBoLaGioTerms(quote);
+}
+
+/**
+ * Replace whatever cancellation text the provider returned with BoLaGio's
+ * approved terms — or with `null` when they are not approved.
+ *
+ * The provider's `cancellationPolicy` never reaches the browser: it may be
+ * absent (the launch blocker this replaces), single-language, and it is not
+ * the text BoLaGio's lawyer approved. A `null` here is rendered by the
+ * checkout as "direct booking not possible yet", never as an empty block.
+ *
+ * A stay longer than the approved no-withdrawal notice covers is refused as a
+ * stay-rule violation: for a possibly RESIDENTIAL stay that notice may be
+ * wrong, so such a stay goes to the enquiry flow instead of online payment.
+ */
+function withBoLaGioTerms(quote: BookingQuote): BookingQuote {
+  const rest: BookingQuote = { ...quote };
+  delete rest.cancellationPolicy;
+  const terms = resolveCheckoutTerms();
+  if (terms && quote.nights > terms.withdrawal.maxNights) {
+    throw new BookingError('stay_rules', { maxNights: terms.withdrawal.maxNights });
+  }
+  return { ...rest, terms };
 }
 
 /* ── Booking: intent + hold ────────────────────────────────────────────── */
@@ -242,6 +268,12 @@ export interface StartBookingInput extends StayRequest {
   guest: GuestDetails;
   /** Distinguishes a deliberate retry from a double-click. Never an amount. */
   attemptId?: string;
+  /**
+   * The term versions the guest was SHOWN when they pressed the button. They
+   * must equal the versions in force now; otherwise the guest sees the
+   * current ones and presses again. Stored on the intent as evidence.
+   */
+  acceptedTerms?: AcceptedTermsVersions | null;
 }
 
 /**
@@ -264,6 +296,15 @@ export async function startBooking(
   logger: BookingLogger = createLogger()
 ): Promise<{ intent: BookingIntentView; quote: BookingQuote }> {
   requireDirectBooking();
+
+  // Defence in depth: the gate above already refuses while any term is
+  // unapproved. What it cannot know is WHICH versions this guest saw.
+  const terms = resolveCheckoutTerms();
+  if (!terms) throw new BookingError('terms_unavailable');
+  if (!input.acceptedTerms || !sameVersions(input.acceptedTerms, versionsOfTerms(terms))) {
+    throw new BookingError('terms_changed');
+  }
+
   const unit = await requireBookableUnit(input.unitSlug);
 
   const shapeError = validateStayShape(input, {
@@ -290,7 +331,7 @@ export async function startBooking(
   const existing = await findIntentByIdempotencyKey(idempotencyKey);
   if (existing && existing.beds24BookingId && reservesInventory(existing.status)) {
     logger.info('intent.create', { reference: existing.reference, outcome: 'idempotent-replay' });
-    return { intent: toView(existing), quote: quoteFromIntent(existing) };
+    return { intent: toView(existing), quote: { ...quoteFromIntent(existing), terms } };
   }
 
   const quote = await getQuote(
@@ -319,6 +360,11 @@ export async function startBooking(
       // Attribution is written into the row at creation, never inferred later
       // from a label. This website only ever produces direct bookings.
       source: 'direct',
+      termsEvidence: {
+        versions: versionsOfTerms(terms),
+        acceptedAt: new Date().toISOString(),
+        locale: guest.locale === 'en' ? 'en' : 'de',
+      },
     }));
 
   logger.info('intent.create', {

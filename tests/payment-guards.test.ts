@@ -29,6 +29,10 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/supabase/server', () => ({ supabaseAdmin: () => { throw new Error('no db'); }, isSupabaseConfigured: () => true }));
+// The third lock (approved checkout terms) is its own suite —
+// tests/legal-checkout.test.ts. Here it is held open, like the environment
+// below, so what is under test is the payment decision alone.
+vi.mock('@/lib/legal/readiness', () => ({ bookingLegalGaps: () => [], resolveCheckoutTerms: () => null }));
 vi.mock('@/lib/booking/repository', () => ({
   findIntentByReference: async () => h.intent,
   findIntentByOrderId: async () => null,
