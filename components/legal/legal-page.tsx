@@ -8,20 +8,22 @@ import { Reveal } from '@/components/ui-kit/reveal';
  * Shared shell for the three legal pages.
  *
  * ── Scope note ────────────────────────────────────────────────────────────
- * Final legal text is explicitly out of scope for this frontend pass and must
- * be drafted with the owners' Steuerberater / Fachanwalt. What this pass does
- * is remove the false data the pages previously published — a fabricated
- * address ("Musterstraße 1"), a fabricated VAT number ("DE XXX XXX XXX") and
- * the wrong company name — and replace it with an honest statement that the
- * entries are still being completed.
+ * Final legal text must be approved with the owners' Steuerberater /
+ * Fachanwalt. Facts come from lib/legal/company.ts and lib/legal/processors.ts;
+ * a fact that is not verified renders as a visible "wird ergänzt" (see
+ * `Pending`), never as a plausible-looking guess. The closing review note
+ * stays until the page's text is recorded as approved (`reviewed`).
  */
 export function LegalPage({
   title,
   intro,
+  reviewed = false,
   children,
 }: {
   title: string;
   intro?: string;
+  /** True once the page's text is recorded as approved in lib/legal/*. */
+  reviewed?: boolean;
   children: ReactNode;
 }) {
   const { locale } = useI18n();
@@ -38,6 +40,7 @@ export function LegalPage({
 
         <div className="mt-10 space-y-9">{children}</div>
 
+        {!reviewed && (
         <Reveal>
           <p
             className="mt-14 p-5 text-[13px] leading-relaxed"
@@ -53,6 +56,7 @@ export function LegalPage({
               : 'This page will be completed and legally reviewed before the website goes live.'}
           </p>
         </Reveal>
+        )}
       </div>
     </div>
   );
@@ -66,5 +70,18 @@ export function LegalSection({ heading, children }: { heading: string; children:
         <div className="body-copy space-y-3">{children}</div>
       </section>
     </Reveal>
+  );
+}
+
+/**
+ * A mandatory fact that has not been supplied yet. Rendered visibly, in the
+ * page's own voice, and marked for anyone searching the DOM — never replaced
+ * by a plausible-looking placeholder.
+ */
+export function Pending({ locale }: { locale: 'de' | 'en' }) {
+  return (
+    <span data-legal-pending="true" style={{ color: 'hsl(var(--muted-foreground))' }}>
+      {locale === 'de' ? 'wird vor Veröffentlichung ergänzt' : 'to be completed before publication'}
+    </span>
   );
 }

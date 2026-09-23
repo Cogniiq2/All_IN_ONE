@@ -46,7 +46,7 @@ import { useUnitFlow } from '@/components/units/unit-flow-context';
 import { CtaButton } from '@/components/ui-kit/cta';
 import { DateField } from '@/components/ui-kit/date-field';
 import { AddToCalendar } from '@/components/booking/add-to-calendar';
-import { EMAIL_PATTERN, SubmitError, inputClass, labelClass } from '@/components/enquiry/enquiry-fields';
+import { EMAIL_PATTERN, PrivacyNotice, SubmitError, inputClass, labelClass } from '@/components/enquiry/enquiry-fields';
 
 type Status = 'idle' | 'sending' | 'success' | 'error';
 
@@ -219,7 +219,10 @@ export function AppointmentModal() {
                 />
               )}
               {step === 3 && (
-                <StepContact form={form} setForm={setForm} touched={touched} valid={contactValid} />
+                <>
+                  <StepContact form={form} setForm={setForm} touched={touched} valid={contactValid} />
+                  <PrivacyNotice locale={locale} className="mt-4" />
+                </>
               )}
 
               {status === 'error' && <div className="mt-5"><SubmitError locale={locale} /></div>}

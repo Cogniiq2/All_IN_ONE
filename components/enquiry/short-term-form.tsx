@@ -41,6 +41,7 @@ import {
   labelClass,
   OptionalHint,
   SubmitError,
+  PrivacyNotice,
 } from '@/components/enquiry/enquiry-fields';
 
 type Status = 'idle' | 'sending' | 'success' | 'error';
@@ -219,6 +220,8 @@ export function ShortTermEnquiryForm({
       </div>
 
       {status === 'error' && <SubmitError locale={locale} />}
+
+      <PrivacyNotice locale={locale} />
 
       <div className="pt-1">
         <CtaButton type="submit" full disabled={status === 'sending'}>

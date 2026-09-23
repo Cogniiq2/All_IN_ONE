@@ -51,6 +51,13 @@ export interface CompanyIdentity {
    * LEGAL_REVIEW_REQUIRED.md). Never defaulted to a sentence nobody chose.
    */
   consumerDisputeStatement: { de: string; en: string } | null;
+  /**
+   * Person responsible for journalistic-editorial content (§ 18 Abs. 2
+   * MStV), with address — relevant because the site publishes a journal.
+   * Whether the journal is such content is for the adviser; `null` renders as
+   * a visible gap rather than a guess.
+   */
+  editorialResponsible: string | null;
 }
 
 export const COMPANY: CompanyIdentity = {
@@ -72,6 +79,7 @@ export const COMPANY: CompanyIdentity = {
   email: contact.email,
   phone: contact.phone,
   consumerDisputeStatement: null,
+  editorialResponsible: null,
 };
 
 export type CompanyField =

@@ -2,7 +2,9 @@
 
 import { useI18n } from '@/lib/i18n';
 import { brand } from '@/lib/content/brand';
-import { LegalPage, LegalSection } from '@/components/legal/legal-page';
+import { COMPANY } from '@/lib/legal/company';
+import { BOOKING_TERMS_DOCUMENTS, CANCELLATION_POLICIES, WITHDRAWAL_NOTICES, latest } from '@/lib/legal/booking-terms';
+import { LegalPage, LegalSection, Pending } from '@/components/legal/legal-page';
 
 /**
  * AGB.
@@ -15,6 +17,14 @@ import { LegalPage, LegalSection } from '@/components/legal/legal-page';
  * schedule, a maximum occupancy of four guests per apartment, and fixed quiet
  * hours. Those are commercial decisions the owners have not yet made, and the
  * website no longer takes payment at all.
+ *
+ * 2026-09-23: the contracting party, the cancellation terms and the notice on
+ * the right of withdrawal are read from lib/legal/* — the same approved,
+ * versioned texts the checkout shows — and render as a visible gap until
+ * approved. These terms cover ENQUIRIES; a paid online booking needs an
+ * approved AGB version in BOOKING_TERMS_DOCUMENTS, without which the
+ * direct-booking gate stays shut. A draft structure for counsel is in
+ * docs/legal/agb-booking-draft.md.
  */
 export default function AGBClient() {
   const { locale } = useI18n();
@@ -23,6 +33,11 @@ export default function AGBClient() {
   const pending = de
     ? 'Die verbindlichen Konditionen werden vor Veröffentlichung ergänzt und rechtlich geprüft.'
     : 'The binding terms will be completed and legally reviewed before publication.';
+  const cancellation = latest(CANCELLATION_POLICIES);
+  const withdrawal = latest(WITHDRAWAL_NOTICES);
+  const party = COMPANY.street && COMPANY.postalCode && COMPANY.city
+    ? `${COMPANY.legalName}, ${COMPANY.street}, ${COMPANY.postalCode} ${COMPANY.city}`
+    : null;
 
   return (
     <LegalPage
@@ -32,6 +47,7 @@ export default function AGBClient() {
           ? `Grundlage für Anfragen und Aufenthalte bei ${brand.name}.`
           : `The basis for enquiries and stays with ${brand.name}.`
       }
+      reviewed={latest(BOOKING_TERMS_DOCUMENTS) !== null}
     >
       <LegalSection heading={de ? '1. Geltungsbereich' : '1. Scope'}>
         <p>
@@ -39,6 +55,10 @@ export default function AGBClient() {
             ? `Diese Bedingungen gelten für Anfragen und Aufenthalte in den von ${brand.name} in Bayreuth vermieteten Apartments.`
             : `These terms apply to enquiries and stays in the apartments let by ${brand.name} in Bayreuth.`}
         </p>
+      </LegalSection>
+
+      <LegalSection heading={de ? 'Vertragspartner' : 'Contracting party'}>
+        <p>{party ?? <>{COMPANY.legalName} — <Pending locale={locale} /></>}</p>
       </LegalSection>
 
       <LegalSection heading={de ? '2. Anfrage und Zustandekommen' : '2. Enquiry and formation'}>
@@ -59,7 +79,11 @@ export default function AGBClient() {
       </LegalSection>
 
       <LegalSection heading={de ? '4. Stornierung' : '4. Cancellation'}>
-        <p>{pending}</p>
+        <p className="whitespace-pre-line">{cancellation ? cancellation.text[locale] : pending}</p>
+      </LegalSection>
+
+      <LegalSection heading={de ? 'Widerrufsrecht' : 'Right of withdrawal'}>
+        <p className="whitespace-pre-line">{withdrawal ? withdrawal.text[locale] : pending}</p>
       </LegalSection>
 
       <LegalSection heading={de ? '5. Nutzung der Apartments' : '5. Use of the apartments'}>

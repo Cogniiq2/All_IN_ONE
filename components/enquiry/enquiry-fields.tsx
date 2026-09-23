@@ -145,6 +145,26 @@ export function ContactFields({
   );
 }
 
+/**
+ * The privacy line under every form that collects personal data (Art. 13
+ * GDPR: the information is given at the time of collection, so the notice
+ * must be one click away from the submit button, not only in the footer).
+ */
+export function PrivacyNotice({ locale, className = '' }: { locale: Locale; className?: string }) {
+  const de = locale === 'de';
+  return (
+    <p className={`text-[12px] leading-relaxed text-muted-foreground ${className}`}>
+      {de
+        ? 'Wir verwenden Ihre Angaben nur, um Ihre Anfrage zu bearbeiten. Mehr dazu in unserer '
+        : 'We use your details only to handle your enquiry. More in our '}
+      <a href="/datenschutz" className="underline underline-offset-2" target="_blank" rel="noopener noreferrer">
+        {de ? 'Datenschutzerklärung' : 'privacy notice'}
+      </a>
+      .
+    </p>
+  );
+}
+
 /** Send failure, with the WhatsApp fallback so the visitor is never stranded. */
 export function SubmitError({ locale }: { locale: Locale }) {
   const de = locale === 'de';
