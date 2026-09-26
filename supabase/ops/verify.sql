@@ -96,6 +96,18 @@ do $$ begin
   else
     raise notice 'Booking.com finance statement (20260926) is not applied: its assertions skipped';
   end if;
+  if to_regclass('public.bolagio_finance_ingestion_queue') is not null then
+    perform pg_temp.v_assert(exists (select 1 from pg_trigger where tgname = 'bolagio_booking_intents_finance_enqueue'), 'booking state changes queue finance work (trigger present)');
+    perform pg_temp.v_assert(exists (select 1 from pg_trigger where tgname = 'bolagio_payment_events_finance_enqueue'), 'verified refund events queue finance work (trigger present)');
+    perform pg_temp.v_assert(to_regprocedure('bolagio_finance_enqueue_missing(boolean,integer)') is not null, 'bolagio_finance_enqueue_missing exists');
+    perform pg_temp.v_assert(to_regprocedure('bolagio_finance_claim_ingestion(text,integer)') is not null, 'bolagio_finance_claim_ingestion exists');
+    perform pg_temp.v_assert(to_regprocedure('bolagio_finance_settle_ingestion(uuid,timestamptz,boolean,text)') is not null, 'bolagio_finance_settle_ingestion exists');
+    perform pg_temp.v_assert(to_regclass('public.bolagio_finance_pipeline_status') is not null, 'the finance pipeline status view exists');
+    perform pg_temp.v_assert(not has_table_privilege('anon', 'bolagio_finance_pipeline_status', 'select'), 'the browser cannot read the pipeline status');
+    raise notice 'ok — finance ingestion pipeline (20260927) verified';
+  else
+    raise notice 'finance ingestion pipeline (20260927) is not applied: its assertions skipped';
+  end if;
   perform pg_temp.v_assert(not exists (
     select 1 from bolagio_booking_intents where refund_state = 'completed' and (refund_id is null or refunded_amount_cents <= 0)), 'no completed refund without evidence');
   perform pg_temp.v_assert(not exists (

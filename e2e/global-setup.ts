@@ -91,6 +91,8 @@ export default async function globalSetup(): Promise<void> {
     ADMIN_SESSION_SECRET: E2E.adminSecret,
     // Test-only switches, permitted on APP_ENV=local and refused elsewhere.
     OPERATOR_PAID_CANCELLATION_ENABLED: 'true',
+    // The sandbox legal fixture (lib/legal/readiness.ts): local/staging only.
+    BOOKING_TEST_TERMS: 'true',
     MESSAGING_TEST_COMPLETIONS_ALLOWED: 'true',
     MESSAGING_CONTACT_EMAIL: 'stay@example.com',
     PROVIDER_TIMEOUT_MS: '1500',

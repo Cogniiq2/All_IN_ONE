@@ -32,6 +32,7 @@ import { verifyN8nSignature } from '@/lib/n8n/signing';
 import { adminPosture } from '@/lib/admin/config';
 import { loadAlerts, loadIntegrationSignals, loadQueues } from '@/lib/admin/queries';
 import { rowSource } from '@/lib/admin/source';
+import { loadFinanceHealth } from '@/lib/finance/queries';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -49,11 +50,12 @@ export async function GET(request: NextRequest) {
     requireBackend();
     const now = new Date();
     const posture = adminPosture();
-    const [alerts, queues, schedulers, signals] = await Promise.all([
+    const [alerts, queues, schedulers, signals, finance] = await Promise.all([
       loadAlerts(now),
       loadQueues(),
       rowSource().then((s) => s.schedulerStatus()).catch(() => null),
       loadIntegrationSignals(),
+      loadFinanceHealth(now),
     ]);
 
     logger.info('health.read', {
@@ -83,6 +85,8 @@ export async function GET(request: NextRequest) {
             turnoversOpen: queues.data.filter((q) => q.queue === 'turnovers' && (q.state === 'required' || q.state === 'in_progress')).reduce((n, q) => n + q.items, 0),
           }
         : null,
+      /** Whether the finance ledger is keeping up with the booking and payment facts: status, summary, facts. Counts only. */
+      finance,
       configFindings: posture.configFindings,
     };
 

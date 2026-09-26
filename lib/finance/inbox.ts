@@ -22,7 +22,7 @@ export type InboxLevel = 'critical' | 'high' | 'elevated' | 'watch';
 export type InboxKind =
   | 'missing_document' | 'unknown_transaction' | 'tax_classification' | 'reverse_charge_review' | 'input_vat_review' | 'payout_mismatch'
   | 'duplicate_suspect' | 'unmatched_refund' | 'unmatched_payment' | 'unreconciled_revenue' | 'unallocated_cost' | 'tax_notice' | 'tax_deadline'
-  | 'missing_invoice_number' | 'minibar_variance' | 'asset_candidate' | 'reserve_gap' | 'import_failed' | 'match_proposal';
+  | 'missing_invoice_number' | 'minibar_variance' | 'asset_candidate' | 'reserve_gap' | 'import_failed' | 'import_pending' | 'match_proposal';
 
 export interface InboxItem {
   id: string;
@@ -221,6 +221,13 @@ export function deriveInbox(i: InboxInput): InboxItem[] {
 
   /* Imports */
   for (const b of i.imports) {
+    if (b.status === 'validated') {
+      // Staged and checked, never committed: nothing from this file is in the
+      // ledger yet. Uploading is not importing — the figures on every screen
+      // exclude it until a person posts the valid rows.
+      items.push({ id: `import:${b.id}`, kind: 'import_pending', level: 'high', title: `Validated, not imported · ${b.filename}`, why: `${b.valid_rows} valid row${b.valid_rows === 1 ? '' : 's'} checked on upload and never posted. None of this file is in the ledger or in any figure.`, impactCents: null, nextStep: 'Open the batch and choose “Import valid rows”. Each row is idempotent: an overlap with an earlier file writes nothing twice.', href: `/admin/finance/imports/${b.id}`, since: b.created_at });
+      continue;
+    }
     if (b.status !== 'failed') continue;
     items.push({ id: `import:${b.id}`, kind: 'import_failed', level: 'elevated', title: `Import failed · ${b.filename}`, why: b.error ?? 'The import did not complete.', impactCents: null, nextStep: 'Open the batch, read the row errors, fix the file or the adapter mapping and re-import.', href: `/admin/finance/imports/${b.id}`, since: b.created_at });
   }

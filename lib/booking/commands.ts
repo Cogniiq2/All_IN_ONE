@@ -794,7 +794,35 @@ export type IntegrationProvider = 'beds24' | 'paypal' | 'n8n';
  * and never awaited on a guest-facing path — an observation that fails to
  * write must not fail the operation it observes.
  */
+/**
+ * Success heartbeats are throttled per isolate: a reservation sync makes a
+ * dozen Beds24 calls, and one `last_success` write per call spent a dozen of
+ * the Worker's per-request subrequests to say the same thing twelve times —
+ * enough, on the 50-subrequest plan, to starve the sync's own last window and
+ * its scheduler heartbeat. Failures, and every other signal, are never
+ * throttled.
+ */
+const lastObserved = new Map<string, number>();
+
+/** `OBSERVE_SUCCESS_INTERVAL_MS`, default one minute; 0 records every success. */
+function successObserveIntervalMs(): number {
+  const n = Number.parseInt(process.env.OBSERVE_SUCCESS_INTERVAL_MS ?? '', 10);
+  return Number.isFinite(n) && n >= 0 ? n : 60_000;
+}
+
+export function shouldObserve(provider: string, signal: string, now = Date.now()): boolean {
+  if (signal !== 'last_success') return true;
+  const interval = successObserveIntervalMs();
+  if (interval === 0) return true;
+  const key = `${provider}:${signal}`;
+  const last = lastObserved.get(key);
+  if (last !== undefined && now - last < interval) return false;
+  lastObserved.set(key, now);
+  return true;
+}
+
 export function observeIntegration(provider: IntegrationProvider, signal: string, detail?: string): void {
+  if (!shouldObserve(provider, signal)) return;
   let client: ReturnType<typeof supabaseAdmin>;
   try {
     client = supabaseAdmin();

@@ -4,7 +4,8 @@
 
 | Source | How it enters | Idempotency key |
 |---|---|---|
-| Direct stays (website, PayPal) | `ingestBookingFacts` reads `bolagio_booking_intents` after every operations pass | `booking:<intent id>` |
+| Direct stays (website, PayPal) | a trigger queues the intent in the same transaction as its booking/payment change; the reconcile pass drains the queue (`runFinanceIngestionPass`, `docs/finance/live-data-pipeline.md`) | `booking:<intent id>` |
+| Refunds from the PayPal dashboard | the verified `PAYMENT.CAPTURE.REFUNDED` / `REVERSED` event (`bolagio_finance_refund_events`): outgoing cash only, never a guessed revenue reversal | the refund id / `reversal:<capture id>` |
 | Booking.com stays | Booking.com **finance statement** import: statement gross, commission and payment-service fee per settlement line, VAT parked on `DE_REVIEW_REQUIRED` (`booking-com-statement.md`) | `booking_com_statement` / `<identity>#<content hash>` (+ `:commission`, `:payment_service_fee`) |
 | Booking.com stays (historical) | the retired reservation-statement adapter | `bcom:<book number>` — a later statement line for the same reservation posts nothing (`legacy_posted`) |
 | Minibar | `bolagio_minibar_record_movement` (sale) | `<booking>:<sku>` or the caller's key |

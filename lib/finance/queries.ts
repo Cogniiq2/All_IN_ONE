@@ -647,16 +647,20 @@ export interface FinanceHealth { status: 'healthy' | 'attention' | 'degraded' | 
 export async function loadFinanceHealth(now: Date = new Date()): Promise<FinanceHealth> {
   try {
     const source = await financeRowSource();
-    const [reachable, counts, signals] = await Promise.all([source.ping().catch(() => false), source.exceptionCounts().catch(() => null), source.ingestionSignals().catch(() => null)]);
+    const [reachable, counts, signals, pipeline] = await Promise.all([
+      source.ping().catch(() => false), source.exceptionCounts().catch(() => null), source.ingestionSignals().catch(() => null), source.pipelineStatus().catch(() => undefined),
+    ]);
     if (!reachable || !counts) return { status: 'unavailable', summary: 'The finance tables could not be read. The finance migration may not be applied.', facts: [] };
     const facts: FinanceHealth['facts'] = [];
     const age = (iso: string | null | undefined) => (iso ? Math.round((now.getTime() - Date.parse(iso)) / 60_000) : null);
+    const ago = (minutes: number | null) => (minutes === null ? 'never' : minutes < 120 ? `${minutes} min ago` : minutes < 2880 ? `${Math.round(minutes / 60)} h ago` : `${Math.round(minutes / 1440)} d ago`);
     const sig = (name: string) => signals?.find((s) => s.signal === name) ?? null;
     const ingest = sig('booking_ingestion.success');
     const ingestFail = sig('booking_ingestion.failure');
     const a = age(ingest?.observed_at);
     facts.push({ label: 'last ingestion', value: a === null ? 'never observed' : `${a} min ago`, tone: a === null ? 'caution' : a > 24 * 60 ? 'critical' : 'positive' });
-    if (ingestFail && (!ingest || ingestFail.observed_at > ingest.observed_at)) facts.push({ label: 'ingestion', value: 'last run failed', tone: 'critical' });
+    const ingestFailing = Boolean(ingestFail && (!ingest || ingestFail.observed_at > ingest.observed_at));
+    if (ingestFailing) facts.push({ label: 'ingestion', value: 'last run failed', tone: 'critical' });
     const bcom = signals?.filter((s) => s.signal.startsWith('import.booking_com')).sort((x, y) => y.observed_at.localeCompare(x.observed_at))[0];
     const bank = signals?.filter((s) => s.signal.startsWith('import.bank')).sort((x, y) => y.observed_at.localeCompare(x.observed_at))[0];
     facts.push({ label: 'last Booking.com import', value: bcom ? `${Math.round((age(bcom.observed_at) ?? 0) / 1440)} d ago` : 'never', tone: bcom ? 'positive' : 'muted' });
@@ -666,9 +670,71 @@ export async function loadFinanceHealth(now: Date = new Date()): Promise<Finance
     facts.push({ label: 'tax review', value: String(counts.tax_code_review + counts.input_vat_review), tone: counts.tax_code_review + counts.input_vat_review > 0 ? 'caution' : 'positive' });
     facts.push({ label: 'failed imports', value: String(counts.failed_imports), tone: counts.failed_imports > 0 ? 'critical' : 'positive' });
     facts.push({ label: 'oldest open item', value: counts.oldest_open_item ? `${Math.round((age(counts.oldest_open_item) ?? 0) / 1440)} d` : '—', tone: 'muted' });
+
+    /*
+     * The pipeline: is the ledger keeping up with the facts it consumes?
+     * Each problem below is a reason NOT to trust the figures above it, so
+     * each one is named in the summary, not only listed.
+     */
+    const problems: string[] = [];   // the figures are wrong or stale
+    const pending: string[] = [];    // the figures are right but incomplete until a person acts
+    if (pipeline === null) {
+      facts.push({ label: 'ingestion pipeline', value: 'not installed', tone: 'critical' });
+      problems.push('the finance ingestion pipeline (migration 20260927) is not applied, so booking facts are only scanned, not queued');
+    } else if (pipeline) {
+      const lagAge = age(pipeline.queue_oldest_at);
+      facts.push({ label: 'ledger lag', value: pipeline.ledger_gaps === 0 ? 'none' : `${pipeline.ledger_gaps} booking${pipeline.ledger_gaps === 1 ? '' : 's'} not yet in the ledger`, tone: pipeline.ledger_gaps === 0 ? 'positive' : lagAge !== null && lagAge > 30 ? 'critical' : 'caution' });
+      if (pipeline.ledger_gaps > 0 && lagAge !== null && lagAge > 30) problems.push(`${pipeline.ledger_gaps} booking${pipeline.ledger_gaps === 1 ? ' has' : 's have'} waited ${ago(lagAge).replace(' ago', '')} for the ledger`);
+      if (pipeline.queue_failed > 0) {
+        facts.push({ label: 'ingestion failures', value: String(pipeline.queue_failed), tone: 'critical' });
+        problems.push(`${pipeline.queue_failed} booking${pipeline.queue_failed === 1 ? '' : 's'} failed to post${pipeline.queue_last_error ? ` (latest: ${pipeline.queue_last_error.slice(0, 120)})` : ''}; retried automatically`);
+      }
+      const eventAge = age(pipeline.payment_events_oldest_at);
+      facts.push({ label: 'unprocessed payment events', value: String(pipeline.payment_events_unprocessed), tone: pipeline.payment_events_unprocessed === 0 ? 'positive' : eventAge !== null && eventAge > 15 ? 'critical' : 'caution' });
+      if (pipeline.payment_events_unprocessed > 0 && eventAge !== null && eventAge > 15) problems.push(`${pipeline.payment_events_unprocessed} verified PayPal event${pipeline.payment_events_unprocessed === 1 ? '' : 's'} unprocessed for ${ago(eventAge).replace(' ago', '')}`);
+      facts.push({ label: 'last verified PayPal webhook', value: ago(age(pipeline.payment_event_last_verified_at)), tone: 'muted' });
+      const reconcileAge = age(pipeline.reconcile_last_ok_at);
+      facts.push({ label: 'payment processor', value: ago(reconcileAge), tone: reconcileAge === null ? 'caution' : reconcileAge > 15 ? 'critical' : 'positive' });
+      // Never run is a setup step still to do (nothing is stale yet); having
+      // run and stopped is the ledger silently falling behind.
+      if (reconcileAge === null) pending.push('the reconcile schedule has never run, so finance updates only on a manual run');
+      else if (reconcileAge > 15) problems.push(`the reconcile schedule last succeeded ${ago(reconcileAge)}; payments and finance are not being processed`);
+      const syncAge = age(pipeline.reservation_sync_last_ok_at);
+      const syncFailing = pipeline.reservation_sync_last_failed_at !== null && (pipeline.reservation_sync_last_ok_at === null || pipeline.reservation_sync_last_failed_at > pipeline.reservation_sync_last_ok_at);
+      facts.push({ label: 'Beds24 reservation sync', value: syncFailing ? 'last run failed' : ago(syncAge), tone: syncFailing || syncAge === null || syncAge > 3 * 60 ? 'caution' : 'positive' });
+      if (pipeline.refund_events_unattributed > 0) {
+        facts.push({ label: 'refunds without a booking', value: String(pipeline.refund_events_unattributed), tone: 'critical' });
+        problems.push(`${pipeline.refund_events_unattributed} verified PayPal refund${pipeline.refund_events_unattributed === 1 ? '' : 's'} could not be attributed to a booking`);
+      }
+      if (pipeline.import_batches_awaiting_commit > 0) {
+        facts.push({ label: 'imports not posted', value: `${pipeline.import_batches_awaiting_commit} file${pipeline.import_batches_awaiting_commit === 1 ? '' : 's'} · ${pipeline.import_rows_awaiting_commit} rows`, tone: 'caution' });
+        pending.push(`${pipeline.import_batches_awaiting_commit} uploaded file${pipeline.import_batches_awaiting_commit === 1 ? ' was' : 's were'} validated but never imported (${pipeline.import_rows_awaiting_commit} rows are in no figure)`);
+      }
+      if (pipeline.settlements_ledger_pending > 0) {
+        facts.push({ label: 'settlements not posted', value: String(pipeline.settlements_ledger_pending), tone: 'caution' });
+        pending.push(`${pipeline.settlements_ledger_pending} Booking.com settlement line${pipeline.settlements_ledger_pending === 1 ? '' : 's'} await their ledger posting`);
+      }
+    }
+
     const mismatches = counts.mismatches;
-    const status: FinanceHealth['status'] = !ingest && !signals?.length ? 'not_instrumented' : mismatches > 0 || counts.failed_imports > 0 || (a !== null && a > 24 * 60) ? 'degraded' : counts.missing_documents + counts.tax_code_review + counts.unmatched_payments > 0 ? 'attention' : 'healthy';
-    const summary = status === 'not_instrumented' ? 'No finance ingestion has ever run. Facts appear once the reconcile schedule (or a manual run) ingests bookings.' : status === 'degraded' ? `${mismatches} mismatch${mismatches === 1 ? '' : 'es'}, ${counts.failed_imports} failed import${counts.failed_imports === 1 ? '' : 's'}.` : status === 'attention' ? 'Exceptions wait in the Finance Inbox.' : 'Everything reconciled; no open exceptions.';
+    const status: FinanceHealth['status'] = !ingest && !signals?.length
+      ? 'not_instrumented'
+      : mismatches > 0 || counts.failed_imports > 0 || (a !== null && a > 24 * 60) || ingestFailing || problems.length > 0
+        ? 'degraded'
+        : counts.missing_documents + counts.tax_code_review + counts.unmatched_payments > 0 || pending.length > 0 ? 'attention' : 'healthy';
+    const summary = status === 'not_instrumented'
+      ? 'No finance ingestion has ever run. Facts appear once the reconcile schedule (or a manual run) ingests bookings.'
+      : status === 'degraded'
+        ? [
+            ...problems,
+            ...(ingestFailing ? ['the last ingestion run failed'] : []),
+            ...(mismatches > 0 || counts.failed_imports > 0 ? [`${mismatches} mismatch${mismatches === 1 ? '' : 'es'}, ${counts.failed_imports} failed import${counts.failed_imports === 1 ? '' : 's'}`] : []),
+            ...(a !== null && a > 24 * 60 ? [`no successful ingestion for ${ago(a).replace(' ago', '')}`] : []),
+            ...pending,
+          ].map((x, i) => (i === 0 ? x.charAt(0).toUpperCase() + x.slice(1) : x)).join('; ') + '. Do not rely on the figures until this clears.'
+        : status === 'attention'
+          ? pending.length > 0 ? `${pending.map((x, i) => (i === 0 ? x.charAt(0).toUpperCase() + x.slice(1) : x)).join('; ')}. Everything else is current.` : 'Exceptions wait in the Finance Inbox.'
+          : 'Everything reconciled; no open exceptions.';
     return { status, summary, facts };
   } catch (cause) {
     return { status: cause instanceof AdminUnconfiguredError ? 'unavailable' : 'degraded', summary: describe(cause), facts: [] };

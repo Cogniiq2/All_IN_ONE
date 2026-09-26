@@ -85,7 +85,7 @@ hashes the booking table before and after an ingestion pass and proves it.
 | Commands and actions | `lib/finance/commands.ts` (RPC wrappers, ingestion, reconciliation runner, imports, invoices, estimates), `lib/finance/actions.ts` (server actions: gate → validate → command → audit → revalidate) |
 | Read models | `lib/finance/queries.ts`, `attention.ts` (global attention + alert inputs), `search-action.ts` |
 | Screens | `app/(admin)/admin/(control)/finance/**`, `components/admin/finance/*`, `.bc-fin-*` styles in `app/(admin)/admin/control.css` |
-| Integration | `lib/booking/operations.ts` (ingestion after each operations pass), `lib/ops/alerts.ts` (seven finance alerts), `lib/admin/queries.ts` (attention merge), booking page panel, `/admin/system` health card, command palette |
+| Integration | `lib/booking/operations.ts` (queue-driven ingestion after each operations pass — `docs/finance/live-data-pipeline.md`), `lib/ops/alerts.ts` (seven finance alerts), `lib/admin/queries.ts` (attention merge), booking page panel, `/admin/system` health card, command palette |
 
 ## Access
 

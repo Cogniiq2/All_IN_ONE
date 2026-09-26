@@ -16,7 +16,7 @@ import 'server-only';
 import { supabaseAdmin } from '@/lib/supabase/server';
 import { classifyExpense } from '@/lib/finance/categorization';
 import { proposeMatches, type MatchProposal } from '@/lib/finance/reconciliation';
-import { capturePayment, expectedTurnoverCost, refundCashFact, refundPosting, revenuePosting, type BookingFact } from '@/lib/finance/ingestion-rules';
+import { capturePayment, expectedTurnoverCost, refundCashFact, refundEventCashFact, refundPosting, revenuePosting, type BookingFact, type RefundEventFact } from '@/lib/finance/ingestion-rules';
 import { adapterSpec, stageCsv, type AdapterId, type StagedOtaSettlement, type StagedRow } from '@/lib/finance/import/adapters';
 import { compareGross, matchReservation, SETTLEMENT_RULES_VERSION, type ReservationCandidate, type SettlementRow } from '@/lib/finance/settlements';
 import { sha256Hex } from '@/lib/finance/documents';
@@ -28,7 +28,7 @@ import { calculatedDeadlines } from '@/lib/finance/tax/calendar';
 import { vatPeriodKeysBetween } from '@/lib/finance/tax/calendar';
 import { calendarPolicyFrom } from '@/lib/finance/config';
 import { periodRange, yearRange, berlinToday, type IsoDate } from '@/lib/finance/periods';
-import { supabaseFinanceSource } from '@/lib/finance/source-supabase';
+import { isMissingRelation, supabaseFinanceSource } from '@/lib/finance/source-supabase';
 import type { CounterpartyRow, TaxRateRowDb } from '@/lib/finance/rows';
 import { fromNet, splitGross } from '@/lib/finance/money';
 import { REVIEW_REQUIRED_CODE, requireTaxCode } from '@/lib/finance/tax-codes';
@@ -188,35 +188,90 @@ function toFact(r: IntentFactRow): BookingFact {
   };
 }
 
+const INTENT_FACT_COLUMNS = 'id, reference, unit_id, source, status, payment_status, check_in, check_out, currency, quoted_total_cents, quote_components, paid_amount_cents, paid_currency, payment_capture_id, payment_provider, paid_at, confirmed_at, refund_state, refund_id, refunded_amount_cents, refund_completed_at, cancellation_completed_at';
+const ELIGIBLE_INTENTS = 'status.in.(confirmed,paid,paid_unfinalized,finalizing,finalization_failed),refund_state.eq.completed';
+
+function emptyReport(): IngestionReport {
+  return { scanned: 0, revenuePosted: 0, paymentsRecorded: 0, refundsPosted: 0, refundsWithoutRevenue: 0, turnoverCosts: 0, matches: 0, errors: [] };
+}
+
 /**
- * Idempotent: every source key posts once. Safe to run every pass. Reads
- * the booking core; writes only finance tables.
+ * The full scan: every eligible intent, paged by id so no intent is ever out
+ * of reach (the previous single page of 500 newest never revisited an older
+ * one). Idempotent: every source key posts once.
+ *
+ * Reads the booking core; writes only finance tables. The scheduled pass does
+ * NOT call this — it drains the queue (`runFinanceIngestionPass`), which is
+ * bounded per request. This is the backfill/diagnostic path, and the fallback
+ * when migration 20260927 is not applied.
  */
-export async function ingestBookingFacts(options: { since?: IsoDate; limit?: number; actor?: string } = {}): Promise<IngestionReport> {
+export async function ingestBookingFacts(options: { since?: IsoDate; limit?: number; actor?: string; intentIds?: string[]; pageSize?: number } = {}): Promise<IngestionReport> {
   const actor = options.actor ?? 'system:ingestion';
-  const report: IngestionReport = { scanned: 0, revenuePosted: 0, paymentsRecorded: 0, refundsPosted: 0, refundsWithoutRevenue: 0, turnoverCosts: 0, matches: 0, errors: [] };
+  const report = emptyReport();
+  const rows = options.intentIds ? await intentFactsById(options.intentIds) : await eligibleIntentFacts(options);
+  await ingestIntentFacts(rows, actor, report);
+  await finishIngestion(report, actor);
+  return report;
+}
+
+async function intentFactsById(ids: string[]): Promise<IntentFactRow[]> {
+  const out: IntentFactRow[] = [];
+  const unique = Array.from(new Set(ids));
+  for (let i = 0; i < unique.length; i += 100) {
+    const { data, error } = await supabaseAdmin().from('bolagio_booking_intents').select(INTENT_FACT_COLUMNS).in('id', unique.slice(i, i + 100));
+    if (error) throw asFinanceError('booking_intents.select', error);
+    out.push(...((data ?? []) as unknown as IntentFactRow[]));
+  }
+  return out;
+}
+
+async function eligibleIntentFacts(options: { since?: IsoDate; limit?: number; pageSize?: number }): Promise<IntentFactRow[]> {
+  const pageSize = Math.max(1, Math.min(options.pageSize ?? 500, 1000));
+  const cap = options.limit ?? Number.POSITIVE_INFINITY;
+  const out: IntentFactRow[] = [];
+  let after: string | null = null;
+  while (out.length < cap) {
+    let q = supabaseAdmin().from('bolagio_booking_intents').select(INTENT_FACT_COLUMNS).or(ELIGIBLE_INTENTS).order('id').limit(Math.min(pageSize, cap - out.length));
+    if (options.since) q = q.gte('updated_at', `${options.since}T00:00:00Z`);
+    if (after) q = q.gt('id', after);
+    const { data, error } = await q;
+    if (error) throw asFinanceError('booking_intents.select', error);
+    const page = (data ?? []) as unknown as IntentFactRow[];
+    out.push(...page);
+    if (page.length === 0 || page.length < pageSize) break;
+    after = page[page.length - 1].id;
+  }
+  return out;
+}
+
+/**
+ * Derive every finance fact of these intents. Returns the errors per intent
+ * (empty array = fully derived), and adds to `report`.
+ *
+ * Four INDEPENDENT facts per intent. A revenue posting that the database
+ * refuses — a locked period, an inactive tax code — must not take the
+ * guest's money with it: the capture and the refund are cash facts that
+ * happened whatever the P&L does, and each one is recorded, or reported,
+ * alone.
+ */
+async function ingestIntentFacts(rows: IntentFactRow[], actor: string, report: IngestionReport): Promise<Map<string, string[]>> {
   const db = supabaseAdmin();
-  let q = db.from('bolagio_booking_intents')
-    .select('id, reference, unit_id, source, status, payment_status, check_in, check_out, currency, quoted_total_cents, quote_components, paid_amount_cents, paid_currency, payment_capture_id, payment_provider, paid_at, confirmed_at, refund_state, refund_id, refunded_amount_cents, refund_completed_at, cancellation_completed_at')
-    .or('status.in.(confirmed,paid,paid_unfinalized,finalizing,finalization_failed),refund_state.eq.completed')
-    .order('updated_at', { ascending: false }).limit(options.limit ?? 500);
-  if (options.since) q = q.gte('updated_at', `${options.since}T00:00:00Z`);
-  const { data, error } = await q;
-  if (error) throw asFinanceError('booking_intents.select', error);
-  const config = financeConfig();
-  const accommodationCode = config.accommodationTaxCode ?? 'DE_ACCOMMODATION_REDUCED';
-  for (const raw of (data ?? []) as IntentFactRow[]) {
+  const errors = new Map<string, string[]>();
+  const accommodationCode = financeConfig().accommodationTaxCode ?? 'DE_ACCOMMODATION_REDUCED';
+  const refundEvents = await refundEventsFor(rows.map((r) => r.id));
+
+  for (const raw of rows) {
     report.scanned += 1;
     const fact = toFact(raw);
-    // Three INDEPENDENT facts. A revenue posting that the database refuses —
-    // a locked period, an inactive tax code — must not take the guest's
-    // money with it: the capture and the refund are cash facts that happened
-    // whatever the P&L does, and each one is recorded, or reported, alone.
+    const failures: string[] = [];
+    errors.set(fact.intentId, failures);
     const step = async (what: string, run: () => Promise<void>): Promise<void> => {
       try {
         await run();
       } catch (cause) {
-        report.errors.push(`${fact.reference} (${what}): ${errorMessage(cause)}`);
+        const message = `${fact.reference} (${what}): ${errorMessage(cause)}`;
+        failures.push(message);
+        report.errors.push(message);
       }
     };
 
@@ -265,7 +320,40 @@ export async function ingestBookingFacts(options: { since?: IsoDate; limit?: num
         if (r.created) report.refundsPosted += 1;
       });
     }
+
+    // Refunds PayPal reported that the saga did not make (the dashboard), or
+    // a second refund on one capture. The saga's own refund carries the same
+    // key and collapses onto the row recorded above.
+    for (const event of refundEvents.get(fact.intentId) ?? []) {
+      await step('refund event', async () => {
+        const cash = refundEventCashFact(event, fact);
+        if (!cash) return;
+        const p = await recordPayment(cash, actor);
+        if (p.created) report.paymentsRecorded += 1;
+      });
+    }
   }
+  return errors;
+}
+
+/** Verified refund/reversal events per intent. Empty when migration 20260927 is not applied. */
+async function refundEventsFor(intentIds: string[]): Promise<Map<string, RefundEventFact[]>> {
+  const out = new Map<string, RefundEventFact[]>();
+  for (let i = 0; i < intentIds.length; i += 100) {
+    const { data, error } = await supabaseAdmin().from('bolagio_finance_refund_events').select('intent_id, event_type, provider_reference, amount_cents, currency, occurred_at').in('intent_id', intentIds.slice(i, i + 100));
+    if (error && isMissingRelation(error)) return out;
+    if (error) throw asFinanceError('finance_refund_events.select', error);
+    for (const r of (data ?? []) as Array<RefundEventFact & { intent_id: string }>) {
+      const list = out.get(r.intent_id) ?? [];
+      list.push({ ...r, amount_cents: Number(r.amount_cents) });
+      out.set(r.intent_id, list);
+    }
+  }
+  return out;
+}
+
+/** The pass-wide tail: expected cleaning costs, reconciliation, the heartbeat. */
+async function finishIngestion(report: IngestionReport, actor: string, detail?: string): Promise<void> {
   // Expected cleaning costs for turnovers: only when a cleaning policy exists (a counterparty with a default cleaning category and a configured expected cost).
   try {
     report.turnoverCosts = await syncTurnoverCosts();
@@ -277,8 +365,103 @@ export async function ingestBookingFacts(options: { since?: IsoDate; limit?: num
   } catch (cause) {
     report.errors.push(`reconciliation: ${errorMessage(cause)}`);
   }
-  await observe(report.errors.length > 0 ? 'booking_ingestion.failure' : 'booking_ingestion.success', `${report.scanned} scanned, ${report.revenuePosted} revenue, ${report.paymentsRecorded} payments, ${report.refundsPosted} refunds, ${report.errors.length} errors`);
+  await observe(report.errors.length > 0 ? 'booking_ingestion.failure' : 'booking_ingestion.success', `${report.scanned} scanned, ${report.revenuePosted} revenue, ${report.paymentsRecorded} payments, ${report.refundsPosted} refunds, ${report.errors.length} errors${detail ? `; ${detail}` : ''}`);
+}
+
+/* ── The event-driven pass: the queue the booking core fills ──────────── */
+
+export interface FinancePassReport extends IngestionReport {
+  /** `queue`: migration 20260927 is applied. `scan`: it is not; the bounded full scan ran instead. */
+  mode: 'queue' | 'scan';
+  /** Intents the catch-up (or a backfill) queued in this pass. */
+  enqueued: number;
+  claimed: number;
+  /** Queue rows settled as fully derived. */
+  settled: number;
+  /** Queue rows left failed, to be retried with backoff. */
+  failed: number;
+}
+
+/** How many queued intents one pass derives. Bounded: a pass runs inside one Worker request. */
+export function financeIngestionBatch(): number {
+  const n = Number.parseInt(process.env.FINANCE_INGESTION_BATCH ?? '', 10);
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 200) : 5;
+}
+
+/**
+ * The scheduled (and manual) finance pass.
+ *
+ *   1. catch-up: queue every intent whose expected fact is missing and that
+ *      has no queue row — history, and anything a trigger could not queue.
+ *      With `backfill`, re-queue every gap whatever its queue state.
+ *   2. claim a bounded batch from the queue the booking triggers fill
+ *   3. derive those intents' facts (idempotent, per fact)
+ *   4. settle each queue row: done, or failed with backoff and the error
+ *   5. reconciliation and the heartbeat
+ *
+ * A booking or payment never waits for this, and never fails because of it:
+ * the trigger queued the work in the booking's own transaction, and a pass
+ * that fails leaves the rows queued for the next one.
+ */
+export async function runFinanceIngestionPass(options: { actor?: string; limit?: number; backfill?: boolean } = {}): Promise<FinancePassReport> {
+  try {
+    return await financePass(options);
+  } catch (cause) {
+    // A pass that could not run at all is the failure the health card must
+    // show; the per-fact errors inside a pass are recorded by finishIngestion.
+    await observe('booking_ingestion.failure', `pass failed: ${errorMessage(cause)}`.slice(0, 300));
+    throw cause;
+  }
+}
+
+async function financePass(options: { actor?: string; limit?: number; backfill?: boolean }): Promise<FinancePassReport> {
+  const actor = options.actor ?? 'system:ingestion';
+  const limit = Math.max(1, Math.min(options.limit ?? financeIngestionBatch(), 200));
+  const db = supabaseAdmin();
+
+  const enqueue = await db.rpc('bolagio_finance_enqueue_missing', { p_force: Boolean(options.backfill), p_limit: 5000 });
+  if (enqueue.error) {
+    if (!isMissingFunction(enqueue.error)) throw asFinanceError('bolagio_finance_enqueue_missing', enqueue.error);
+    // Migration 20260927 not applied: the previous behaviour, bounded, and
+    // said out loud — the health card shows the missing pipeline.
+    const scan = await ingestBookingFacts({ actor, limit: 500 });
+    await observe('pipeline.unavailable', 'finance ingestion queue missing (migration 20260927 not applied): bounded full scan ran instead');
+    return { ...scan, mode: 'scan', enqueued: 0, claimed: 0, settled: 0, failed: 0 };
+  }
+
+  const report: FinancePassReport = { ...emptyReport(), mode: 'queue', enqueued: Number(enqueue.data ?? 0), claimed: 0, settled: 0, failed: 0 };
+  const { data: claimedRows, error: claimError } = await db.rpc('bolagio_finance_claim_ingestion', { p_worker: actor.slice(0, 100), p_limit: limit });
+  if (claimError) throw asFinanceError('bolagio_finance_claim_ingestion', claimError);
+  const claimed = (claimedRows ?? []) as Array<{ intent_id: string; enqueued_at: string; attempts: number }>;
+  report.claimed = claimed.length;
+
+  if (claimed.length > 0) {
+    let perIntent = new Map<string, string[]>();
+    let batchError: string | null = null;
+    try {
+      perIntent = await ingestIntentFacts(await intentFactsById(claimed.map((c) => c.intent_id)), actor, report);
+    } catch (cause) {
+      // The batch could not even be read: every claimed row fails, and is retried.
+      batchError = errorMessage(cause);
+      report.errors.push(`batch: ${batchError}`);
+    }
+    for (const c of claimed) {
+      // An intent that no longer exists has nothing to derive: settled ok.
+      const errs = batchError ? [batchError] : perIntent.get(c.intent_id) ?? [];
+      const { error } = await db.rpc('bolagio_finance_settle_ingestion', { p_intent_id: c.intent_id, p_enqueued_at: c.enqueued_at, p_ok: errs.length === 0, p_error: errs.length ? errs.join(' | ').slice(0, 500) : null });
+      if (error) report.errors.push(`settle ${c.intent_id}: ${errorMessage(error)}`);
+      else if (errs.length === 0) report.settled += 1;
+      else report.failed += 1;
+    }
+  }
+
+  await finishIngestion(report, actor, `queue: ${report.enqueued} queued, ${report.claimed} claimed, ${report.settled} done, ${report.failed} failed`);
   return report;
+}
+
+/** PostgREST "function not in the schema cache" or Postgres "undefined function". */
+function isMissingFunction(error: { code?: string } | null | undefined): boolean {
+  return error?.code === 'PGRST202' || error?.code === '42883';
 }
 
 /** Expected cleaning cost per turnover from `FINANCE_CLEANING_EXPECTED_NET_CENTS` (integer) — an expectation, never an expense. */

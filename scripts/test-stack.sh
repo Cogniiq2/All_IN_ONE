@@ -72,7 +72,10 @@ MIGRATIONS=(
   supabase/migrations/20260921120000_platform_completion.sql
   supabase/migrations/20260922120000_finance_foundation.sql
   supabase/migrations/20260923120000_reservation_import.sql
+  supabase/migrations/20260924120000_guest_privileges.sql
+  supabase/migrations/20260925120000_legal_compliance.sql
   supabase/migrations/20260926120000_booking_com_finance_statement.sql
+  supabase/migrations/20260927120000_finance_ingestion_pipeline.sql
 )
 
 admin_url() { echo "postgres://postgres@/postgres?host=$(realpath "$SOCK")&port=$PG_PORT"; }

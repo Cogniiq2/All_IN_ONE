@@ -62,6 +62,16 @@ psql "$TEST" -Atc "select case when to_regclass('public.bolagio_finance_ota_sett
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260926120000_booking_com_finance_statement.sql
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260926120000_booking_com_finance_statement.sql
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/ops/verify.sql 2>&1 | grep -E "FAILED|passed" | tail -1
+echo "── apply 20260927 (finance ingestion pipeline); roll it back and re-apply it twice ──"
+psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260927120000_finance_ingestion_pipeline.sql >/dev/null
+psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/ops/verify.sql 2>&1 | grep -E "20260927|FAILED|passed" | tail -2
+psql "$TEST" -1 -v ON_ERROR_STOP=1 -q -f supabase/ops/rollback_20260927.sql
+psql "$TEST" -Atc "select case when to_regclass('public.bolagio_finance_ingestion_queue') is null and not exists (select 1 from pg_trigger where tgname = 'bolagio_booking_intents_finance_enqueue') and to_regclass('public.bolagio_finance_ota_settlements') is not null then 'ok — 20260927 rolled back, finance and booking core intact' else 'ERROR: 20260927 rollback incomplete' end;"
+psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260927120000_finance_ingestion_pipeline.sql >/dev/null
+psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260927120000_finance_ingestion_pipeline.sql >/dev/null
+psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/ops/verify.sql 2>&1 | grep -E "FAILED|passed" | tail -1
+# 20260927's views read the tables below: roll it back before any older section.
+psql "$TEST" -1 -v ON_ERROR_STOP=1 -q -f supabase/ops/rollback_20260927.sql
 # 20260926 references the finance tables of 20260922: roll it back before the older sections below.
 psql "$TEST" -1 -v ON_ERROR_STOP=1 -q -f supabase/ops/rollback_20260926.sql
 echo "── rollback 20260922 (finance) in one transaction, then re-apply it twice (idempotent) ──"
@@ -92,6 +102,7 @@ psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260922120000_finance
 # Rolling back 20260920 dropped the scheduler table 20260923 widens; re-apply the later ones (idempotent).
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260923120000_reservation_import.sql
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260926120000_booking_com_finance_statement.sql
+psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260927120000_finance_ingestion_pipeline.sql >/dev/null
 echo "── verify again ──"
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/ops/verify.sql 2>&1 | grep -E "FAILED|passed" | tail -1
 psql "$DATABASE_URL" -q -c "drop database if exists bolagio_ops_check;"

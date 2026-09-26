@@ -51,6 +51,16 @@ select 'platform_completion (20260921120000)' as migration,
 
 select 'finance_foundation (20260922120000)' as migration,
        case when to_regclass('public.bolagio_finance_transactions') is not null and to_regprocedure('bolagio_finance_post_transaction(jsonb,jsonb,text)') is not null then 'applied' else 'not applied' end as actual;
+select 'reservation_import (20260923120000)' as migration,
+       case when to_regclass('public.bolagio_reservations') is not null then 'applied' else 'not applied' end as actual;
+select 'guest_privileges (20260924120000)' as migration,
+       case when to_regclass('public.bolagio_guest_identities') is not null then 'applied' else 'not applied' end as actual;
+select 'booking_com_finance_statement (20260926120000)' as migration,
+       case when to_regclass('public.bolagio_finance_ota_settlements') is not null then 'applied' else 'not applied' end as actual;
+select 'finance_ingestion_pipeline (20260927120000)' as migration,
+       case when to_regclass('public.bolagio_finance_ingestion_queue') is not null
+             and exists (select 1 from pg_trigger where tgname = 'bolagio_booking_intents_finance_enqueue')
+            then 'applied' else 'not applied' end as actual;
 
 \echo ''
 \echo '── 4. Supabase migration history (if the CLI has been used) ────────────'

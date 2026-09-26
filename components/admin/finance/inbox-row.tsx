@@ -6,7 +6,7 @@ import { LevelBadge, When } from '@/components/admin/primitives';
 const KIND_LABEL: Record<string, string> = {
   missing_document: 'Document', unknown_transaction: 'Unknown', tax_classification: 'Tax code', reverse_charge_review: 'Reverse charge', input_vat_review: 'Input VAT', payout_mismatch: 'Payout',
   duplicate_suspect: 'Duplicate?', unmatched_refund: 'Refund', unmatched_payment: 'Payment', unreconciled_revenue: 'Revenue', unallocated_cost: 'Allocation', tax_notice: 'Notice', tax_deadline: 'Deadline',
-  missing_invoice_number: 'Invoice no.', minibar_variance: 'Minibar', asset_candidate: 'Asset', reserve_gap: 'Reserve', import_failed: 'Import', match_proposal: 'Match',
+  missing_invoice_number: 'Invoice no.', minibar_variance: 'Minibar', asset_candidate: 'Asset', reserve_gap: 'Reserve', import_failed: 'Import', import_pending: 'Import', match_proposal: 'Match',
 };
 
 export function InboxRow({ item, compact }: { item: InboxItem; compact?: boolean }) {

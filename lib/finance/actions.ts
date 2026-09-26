@@ -70,11 +70,14 @@ const int = (fd: FormData, key: string): number | null => { const v = str(fd, ke
 
 /* ── Ingestion, reconciliation, estimates ─────────────────────────────── */
 
-export async function runIngestionAction(): Promise<ActionResult<{ report: commands.IngestionReport }>> {
+export async function runIngestionAction(): Promise<ActionResult<{ report: commands.FinancePassReport }>> {
   const g = await gate('finance.edit');
   if (!g.ok) return g;
   try {
-    const report = await commands.ingestBookingFacts({ actor: g.actor });
+    // The same queue-driven pass the schedule runs, with a larger batch: the
+    // operator asked for it now. A backlog beyond the batch drains on the
+    // following passes; the health card shows what is left.
+    const report = await commands.runFinanceIngestionPass({ actor: g.actor, limit: Math.max(25, commands.financeIngestionBatch()) });
     await audit({ operator: g.operator, action: 'finance.ingest', outcome: report.errors.length ? 'partial' : 'ok', detail: { scanned: report.scanned, revenue: report.revenuePosted, payments: report.paymentsRecorded, refunds: report.refundsPosted, refundsWithoutRevenue: report.refundsWithoutRevenue, errors: report.errors.length } });
     refreshFinance();
     return { ok: true, report };

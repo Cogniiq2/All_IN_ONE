@@ -94,6 +94,13 @@ export async function startHarness(overrides: Record<string, string> = {}): Prom
     PAYPAL_CLIENT_SECRET: 'sim-client-secret',
     PAYPAL_WEBHOOK_ID: 'WH-SIM-ID',
     DIRECT_BOOKING_ENABLED: 'true',
+    // The sandbox legal fixture (lib/legal/readiness.ts `testTermsActive`):
+    // honoured on local/staging only, so the checkout gate opens here without
+    // an owner-approved production text.
+    BOOKING_TEST_TERMS: 'true',
+    // Every success heartbeat is written: the tests reset the database between
+    // cases, and a per-isolate throttle would remember the previous case.
+    OBSERVE_SUCCESS_INTERVAL_MS: '0',
     BOOKING_SYNC_SECRET: SYNC_SECRET,
     N8N_INTERNAL_SECRET: N8N_SECRET,
     ADMIN_SESSION_SECRET: ADMIN_SECRET,
@@ -148,6 +155,15 @@ export async function startHarness(overrides: Record<string, string> = {}): Prom
 
   const call: Harness['call'] = async (method, pathname, body, headers = {}) => {
     requestCounter += 1;
+    // A guest's browser echoes the versions of the terms it was shown. The
+    // tests that are not ABOUT the terms send none, so the harness accepts
+    // what is in force — exactly what the checkout would have displayed.
+    if (pathname === '/api/booking/intent' && body && typeof body === 'object' && !('acceptedTerms' in body)) {
+      const { resolveCheckoutTerms } = await import('@/lib/legal/readiness');
+      const { versionsOf } = await import('@/lib/legal/booking-terms');
+      const terms = resolveCheckoutTerms();
+      if (terms) body = { ...(body as Record<string, unknown>), acceptedTerms: versionsOf(terms) };
+    }
     const response = await fetch(`${app}${pathname}`, {
       method,
       headers: {
@@ -195,7 +211,7 @@ type Handler = (request: NextRequest) => Promise<Response>;
 interface Routes { [key: string]: Handler }
 
 async function loadRoutes(): Promise<Routes> {
-  const [availability, quote, intent, status, order, capture, config, reconcile, sync, paypalWebhook, beds24Webhook, outbox, booking, health, messages] = await Promise.all([
+  const [availability, quote, intent, status, order, capture, config, reconcile, sync, paypalWebhook, beds24Webhook, outbox, booking, health, messages, reservationSync, financeBackfill] = await Promise.all([
     import('@/app/api/booking/availability/route'),
     import('@/app/api/booking/quote/route'),
     import('@/app/api/booking/intent/route'),
@@ -211,6 +227,8 @@ async function loadRoutes(): Promise<Routes> {
     import('@/app/api/internal/booking/route'),
     import('@/app/api/internal/health/route'),
     import('@/app/api/internal/messages/route'),
+    import('@/app/api/booking/reservations/sync/route'),
+    import('@/app/api/booking/finance/backfill/route'),
   ]);
   return {
     'GET /api/booking/availability': availability.GET as Handler,
@@ -228,6 +246,8 @@ async function loadRoutes(): Promise<Routes> {
     'GET /api/internal/booking': booking.GET as Handler,
     'GET /api/internal/health': health.GET as Handler,
     'POST /api/internal/messages': messages.POST as Handler,
+    'POST /api/booking/reservations/sync': reservationSync.POST as Handler,
+    'POST /api/booking/finance/backfill': financeBackfill.POST as Handler,
   };
 }
 

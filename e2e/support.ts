@@ -269,6 +269,14 @@ export async function operatorSession(context: BrowserContext, role: 'viewer' | 
 /* ── Fast fixtures through the public API ─────────────────────────────── */
 
 async function api(pathname: string, body: unknown, ip: string): Promise<{ status: number; body: any }> {
+  // A guest's browser echoes the versions of the terms the quote showed it.
+  // These helpers book without the dialog, so they ask for the quote first.
+  if (pathname === '/api/booking/intent' && body && typeof body === 'object' && !('acceptedTerms' in body)) {
+    const b = body as { unitSlug: string; checkIn: string; checkOut: string; adults: number; children: number };
+    const quote = await api('/api/booking/quote', { unitSlug: b.unitSlug, checkIn: b.checkIn, checkOut: b.checkOut, adults: b.adults, children: b.children }, ip);
+    const terms = quote.body?.terms;
+    if (terms) body = { ...(body as Record<string, unknown>), acceptedTerms: { cancellation: terms.cancellation.version, withdrawal: terms.withdrawal.version, agb: terms.agb.version, privacy: terms.privacy.version, price: terms.price.version } };
+  }
   const r = await fetch(`${state().app}${pathname}`, { method: 'POST', headers: { 'content-type': 'application/json', 'cf-connecting-ip': ip }, body: JSON.stringify(body) });
   const text = await r.text();
   return { status: r.status, body: text ? JSON.parse(text) : null };

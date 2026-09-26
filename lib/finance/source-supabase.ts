@@ -10,7 +10,7 @@ import 'server-only';
 
 import { supabaseAdmin } from '@/lib/supabase/server';
 import type {
-  AccountRow, AssetRow, CategoryRow, CashMonthlyRow, CounterpartyRow, DocumentLinkRow, DocumentRow, ExceptionCountsRow, ExportRow, FinanceRowSource, ImportBatchRow,
+  AccountRow, AssetRow, CategoryRow, CashMonthlyRow, CounterpartyRow, DocumentLinkRow, DocumentRow, ExceptionCountsRow, ExportRow, FinancePipelineStatus, FinanceRowSource, ImportBatchRow,
   ImportRowRow, OtaPayoutRow, ReservationCandidate, SettlementRow, InvoiceLineRow, InvoiceRow, LineRow, MinibarMovementRow, MinibarProductRow, MinibarStockRow, OverrideRow, PaymentRow, PeriodRow, PlMonthlyRow, PolicyRow,
   ReconciliationRow, ReserveRow, StayRow, TaxAdjustmentRow, TaxCodeRow, TaxEstimateRow, TaxNoticeRow, TaxPaymentRow, TaxPeriodRow, TaxRateRowDb, TransactionQuery,
   TransactionRow, TurnoverCostRow, UnitMonthlyRow,
@@ -388,5 +388,24 @@ export function supabaseFinanceSource(): FinanceRowSource {
       if (error) throw error;
       return (data ?? []) as Array<{ signal: string; observed_at: string; detail: string | null }>;
     },
+    async pipelineStatus() {
+      const { data, error } = await db().from('bolagio_finance_pipeline_status').select('*').maybeSingle();
+      // Missing view: the migration is not applied. That is a state to show,
+      // not an error that blanks the health card.
+      if (error && isMissingRelation(error)) return null;
+      if (error) throw error;
+      if (!data) return null;
+      return num(data as unknown as FinancePipelineStatus, PIPELINE_NUM);
+    },
   };
+}
+
+const PIPELINE_NUM: (keyof FinancePipelineStatus)[] = [
+  'queue_pending', 'queue_failed', 'ledger_gaps', 'revenue_intents', 'booking_revenue_posted', 'payment_events_unprocessed', 'refund_events_unattributed',
+  'import_batches_awaiting_commit', 'import_rows_awaiting_commit', 'settlements_ledger_pending', 'settlements_unmatched', 'reservations',
+];
+
+/** Postgres "undefined table" or PostgREST "not in the schema cache". */
+export function isMissingRelation(error: { code?: string } | null | undefined): boolean {
+  return error?.code === '42P01' || error?.code === 'PGRST205';
 }

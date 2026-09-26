@@ -64,6 +64,8 @@ export type BookingLogEvent =
   | 'operations.pass'
   /** The finance subledger ingestion that follows an operations pass. */
   | 'finance.ingest'
+  /** The on-demand finance backfill / drain. Counts only. */
+  | 'finance.backfill'
   /* ── Guest privileges. Outcomes and ids only; an address never appears. ── */
   | 'privileges.signup'
   | 'privileges.verify'

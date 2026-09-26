@@ -724,5 +724,13 @@ export function fixtureFinanceSource(): FinanceRowSource {
     async otaPayouts() { return clone(OTA_PAYOUTS); },
     async reservationsByChannelReference(refs) { return clone(RESERVATION_CANDIDATES.filter((r) => refs.includes(r.channel_reference ?? ''))); },
     async ingestionSignals() { return [{ signal: 'booking_ingestion.success', observed_at: ts(0, 6), detail: '7 stays, 0 new' }, { signal: 'import.booking_com_reservations.success', observed_at: ts(-29), detail: 'reservations-2026-08.csv' }, { signal: 'import.paypal_activity.success', observed_at: ts(-1), detail: '11 rows' }, { signal: 'reconciliation.success', observed_at: ts(0, 6), detail: '2 proposals' }]; },
+    async pipelineStatus() {
+      return {
+        observed_at: ts(0, 6), queue_pending: 0, queue_failed: 0, queue_oldest_at: null, queue_last_error: null, ledger_gaps: 0, revenue_intents: 7, booking_revenue_posted: 7,
+        payment_events_unprocessed: 0, payment_events_oldest_at: null, payment_event_last_verified_at: ts(-1), refund_events_unattributed: 0,
+        import_batches_awaiting_commit: 0, import_rows_awaiting_commit: 0, settlements_ledger_pending: 0, settlements_unmatched: SETTLEMENTS.filter((st) => st.amendment_state === 'current' && st.match_state !== 'matched').length,
+        reservations: RESERVATION_CANDIDATES.length, reservations_last_synced_at: ts(0, 6), reconcile_last_ok_at: ts(0, 6), reservation_sync_last_ok_at: ts(0, 6), reservation_sync_last_failed_at: null,
+      };
+    },
   };
 }

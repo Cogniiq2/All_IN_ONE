@@ -140,6 +140,41 @@ export function refundCashFact(b: BookingFact): Record<string, unknown> | null {
   };
 }
 
+/** A verified PayPal refund or reversal event, as `bolagio_finance_refund_events` exposes it. */
+export interface RefundEventFact {
+  event_type: string;
+  /** The refund id (REFUNDED) or `reversal:<capture id>` (REVERSED). */
+  provider_reference: string;
+  amount_cents: number;
+  currency: string | null;
+  occurred_at: string;
+}
+
+/**
+ * The outgoing CASH fact of a refund PayPal reported, whether or not the
+ * refund saga knows about it.
+ *
+ * A refund issued from the PayPal dashboard never reaches the intent's
+ * `refund_id`, so `refundCashFact` cannot see it; the verified webhook is the
+ * only durable evidence, and it is evidence enough that the money left. The
+ * key is the provider's refund id — the same key the saga stores — so a
+ * saga refund and its webhook collapse onto ONE payment row.
+ *
+ * Deliberately NO revenue reversal: whether a dashboard refund reduces the
+ * stay's revenue (a goodwill partial refund) or cancels it is a person's
+ * decision. The cash fact stands alone and surfaces as an unmatched outgoing
+ * payment until someone links it.
+ */
+export function refundEventCashFact(e: RefundEventFact, b: Pick<BookingFact, 'intentId' | 'reference' | 'paidCurrency' | 'currency'>): Record<string, unknown> | null {
+  if (!e.provider_reference || !Number.isInteger(e.amount_cents) || e.amount_cents <= 0) return null;
+  const reversal = e.event_type === 'PAYMENT.CAPTURE.REVERSED';
+  return {
+    direction: 'out', source: 'paypal', provider_reference: e.provider_reference, amount_cents: e.amount_cents, fee_cents: 0, currency: e.currency ?? b.paidCurrency ?? b.currency,
+    occurred_at: e.occurred_at, value_date: e.occurred_at.slice(0, 10), counterparty_label: `Guest · ${b.reference}`, reference_text: `${reversal ? 'reversal' : 'refund'} ${b.reference}`,
+    booking_intent_id: b.intentId, booking_reference: b.reference, kind: 'refund',
+  };
+}
+
 /** A completed refund: negative revenue pro-rata over the original lines, plus the outgoing cash fact. */
 export function refundPosting(b: BookingFact, originalLines: Array<{ line_no: number; category: string; description: string | null; tax_code: string; rate_bp: number; gross_cents: number; unit_id: string | null }>): { header: PostingHeader; lines: PostingLine[]; payment: Record<string, unknown> } | null {
   if (b.refundState !== 'completed' || !b.refundId || b.refundedAmountCents <= 0) return null;

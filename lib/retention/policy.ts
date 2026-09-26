@@ -171,6 +171,15 @@ export const RETENTION_CLASSES: readonly RetentionClass[] = [
     mechanism: 'manual, documented',
   },
   {
+    table: 'bolagio_finance_ingestion_queue',
+    category: 'operational_telemetry',
+    purpose: 'Which booking intents still need their finance facts derived, and the last processing error. Intent ids and state only; the facts themselves live in the finance tables.',
+    personalColumns: [],
+    proposedRetention: `Life of the intent row (cascade on its deletion); a done row carries no information beyond "derived" — ${NEEDS}`,
+    legalBasisHint: 'Art. 6(1)(f) GDPR',
+    mechanism: 'manual, documented',
+  },
+  {
     table: 'bolagio_scheduler_runs',
     category: 'operational_telemetry',
     purpose: 'Heartbeat per scheduled job.',

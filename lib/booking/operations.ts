@@ -32,7 +32,7 @@ export interface OperationsReport {
   turnovers: TurnoverSyncReport;
   guestEvents: GuestEventReport;
   /** Finance ingestion summary, or null when finance is not applied / failed (recorded in its own signal). */
-  finance: { scanned: number; revenuePosted: number; paymentsRecorded: number; refundsPosted: number; refundsWithoutRevenue: number; matches: number; errors: number } | null;
+  finance: { mode: 'queue' | 'scan'; enqueued: number; claimed: number; scanned: number; revenuePosted: number; paymentsRecorded: number; refundsPosted: number; refundsWithoutRevenue: number; matches: number; errors: number } | null;
 }
 
 export async function runOperationsPass(logger: BookingLogger): Promise<OperationsReport> {
@@ -43,12 +43,18 @@ export async function runOperationsPass(logger: BookingLogger): Promise<Operatio
    * done and reported, and its failure never fails the pass: the finance
    * heartbeat (`bolagio_integration_health`, provider `finance`) says when it
    * last succeeded, and the Finance health card reports a stale one.
+   *
+   * It drains the queue the booking triggers fill in the same transaction as
+   * each state change (migration 20260927), a bounded batch per pass, and
+   * catches up anything that queue never saw. The payment inbox was drained
+   * earlier in this same request, so a verified capture reaches the ledger
+   * in the pass that processed it.
    */
   let finance: OperationsReport['finance'] = null;
   try {
-    const { ingestBookingFacts } = await import('@/lib/finance/commands');
-    const r = await ingestBookingFacts({ actor: 'system:operations-pass' });
-    finance = { scanned: r.scanned, revenuePosted: r.revenuePosted, paymentsRecorded: r.paymentsRecorded, refundsPosted: r.refundsPosted, refundsWithoutRevenue: r.refundsWithoutRevenue, matches: r.matches, errors: r.errors.length };
+    const { runFinanceIngestionPass } = await import('@/lib/finance/commands');
+    const r = await runFinanceIngestionPass({ actor: 'system:operations-pass' });
+    finance = { mode: r.mode, enqueued: r.enqueued, claimed: r.claimed, scanned: r.scanned, revenuePosted: r.revenuePosted, paymentsRecorded: r.paymentsRecorded, refundsPosted: r.refundsPosted, refundsWithoutRevenue: r.refundsWithoutRevenue, matches: r.matches, errors: r.errors.length };
   } catch (cause) {
     logger.warn('finance.ingest', { outcome: 'failed', errorCode: cause instanceof Error ? cause.name : 'unknown' });
   }

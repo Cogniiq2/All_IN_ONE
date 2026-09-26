@@ -59,7 +59,12 @@ for f in supabase/migrations/20260916120000_booking_foundation.sql \
          supabase/migrations/20260919120000_admin_operators.sql \
          supabase/migrations/20260920120000_booking_production_hardening.sql \
          supabase/migrations/20260921120000_platform_completion.sql \
-         supabase/migrations/20260922120000_finance_foundation.sql; do
+         supabase/migrations/20260922120000_finance_foundation.sql \
+         supabase/migrations/20260923120000_reservation_import.sql \
+         supabase/migrations/20260924120000_guest_privileges.sql \
+         supabase/migrations/20260925120000_legal_compliance.sql \
+         supabase/migrations/20260926120000_booking_com_finance_statement.sql \
+         supabase/migrations/20260927120000_finance_ingestion_pipeline.sql; do
   echo "   $f"
   psql "$TEST" -v ON_ERROR_STOP=1 -q -f "$f" 2>&1 | grep -vE "NOTICE|^$" || true
 done
@@ -74,6 +79,10 @@ psql "$TEST" -v ON_ERROR_STOP=1 -f tests/sql/completion.sql 2>&1 \
 
 echo "── running the finance foundation tests ──"
 psql "$TEST" -v ON_ERROR_STOP=1 -f tests/sql/finance.sql 2>&1 \
+  | sed -n 's/^.*NOTICE:  //p; /════/p; s/^.*ERROR:/ERROR:/p'
+
+echo "── running the finance pipeline tests ──"
+psql "$TEST" -v ON_ERROR_STOP=1 -f tests/sql/finance-pipeline.sql 2>&1 \
   | sed -n 's/^.*NOTICE:  //p; /════/p; s/^.*ERROR:/ERROR:/p'
 
 echo "── running the concurrent race ──"

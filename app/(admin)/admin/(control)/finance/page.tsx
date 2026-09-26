@@ -46,6 +46,13 @@ export default async function FinanceOverviewPage() {
         actions={<RefreshControl loadedAt={result.loadedAt} every={120} />}
       />
 
+      {/* Stale or incomplete figures are announced before any figure is read. */}
+      {(health.status === 'degraded' || health.status === 'unavailable') && (
+        <ErrorNotice title="The figures below may be incomplete or out of date.">
+          {health.summary} <Link href="#health" className="link-quiet">Finance health →</Link>
+        </ErrorNotice>
+      )}
+
       {/* ── Attention ────────────────────────────────────────────── */}
       <section aria-labelledby="fin-attn">
         <div className="bc-section-head" style={{ borderBottom: 'none', marginBottom: 12, paddingBottom: 0 }}>

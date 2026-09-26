@@ -13,6 +13,14 @@ procedure, the SQL to run before and after, and what each answer means.
 | 4 | `20260919120000_admin_operators.sql` | operators, audit log |
 | 5 | `20260920120000_booking_production_hardening.sql` | payment edges, retry guard (replaces one function signature), heartbeat, unit clock, turnovers, guest events, views |
 | 6 | `20260921120000_platform_completion.sql` | same-state transitions carry their patch; cancellation/refund state with invariants; message-delivery ledger; turnover status/events; unit timing columns, check-out and invoice events, injectable clock (**replaces `bolagio_sync_turnovers` and `bolagio_emit_guest_events` with a trailing `timestamptz` parameter**); integration health; gapless invoice sequences. Rollback: `supabase/ops/rollback_20260921.sql` |
+| 7 | `20260922120000_finance_foundation.sql` | the finance subledger (`docs/finance/`). Rollback: `rollback_20260922.sql` |
+| 8 | `20260923120000_reservation_import.sql` | `bolagio_reservations`. Rollback: `rollback_20260923.sql` |
+| 9 | `20260924120000_guest_privileges.sql` | returning-guest identities and privileges |
+| 10 | `20260925120000_legal_compliance.sql` | terms evidence on intents, double opt-in columns. Rollback: `rollback_20260925.sql` |
+| 11 | `20260926120000_booking_com_finance_statement.sql` | Booking.com settlements and payouts. Rollback: `rollback_20260926.sql` |
+| 12 | `20260927120000_finance_ingestion_pipeline.sql` | finance ingestion queue, two enqueue triggers, pipeline status view; queues the backfill as its last statement. Additive; writes no booking row. Rollback: `rollback_20260927.sql` (**first**, before any older rollback) — `docs/finance/live-data-pipeline.md` |
+
+On the shared project (2026-09-26, checked read-only) #1–#11 are applied; #12 is not.
 
 Not BoLaGio, do not run for the website: `20260612*` (archived admin app) and
 `20260815120000_lockdown_revoke_anon_access.sql` (one-shot, precondition-guarded,

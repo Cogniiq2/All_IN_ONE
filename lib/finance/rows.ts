@@ -195,6 +195,23 @@ export interface ExceptionCountsRow {
   unmatched_payments: number; unallocated_expense_lines: number; asset_candidates: number; failed_imports: number; minibar_open_charges: number; oldest_open_item: string | null;
 }
 
+/**
+ * One row from `bolagio_finance_pipeline_status` (migration 20260927): how
+ * far the ledger is behind the booking and payment facts it consumes. Counts
+ * and timestamps only.
+ */
+export interface FinancePipelineStatus {
+  observed_at: string;
+  queue_pending: number; queue_failed: number; queue_oldest_at: string | null; queue_last_error: string | null;
+  ledger_gaps: number; revenue_intents: number; booking_revenue_posted: number;
+  payment_events_unprocessed: number; payment_events_oldest_at: string | null; payment_event_last_verified_at: string | null;
+  refund_events_unattributed: number;
+  import_batches_awaiting_commit: number; import_rows_awaiting_commit: number;
+  settlements_ledger_pending: number; settlements_unmatched: number;
+  reservations: number; reservations_last_synced_at: string | null;
+  reconcile_last_ok_at: string | null; reservation_sync_last_ok_at: string | null; reservation_sync_last_failed_at: string | null;
+}
+
 /** A confirmed/paid stay as finance needs it: nights and unit, no guest data beyond a label. */
 export interface StayRow {
   intent_id: string; reference: string; unit_id: string; unit_slug: string; check_in: string; check_out: string; status: string; payment_status: string;
@@ -289,4 +306,6 @@ export interface FinanceRowSource {
   units(): Promise<Array<{ id: string; slug: string; display_name: string; is_bookable: boolean }>>;
   /** Latest finance ingestion / import heartbeats, when recorded. */
   ingestionSignals(): Promise<Array<{ signal: string; observed_at: string; detail: string | null }>>;
+  /** The ingestion pipeline's state, or null when migration 20260927 is not applied. */
+  pipelineStatus(): Promise<FinancePipelineStatus | null>;
 }
