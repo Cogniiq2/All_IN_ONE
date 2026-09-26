@@ -41,6 +41,8 @@ const h = vi.hoisted(() => ({
   ignorePage: false,
   /** When set, the response carries this `pages` object. */
   pages: null as { nextPageExists?: boolean } | null,
+  /** When set, the provider refuses every read of this room id. */
+  failRoom: null as string | null,
 }));
 
 vi.mock('@/lib/integrations/beds24/client', () => ({
@@ -52,6 +54,7 @@ vi.mock('@/lib/integrations/beds24/client', () => ({
       hasBody: init.body !== undefined,
     });
     if (h.failWith) throw h.failWith;
+    if (h.failRoom && String(init.query?.roomId) === h.failRoom) throw new Error('Beds24 responded 403');
     // Page 2 and beyond are always empty: the fixtures are small, and an
     // empty page is how the reader learns it has reached the end.
     const page = h.ignorePage ? 1 : Number(init.query?.page ?? 1);
@@ -87,6 +90,12 @@ const db = vi.hoisted(() => ({
   bolagio_reservations: [] as Record<string, unknown>[],
   bolagio_booking_intents: [] as Record<string, unknown>[],
   units: [] as Record<string, unknown>[],
+  /** Every database request the code under test issued (from() and rpc()): the subrequest accounting. */
+  requests: 0,
+  /** When set, a batch upsert containing this external id is refused like a check violation. */
+  rejectBatchContaining: null as string | null,
+  /** The heartbeat view the scheduled run reads its cursor from. */
+  bolagio_scheduler_status: [] as Record<string, unknown>[],
 }));
 
 vi.mock('@/lib/supabase/server', () => {
@@ -94,7 +103,8 @@ vi.mock('@/lib/supabase/server', () => {
   function query(table: string, mode: 'select' | 'update' | 'insert', payload?: Record<string, unknown>) {
     const filters: Array<[string, unknown]> = [];
     const rows = () => (db as unknown as Record<string, Record<string, unknown>[]>)[table] ?? [];
-    const matching = () => rows().filter((r) => filters.every(([col, value]) => r[col] === value));
+    const within: Array<[string, unknown[]]> = [];
+    const matching = () => rows().filter((r) => filters.every(([col, value]) => r[col] === value) && within.every(([col, values]) => values.includes(r[col])));
 
     const apply = () => {
       if (mode === 'update') {
@@ -107,6 +117,10 @@ vi.mock('@/lib/supabase/server', () => {
     const chain: Record<string, unknown> = {
       eq(column: string, value: unknown) {
         filters.push([column, value]);
+        return chain;
+      },
+      in(column: string, values: unknown[]) {
+        within.push([column, values]);
         return chain;
       },
       maybeSingle() {
@@ -135,8 +149,28 @@ vi.mock('@/lib/supabase/server', () => {
   return {
     isSupabaseConfigured: () => true,
     supabaseAdmin: () => ({
+      rpc: async () => {
+        db.requests += 1;
+        return { data: null, error: null };
+      },
       from(table: string) {
+        db.requests += 1;
         return {
+          /** PostgREST merge upsert: sets exactly the payload's columns, on the unique key. */
+          upsert: (payload: Record<string, unknown>[]) => {
+            const rows = (db as unknown as Record<string, Record<string, unknown>[]>)[table] ?? [];
+            if (db.rejectBatchContaining && payload.length > 1 && payload.some((p) => p.external_booking_id === db.rejectBatchContaining)) {
+              return Promise.resolve({ data: null, error: { code: '23514', message: 'check violation' } });
+            }
+            const keys = new Set(payload.map((p) => Object.keys(p).sort().join(',')));
+            if (keys.size > 1) throw new Error('a merge upsert must not mix column shapes');
+            for (const p of payload) {
+              const found = rows.find((r) => r.provider === p.provider && r.external_booking_id === p.external_booking_id);
+              if (found) Object.assign(found, p);
+              else rows.push({ id: `row-${rows.length + 1}`, ...p });
+            }
+            return Promise.resolve({ data: null, error: null });
+          },
           select: () => query(table, 'select'),
           update: (payload: Record<string, unknown>) => query(table, 'update', payload),
           insert: (payload: Record<string, unknown>) => {
@@ -148,6 +182,9 @@ vi.mock('@/lib/supabase/server', () => {
               rows.some((r) => r.provider === payload.provider && r.external_booking_id === payload.external_booking_id)
             ) {
               return Promise.resolve({ data: null, error: { code: '23505', message: 'duplicate key' } });
+            }
+            if (table === 'bolagio_reservations' && db.rejectBatchContaining && payload.external_booking_id === db.rejectBatchContaining) {
+              return Promise.resolve({ data: null, error: { code: '23514', message: 'check violation' } });
             }
             rows.push({ id: `row-${rows.length + 1}`, ...payload });
             return Promise.resolve({ data: null, error: null });
@@ -178,7 +215,8 @@ import {
   sourceFromLabel,
 } from '@/lib/integrations/beds24/reservations';
 import { upsertReservation } from '@/lib/booking/reservation-repository';
-import { shiftMonths, syncReservations, windows } from '@/lib/booking/reservation-sync';
+import { alignedWindows, shiftMonths, syncReservations, windows } from '@/lib/booking/reservation-sync';
+import { propertyToday } from '@/lib/booking/stay-rules';
 import { createLogger } from '@/lib/booking/logger';
 
 /* ── Fixtures ──────────────────────────────────────────────────────────── */
@@ -219,10 +257,14 @@ beforeEach(() => {
   h.failWith = null;
   h.ignorePage = false;
   h.pages = null;
+  h.failRoom = null;
   db.bolagio_reservations.length = 0;
   db.bolagio_booking_intents.length = 0;
   db.units.length = 0;
   db.units.push(S1 as unknown as Record<string, unknown>, S2 as unknown as Record<string, unknown>);
+  db.requests = 0;
+  db.rejectBatchContaining = null;
+  db.bolagio_scheduler_status.length = 0;
   vi.stubEnv('SUPABASE_URL', 'https://x.supabase.co');
   vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'k');
   vi.stubEnv('APP_ENV', 'staging');
@@ -761,10 +803,165 @@ describe('a sync pass', () => {
     }
   });
 
-  it('survives one unit failing and reports it', async () => {
+  it('survives the provider failing and reports every failed window and unit', async () => {
     h.failWith = new Error('provider unreachable');
     const report = await run();
-    expect(report.failed).toBeGreaterThan(0);
+    expect(report.tasksFailed).toBe(report.tasks);
+    expect(report.failedUnits).toBe('schulstrasse-i,schulstrasse-ii');
     expect(report.inserted).toBe(0);
+  });
+});
+
+/* ══ The request budget ════════════════════════════════════════════════ */
+
+describe('a scheduled pass within the Worker subrequest budget', () => {
+  const day = (offset: number) => {
+    const d = new Date(`${propertyToday()}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + offset);
+    return d.toISOString().slice(0, 10);
+  };
+  /** The live account's shape: 16 reservations over two units, from last month to next summer. */
+  function seedSixteen() {
+    const offsets = [-40, -12, -5, 3, 9, 16, 30, 48, 75, 95, 160, 230, 300, 330, 350, 400];
+    offsets.forEach((o, i) => {
+      const s2 = i % 3 === 0;
+      h.bookings.push(booking({ id: 91000000 + i, propertyId: s2 ? 354658 : 354659, roomId: s2 ? 731146 : 731147, arrival: day(o), departure: day(o + 2) }));
+    });
+  }
+  /** What the route does between runs: the heartbeat carries the cursor. */
+  async function scheduledRun(budget = 40) {
+    const before = { beds24: h.calls.length, db: db.requests };
+    const report = await syncReservations(createLogger(), { resume: true, budget });
+    db.bolagio_scheduler_status.length = 0;
+    db.bolagio_scheduler_status.push({ job: 'reservation_sync', report: { cursor: report.cursor } });
+    return { report, outbound: h.calls.length - before.beds24 + (db.requests - before.db) };
+  }
+
+  it('never exceeds its budget, never undercounts, and imports every reservation over a few runs', async () => {
+    seedSixteen();
+    h.pages = { nextPageExists: false };
+    const runs = [];
+    for (let i = 0; i < 6; i += 1) {
+      const r = await scheduledRun();
+      runs.push(r);
+      // The ceiling holds on the real count, and the report never claims less than was spent.
+      expect(r.outbound).toBeLessThanOrEqual(40);
+      expect(r.report.subrequests).toBeLessThanOrEqual(40);
+      expect(r.outbound).toBeLessThanOrEqual(r.report.subrequests);
+      if (r.report.cycleComplete) break;
+    }
+    const last = runs[runs.length - 1].report;
+    expect(last.cycleComplete).toBe(true);
+    expect(last.cursor).toBe('');
+    expect(runs.length).toBeGreaterThan(1);           // the horizon does not fit one run…
+    expect(runs.length).toBeLessThanOrEqual(4);       // …and a cycle finishes within a few
+    expect(reservationRows()).toHaveLength(16);
+    expect(new Set(reservationRows().map((r) => r.external_booking_id)).size).toBe(16);
+    expect(runs.every((r) => r.report.tasksFailed === 0 && r.report.failed === 0)).toBe(true);
+    // Every (unit, window) task of the horizon was reached exactly in the rotation.
+    const total = runs[0].report.tasks;
+    expect(runs.reduce((n, r) => n + r.report.tasksDone, 0)).toBeGreaterThanOrEqual(total);
+  });
+
+  it('refreshes the near-term windows on every run, whatever the cursor says', async () => {
+    seedSixteen();
+    await scheduledRun();
+    // A near-term reservation changes at the provider after the first run.
+    const near = (h.bookings as Beds24Booking[]).find((b) => b.id === 91000004)!;
+    (near as { status?: string }).status = 'cancelled';
+    const { report } = await scheduledRun();
+    expect(report.tasksDone).toBeGreaterThan(0);
+    expect(reservationRows().find((r) => r.external_booking_id === '91000004')?.status_class).toBe('cancelled');
+  });
+
+  it('a new cycle starts after the last one completed, and a rerun writes no duplicate', async () => {
+    seedSixteen();
+    for (let i = 0; i < 6; i += 1) if ((await scheduledRun()).report.cycleComplete) break;
+    const again = await scheduledRun();
+    expect(again.report.inserted).toBe(0);
+    expect(reservationRows()).toHaveLength(16);
+  });
+
+  it('writes a window in two database requests however many reservations it holds', async () => {
+    vi.stubEnv('OBSERVE_SUCCESS_INTERVAL_MS', '0');
+    const start = day(200);
+    for (let i = 0; i < 12; i += 1) h.bookings.push(booking({ id: 92000000 + i, arrival: start, departure: day(202) }));
+    const before = db.requests;
+    const report = await syncReservations(createLogger(), { from: start, to: day(201), unitSlug: 'schulstrasse-i' });
+    expect(report.inserted).toBe(12);
+    // cursor + (select existing + one upsert) + one heartbeat — not two per reservation.
+    expect(db.requests - before).toBe(4);
+  });
+
+  it('one bad reservation does not block the rest of its window, and is reported', async () => {
+    const start = day(200);
+    for (let i = 0; i < 4; i += 1) h.bookings.push(booking({ id: 93000000 + i, arrival: start, departure: day(202) }));
+    db.rejectBatchContaining = '93000002';
+    const report = await syncReservations(createLogger(), { from: start, to: day(201), unitSlug: 'schulstrasse-i' });
+    expect(report.inserted).toBe(3);
+    expect(report.failed).toBe(1);
+    expect(report.tasksFailed).toBe(1);
+    expect(report.failedUnits).toBe('schulstrasse-i');
+    expect(reservationRows().map((r) => r.external_booking_id).sort()).toEqual(['93000000', '93000001', '93000003']);
+  });
+
+  it('one unit failing does not stop the other from being written, names the failing unit, and the next cycle retries it', async () => {
+    seedSixteen();
+    h.failRoom = '731146';   // Schulstraße II refused by the provider
+    const report = await syncReservations(createLogger(), { resume: true, budget: 1000 });
+    expect(report.cycleComplete).toBe(true);
+    expect(report.failedUnits).toBe('schulstrasse-ii');
+    expect(report.tasksFailed).toBeGreaterThan(0);
+    const s1 = (h.bookings as Beds24Booking[]).filter((b) => b.roomId === 731147).length;
+    expect(reservationRows()).toHaveLength(s1);
+    // Recovered: the next cycle imports what the failure held back.
+    h.failRoom = null;
+    const after = await syncReservations(createLogger(), { resume: true, budget: 1000 });
+    expect(after.tasksFailed).toBe(0);
+    expect(reservationRows()).toHaveLength(16);
+  });
+
+  it('an explicit re-import the budget cuts short says where to continue, and continuing covers the rest', async () => {
+    seedSixteen();
+    const from = day(-300);
+    const to = day(540);
+    const first = await syncReservations(createLogger(), { from, to, budget: 20 });
+    expect(first.cycleComplete).toBe(false);
+    expect(first.resumeFrom).not.toBe('');
+    let resume = first.resumeFrom;
+    for (let i = 0; i < 10 && resume; i += 1) resume = (await syncReservations(createLogger(), { from: resume, to, budget: 20 })).resumeFrom;
+    expect(resume).toBe('');
+    expect(reservationRows()).toHaveLength(16);
+  });
+
+  it('an explicit re-import hands the scheduled cursor on unchanged', async () => {
+    db.bolagio_scheduler_status.push({ job: 'reservation_sync', report: { cursor: '2026-12-24|schulstrasse-i' } });
+    const report = await syncReservations(createLogger(), { from: day(10), to: day(20) });
+    expect(report.cursor).toBe('2026-12-24|schulstrasse-i');
+  });
+
+  it('a window stopped by the budget mid-pagination is not done: the next run starts there', async () => {
+    seedSixteen();
+    h.ignorePage = false;
+    h.pages = { nextPageExists: true };   // every window claims another page: pagination eats the budget
+    const { report } = await scheduledRun(14);
+    expect(report.subrequests).toBeLessThanOrEqual(14);
+    expect(report.cycleComplete).toBe(false);
+    expect(report.cursor).not.toBe('');
+  });
+});
+
+describe('aligned windows', () => {
+  it('keep their identity when the horizon slides by a day, and cover it without gap or overlap', () => {
+    const a = alignedWindows('2025-09-26', '2028-03-26', 90);
+    const b = alignedWindows('2025-09-27', '2028-03-27', 90);
+    expect(a[1].alignedFrom).toBe(b[1].alignedFrom);
+    expect(a[0].from).toBe('2025-09-26');
+    for (let i = 1; i < a.length; i += 1) {
+      const prevEnd = new Date(`${a[i - 1].to}T00:00:00Z`);
+      prevEnd.setUTCDate(prevEnd.getUTCDate() + 1);
+      expect(a[i].from).toBe(prevEnd.toISOString().slice(0, 10));
+    }
+    expect(a[a.length - 1].to).toBe('2028-03-25');
   });
 });

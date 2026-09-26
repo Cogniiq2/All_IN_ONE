@@ -45,6 +45,8 @@ export async function POST(request: NextRequest) {
     try {
       const body = (await request.json()) as { backfill?: unknown; limit?: unknown };
       if (body.backfill === false) backfill = false;
+      // Above the default only on the Workers Paid plan: each booking costs
+      // about 8 outbound requests of the invocation's 50 on the Free plan.
       if (typeof body.limit === 'number' && Number.isInteger(body.limit)) limit = Math.min(100, Math.max(1, body.limit));
     } catch {
       // No body: backfill with the configured batch.

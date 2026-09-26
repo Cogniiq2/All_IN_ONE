@@ -449,6 +449,14 @@ export interface ReservationWindow {
    * in lib/booking/config.ts for why, and how to switch it on.
    */
   statuses?: readonly string[];
+  /**
+   * At most this many pages for this read (never more than MAX_PAGES). A
+   * caller spending a bounded request budget passes what it can afford; a
+   * read that stops here with more data possible reports `truncated`.
+   */
+  maxPages?: number;
+  /** Skip the per-request heartbeat; the caller records one for its pass. */
+  quiet?: boolean;
 }
 
 /**
@@ -469,11 +477,13 @@ export async function readReservations(window: ReservationWindow): Promise<Reser
   let requests = 0;
   let truncated = true;
 
-  for (let page = 1; page <= MAX_PAGES; page += 1) {
+  const pageLimit = Math.max(1, Math.min(window.maxPages ?? MAX_PAGES, MAX_PAGES));
+  for (let page = 1; page <= pageLimit; page += 1) {
     const response = await beds24Request<Beds24BookingsResponse>({
       // GET. No `method`, no `body`, no idempotency key: there is nothing here
       // that could be mistaken for a write.
       path: '/bookings',
+      quiet: window.quiet,
       query: {
         propertyId: window.externalPropertyId,
         roomId: window.externalRoomId,

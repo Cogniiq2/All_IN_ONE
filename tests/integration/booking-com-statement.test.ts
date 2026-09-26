@@ -34,6 +34,9 @@ afterAll(async () => { await h.stop(); });
 beforeEach(async () => {
   await h.resetDb();
   h.sql('truncate bolagio_reservations cascade');
+  // These cases are about what an import MEANS; the per-call request budget
+  // (one click may post only what fits in a Worker invocation) has its own case.
+  process.env.FINANCE_IMPORT_SUBREQUEST_BUDGET = '5000';
 });
 
 const count = (table: string, where = 'true') => Number(h.sql(`select count(*) from ${table} where ${where}`));
@@ -143,6 +146,26 @@ describe('commit', () => {
     expect(Number(h.sql(`select count(*) from bolagio_finance_transactions where description ilike '%Guest%' or coalesce(note, '') ilike '%Guest%'`))).toBe(0);
     // Performance reads bolagio_reservations; finance posting changed nothing there, so nothing can double.
     expect(count('bolagio_reservations')).toBe(6);
+  });
+
+  it('a statement larger than one call\'s request budget posts in steps: the batch stays validated until the last row, nothing twice', async () => {
+    seedReservations();
+    process.env.FINANCE_IMPORT_SUBREQUEST_BUDGET = '40';   // the default: what a Free-plan Worker can afford
+    const staged = await stage(FIXTURE);
+    if (!staged.ok) throw new Error('stage refused');
+    const { commitImport } = await import('@/lib/finance/commands');
+    const first = await commitImport(staged.batchId, OP);
+    expect(first.posted).toBe(3);
+    expect(first.remaining).toBe(2);
+    expect(h.sql(`select status from bolagio_finance_import_batches where id = '${staged.batchId}'`)).toBe('validated');
+    expect(count('bolagio_finance_import_rows', `batch_id = '${staged.batchId}' and status = 'valid'`)).toBe(2);
+    const second = await commitImport(staged.batchId, OP);
+    expect(second).toMatchObject({ posted: 2, remaining: 0 });
+    expect(h.sql(`select status from bolagio_finance_import_batches where id = '${staged.batchId}'`)).toBe('imported');
+    expect(count('bolagio_finance_ota_settlements')).toBe(5);
+    expect(count('bolagio_finance_transactions', `source_system = 'booking_com_statement' and kind = 'revenue'`)).toBe(5);
+    // A third click has nothing left to do and writes nothing.
+    await expect(commitImport(staged.batchId, OP)).rejects.toThrow(/batch is imported/);
   });
 
   it('refuses the same bytes twice, and an overlapping export writes nothing twice', async () => {

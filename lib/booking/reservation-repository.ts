@@ -78,6 +78,46 @@ export async function upsertReservation(input: UpsertReservationInput): Promise<
     .maybeSingle();
   if (readError) throw readError;
 
+  const { authoritative, optional } = reservationColumns(input, now);
+
+  if (existing?.id) {
+    const { error } = await db
+      .from('bolagio_reservations')
+      .update({ ...authoritative, ...optional })
+      .eq('id', existing.id as string);
+    if (error) throw error;
+    return 'updated';
+  }
+
+  const { error } = await db.from('bolagio_reservations').insert({
+    provider: 'beds24',
+    external_booking_id: r.externalBookingId,
+    imported_at: now,
+    ...authoritative,
+    ...optional,
+  });
+
+  if (error) {
+    // Two overlapping sync passes can both find no row and both insert. The
+    // unique index is what makes that harmless: the loser re-reads and
+    // updates, so the outcome is one row either way.
+    if (isUniqueViolation(error)) {
+      const { error: retryError } = await db
+        .from('bolagio_reservations')
+        .update({ ...authoritative, ...optional })
+        .eq('provider', 'beds24')
+        .eq('external_booking_id', r.externalBookingId);
+      if (retryError) throw retryError;
+      return 'updated';
+    }
+    throw error;
+  }
+  return 'inserted';
+}
+
+/** The columns one reservation writes: always-rewritten facts, and facts written only when supplied. */
+function reservationColumns(input: UpsertReservationInput, now: string) {
+  const r = input.reservation;
   /** Columns the provider is authoritative about on every read. */
   const authoritative = {
     unit_id: input.unitId,
@@ -114,40 +154,108 @@ export async function upsertReservation(input: UpsertReservationInput): Promise<
     provider_cancelled_at: r.providerCancelledAt,
     direct_intent_id: input.directIntentId ?? undefined,
   });
+  return { authoritative, optional };
+}
 
-  if (existing?.id) {
-    const { error } = await db
-      .from('bolagio_reservations')
-      .update({ ...authoritative, ...optional })
-      .eq('id', existing.id as string);
-    if (error) throw error;
-    return 'updated';
+export interface BatchUpsertResult {
+  inserted: number;
+  updated: number;
+  /** External booking ids whose write failed. Each is reported; none is dropped silently. */
+  failed: string[];
+  /** Database requests this call issued — the caller's subrequest accounting. */
+  requests: number;
+}
+
+/**
+ * Write many reservations of ONE unit in a bounded number of requests.
+ *
+ * The same semantics as `upsertReservation`, in 1 + (distinct column shapes)
+ * requests instead of two per reservation:
+ *
+ *   1. one read of which of these ids already exist (inserted vs updated,
+ *      and `imported_at` only on a first sight);
+ *   2. one `INSERT … ON CONFLICT (provider, external_booking_id) DO UPDATE`
+ *      per GROUP of rows carrying exactly the same columns.
+ *
+ * Grouping by column shape is what keeps "an absent provider value never
+ * erases a stored one": PostgREST's merge upsert sets exactly the columns in
+ * the payload, and a payload that mixed shapes would have to fill the
+ * missing keys with null. Within a group every row supplies every column, so
+ * nothing absent is written. A Beds24 list read returns one shape for almost
+ * every row, so this is normally two requests for a whole window.
+ *
+ * A group the database refuses (one malformed row fails its whole statement)
+ * is retried row by row through `upsertReservation`, as far as `rowBudget`
+ * allows, so one bad reservation never blocks the others. Rows it cannot
+ * afford or cannot write are returned in `failed`.
+ */
+export async function upsertReservationBatch(
+  items: UpsertReservationInput[],
+  rowBudget: number = Number.POSITIVE_INFINITY
+): Promise<BatchUpsertResult> {
+  const result: BatchUpsertResult = { inserted: 0, updated: 0, failed: [], requests: 0 };
+  if (items.length === 0) return result;
+  const db = supabaseAdmin();
+  const now = new Date().toISOString();
+  const ids = Array.from(new Set(items.map((i) => i.reservation.externalBookingId)));
+
+  const { data: existingRows, error: readError } = await db
+    .from('bolagio_reservations')
+    .select('external_booking_id')
+    .eq('provider', 'beds24')
+    .in('external_booking_id', ids);
+  result.requests += 1;
+  if (readError) throw readError;
+  const existing = new Set(((existingRows ?? []) as Array<{ external_booking_id: string }>).map((r) => r.external_booking_id));
+
+  const groups = new Map<string, { rows: Record<string, unknown>[]; items: UpsertReservationInput[] }>();
+  for (const item of items) {
+    const { authoritative, optional } = reservationColumns(item, now);
+    const isNew = !existing.has(item.reservation.externalBookingId);
+    const row: Record<string, unknown> = {
+      provider: 'beds24',
+      external_booking_id: item.reservation.externalBookingId,
+      ...(isNew ? { imported_at: now } : {}),
+      ...authoritative,
+      ...optional,
+    };
+    const shape = Object.keys(row).sort().join(',');
+    const group = groups.get(shape) ?? { rows: [], items: [] };
+    group.rows.push(row);
+    group.items.push(item);
+    groups.set(shape, group);
   }
 
-  const { error } = await db.from('bolagio_reservations').insert({
-    provider: 'beds24',
-    external_booking_id: r.externalBookingId,
-    imported_at: now,
-    ...authoritative,
-    ...optional,
-  });
-
-  if (error) {
-    // Two overlapping sync passes can both find no row and both insert. The
-    // unique index is what makes that harmless: the loser re-reads and
-    // updates, so the outcome is one row either way.
-    if (isUniqueViolation(error)) {
-      const { error: retryError } = await db
-        .from('bolagio_reservations')
-        .update({ ...authoritative, ...optional })
-        .eq('provider', 'beds24')
-        .eq('external_booking_id', r.externalBookingId);
-      if (retryError) throw retryError;
-      return 'updated';
+  let rowsLeft = rowBudget;
+  for (const group of Array.from(groups.values())) {
+    const { error } = await db.from('bolagio_reservations').upsert(group.rows, { onConflict: 'provider,external_booking_id' });
+    result.requests += 1;
+    if (!error) {
+      for (const item of group.items) {
+        if (existing.has(item.reservation.externalBookingId)) result.updated += 1;
+        else result.inserted += 1;
+      }
+      continue;
     }
-    throw error;
+    // Row by row, so the one bad reservation is isolated. Up to three
+    // requests each (read, write, and the re-write after a racing insert).
+    for (const item of group.items) {
+      if (rowsLeft < 3) {
+        result.failed.push(item.reservation.externalBookingId);
+        continue;
+      }
+      rowsLeft -= 3;
+      result.requests += 3;
+      try {
+        const outcome = await upsertReservation(item);
+        if (outcome === 'inserted') result.inserted += 1;
+        else result.updated += 1;
+      } catch {
+        result.failed.push(item.reservation.externalBookingId);
+      }
+    }
   }
-  return 'inserted';
+  return result;
 }
 
 function isUniqueViolation(error: unknown): boolean {

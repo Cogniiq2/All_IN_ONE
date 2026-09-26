@@ -31,6 +31,13 @@ export interface Beds24RequestInit {
   body?: unknown;
   /** Set on write calls so a retried request cannot create a second booking. */
   idempotencyKey?: string;
+  /**
+   * Skip the per-request heartbeat. For a batch caller (the reservation sync)
+   * that records ONE heartbeat for the whole pass itself: a heartbeat per
+   * request is a database write per request, and on Cloudflare every one of
+   * them spends a subrequest the pass may need for data.
+   */
+  quiet?: boolean;
 }
 
 export async function beds24Request<T>(init: Beds24RequestInit): Promise<T> {
@@ -38,10 +45,10 @@ export async function beds24Request<T>(init: Beds24RequestInit): Promise<T> {
     const result = await attempt<T>(init, false);
     // Reads count as a heartbeat too: "last heard from Beds24" is answered by
     // a calendar read as well as by a hold.
-    observeIntegration('beds24', 'last_success', `${init.method ?? 'GET'} ${init.path}`);
+    if (!init.quiet) observeIntegration('beds24', 'last_success', `${init.method ?? 'GET'} ${init.path}`);
     return result;
   } catch (cause) {
-    observeIntegration('beds24', 'last_failure', `${init.method ?? 'GET'} ${init.path}: ${cause instanceof Error ? cause.message.slice(0, 100) : 'error'}`);
+    if (!init.quiet) observeIntegration('beds24', 'last_failure', `${init.method ?? 'GET'} ${init.path}: ${cause instanceof Error ? cause.message.slice(0, 100) : 'error'}`);
     throw cause;
   }
 }

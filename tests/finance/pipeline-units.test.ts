@@ -56,10 +56,10 @@ describe('runFinanceIngestionPass', () => {
     expect(calls.some((c) => c.fn === 'bolagio_finance_claim_ingestion')).toBe(false);
   });
 
-  it('with the queue it claims a bounded batch: FINANCE_INGESTION_BATCH, default 5, never above 200', async () => {
+  it('with the queue it claims a bounded batch: FINANCE_INGESTION_BATCH, default 2, never above 200', async () => {
     const { runFinanceIngestionPass, financeIngestionBatch } = await import('@/lib/finance/commands');
     rpcAnswer = (fn) => ({ data: fn === 'bolagio_finance_enqueue_missing' ? 0 : [], error: null });
-    expect(financeIngestionBatch()).toBe(5);
+    expect(financeIngestionBatch()).toBe(2);
     vi.stubEnv('FINANCE_INGESTION_BATCH', '500');
     expect(financeIngestionBatch()).toBe(200);
     vi.stubEnv('FINANCE_INGESTION_BATCH', '12');

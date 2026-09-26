@@ -382,10 +382,18 @@ export interface FinancePassReport extends IngestionReport {
   failed: number;
 }
 
-/** How many queued intents one pass derives. Bounded: a pass runs inside one Worker request. */
+/**
+ * How many queued intents one pass derives. Bounded: a pass runs inside one
+ * Worker invocation, AFTER the payment inbox and the operations pass of the
+ * same request. Measured against the real schema: an idle reconcile request
+ * makes 14 outbound requests and each derived booking about 8 more (read,
+ * revenue, capture, settle, match), so 2 keeps a pass near 30 of the Workers
+ * Free plan's 50 with room for payment processing. On the Paid plan raise it
+ * with `FINANCE_INGESTION_BATCH`.
+ */
 export function financeIngestionBatch(): number {
   const n = Number.parseInt(process.env.FINANCE_INGESTION_BATCH ?? '', 10);
-  return Number.isFinite(n) && n > 0 ? Math.min(n, 200) : 5;
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 200) : 2;
 }
 
 /**
@@ -550,7 +558,36 @@ export interface CommitResult {
   alreadyImported: number;
   /** Settlement lines Booking.com has changed since an earlier import: kept beside the original, awaiting review. */
   amendments: number;
+  /**
+   * Valid rows this call did not reach because its request budget ran out.
+   * They stay `valid`, the batch stays `validated`, and "Import valid rows"
+   * again continues with them — every row is idempotent on its own key.
+   */
+  remaining: number;
 }
+
+/**
+ * Outbound requests one import call may spend (Cloudflare Workers Free plan:
+ * 50 per invocation, including the action's own session check and audit).
+ * `FINANCE_IMPORT_SUBREQUEST_BUDGET`, default 40.
+ */
+export function financeImportBudget(): number {
+  const n = Number.parseInt(process.env.FINANCE_IMPORT_SUBREQUEST_BUDGET ?? '', 10);
+  return Number.isFinite(n) ? Math.min(Math.max(n, 20), 5000) : 40;
+}
+
+/** Worst-case requests to post one staged row, by what it becomes. */
+function rowCost(parsed: StagedRow): number {
+  // Settlement line: record, re-read, legacy check, three postings, settlement update, row update.
+  if (parsed.target === 'ota_settlement') return 8;
+  // Payment: record + row update. Expense: post + row update. Legacy revenue: two postings + row update.
+  if (parsed.target === 'payment' || parsed.target === 'expense') return 2;
+  return 3;
+}
+/** Spent before the rows: the action's operator check and audit, batch + rows, counterparties, units, candidates. */
+const IMPORT_FIXED_REQUESTS = 8;
+/** Spent after the rows: batch status, heartbeat, the reconciliation run (two reads, a heartbeat, a match or two). */
+const IMPORT_TAIL_REQUESTS = 7;
 
 /** Post the valid rows of a validated batch. Each row is idempotent on its own key. */
 export async function commitImport(batchId: string, actor: string): Promise<CommitResult> {
@@ -560,7 +597,9 @@ export async function commitImport(batchId: string, actor: string): Promise<Comm
   if (!found) throw new Error('batch not found');
   if (found.batch.status !== 'validated') throw new Error(`batch is ${found.batch.status}`);
   const [registry, units] = await Promise.all([source.counterparties(), source.units()]);
-  const result: CommitResult = { posted: 0, skipped: 0, errors: [], alreadyImported: 0, amendments: 0 };
+  const result: CommitResult = { posted: 0, skipped: 0, errors: [], alreadyImported: 0, amendments: 0, remaining: 0 };
+  let budgetLeft = financeImportBudget() - IMPORT_FIXED_REQUESTS - IMPORT_TAIL_REQUESTS;
+  let processed = 0;
   // One read of the local reservations for every settlement line in the
   // batch, by exact Booking.com reservation number.
   const settlementNumbers = found.rows.filter((r) => r.status === 'valid' && (r.parsed as { target?: string } | null)?.target === 'ota_settlement').map((r) => String((r.parsed as { bookingNumber: string }).bookingNumber));
@@ -568,6 +607,11 @@ export async function commitImport(batchId: string, actor: string): Promise<Comm
   for (const row of found.rows) {
     if (row.status !== 'valid' || !row.parsed) { result.skipped += 1; continue; }
     const parsed = row.parsed as unknown as StagedRow;
+    const cost = rowCost(parsed);
+    // At least one row per call, whatever the budget: every call makes progress.
+    if (cost > budgetLeft && processed > 0) { result.remaining += 1; continue; }
+    budgetLeft -= cost;
+    processed += 1;
     if (parsed.target === 'ota_settlement') {
       try {
         const rec = await recordSettlement(parsed, batchId, row.id, actor, candidates);
@@ -605,7 +649,10 @@ export async function commitImport(batchId: string, actor: string): Promise<Comm
       await db.from('bolagio_finance_import_rows').update({ status: 'error', error: msg }).eq('id', row.id);
     }
   }
-  await db.from('bolagio_finance_import_batches').update({ status: result.errors.length > 0 && result.posted === 0 ? 'failed' : 'imported', imported_at: new Date().toISOString(), error: result.errors.length > 0 ? result.errors.slice(0, 5).join(' | ') : null }).eq('id', batchId);
+  // Rows left for the next call keep the batch `validated`, so the same
+  // button continues it; the Inbox keeps it visible until it is done.
+  const batchStatus = result.remaining > 0 ? 'validated' : result.errors.length > 0 && result.posted === 0 ? 'failed' : 'imported';
+  await db.from('bolagio_finance_import_batches').update({ status: batchStatus, imported_at: batchStatus === 'validated' ? null : new Date().toISOString(), error: result.errors.length > 0 ? result.errors.slice(0, 5).join(' | ') : result.remaining > 0 ? `${result.remaining} valid row(s) not yet posted: import again to continue.` : null }).eq('id', batchId);
   await observe(`import.${found.batch.source_type}.${result.errors.length > 0 && result.posted === 0 ? 'failure' : 'success'}`, `${found.batch.filename}: ${result.posted} posted`);
   try { await runReconciliation(actor); } catch { /* reported by its own signal */ }
   return result;

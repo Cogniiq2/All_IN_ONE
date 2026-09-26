@@ -74,10 +74,10 @@ export async function runIngestionAction(): Promise<ActionResult<{ report: comma
   const g = await gate('finance.edit');
   if (!g.ok) return g;
   try {
-    // The same queue-driven pass the schedule runs, with a larger batch: the
-    // operator asked for it now. A backlog beyond the batch drains on the
-    // following passes; the health card shows what is left.
-    const report = await commands.runFinanceIngestionPass({ actor: g.actor, limit: Math.max(25, commands.financeIngestionBatch()) });
+    // The same queue-driven pass the schedule runs, with the same bounded
+    // batch: an action is one Worker invocation too. A backlog beyond the
+    // batch drains on the following passes; the health card shows what is left.
+    const report = await commands.runFinanceIngestionPass({ actor: g.actor });
     await audit({ operator: g.operator, action: 'finance.ingest', outcome: report.errors.length ? 'partial' : 'ok', detail: { scanned: report.scanned, revenue: report.revenuePosted, payments: report.paymentsRecorded, refunds: report.refundsPosted, refundsWithoutRevenue: report.refundsWithoutRevenue, errors: report.errors.length } });
     refreshFinance();
     return { ok: true, report };
@@ -518,15 +518,15 @@ export async function stageImportAction(fd: FormData): Promise<ActionResult<{ ba
   } catch (cause) { return fail(cause); }
 }
 
-export async function commitImportAction(batchId: string): Promise<ActionResult<{ posted: number; errors: string[]; alreadyImported: number; amendments: number }>> {
+export async function commitImportAction(batchId: string): Promise<ActionResult<{ posted: number; errors: string[]; alreadyImported: number; amendments: number; remaining: number }>> {
   const g = await gate('finance.edit');
   if (!g.ok) return g;
   if (!/^[0-9a-f-]{36}$/.test(batchId)) return { ok: false, reason: 'invalid' };
   try {
     const r = await commands.commitImport(batchId, g.actor);
-    await audit({ operator: g.operator, action: 'finance.import.commit', targetType: 'finance_import_batch', targetRef: batchId, outcome: r.errors.length ? 'partial' : 'ok', detail: { posted: r.posted, skipped: r.skipped, alreadyImported: r.alreadyImported, amendments: r.amendments, errors: r.errors.length } });
+    await audit({ operator: g.operator, action: 'finance.import.commit', targetType: 'finance_import_batch', targetRef: batchId, outcome: r.errors.length ? 'partial' : 'ok', detail: { posted: r.posted, skipped: r.skipped, alreadyImported: r.alreadyImported, amendments: r.amendments, remaining: r.remaining, errors: r.errors.length } });
     refreshFinance(['/admin/finance/imports', `/admin/finance/imports/${batchId}`, '/admin/finance/booking-com']);
-    return { ok: true, posted: r.posted, errors: r.errors, alreadyImported: r.alreadyImported, amendments: r.amendments };
+    return { ok: true, posted: r.posted, errors: r.errors, alreadyImported: r.alreadyImported, amendments: r.amendments, remaining: r.remaining };
   } catch (cause) { return fail(cause); }
 }
 

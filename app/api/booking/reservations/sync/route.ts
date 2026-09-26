@@ -70,11 +70,18 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const report = await syncReservations(logger, { unitSlug, from, to });
+      // No parameters is the scheduled run: it resumes the rotation and
+      // refreshes the near-term windows first. Explicit ranges are one-off
+      // re-imports and never move the rotation.
+      const scheduled = !unitSlug && !from && !to;
+      const report = await syncReservations(logger, { unitSlug, from, to, resume: scheduled });
       await recordSchedulerRun({
         job: 'reservation_sync',
         startedAt: started,
-        ok: report.failed === 0,
+        // A run that did not reach every task is NOT a failure (the next run
+        // continues); a task that failed, a row that could not be written or
+        // a window the reader's own cap truncated is.
+        ok: report.failed === 0 && report.tasksFailed === 0 && !report.truncated,
         // Counts only. This is written to the heartbeat table and read by the
         // System page; it must stay free of anything guest-shaped.
         report: {
@@ -87,6 +94,17 @@ export async function POST(request: NextRequest) {
           units: report.units,
           requests: report.requests,
           truncated: report.truncated,
+          tasks: report.tasks,
+          tasksDone: report.tasksDone,
+          tasksFailed: report.tasksFailed,
+          tasksRemaining: report.tasksRemaining,
+          cycleComplete: report.cycleComplete,
+          // The explicit run carries the scheduled cursor forward unchanged.
+          cursor: report.cursor,
+          resumeFrom: report.resumeFrom,
+          failedUnits: report.failedUnits,
+          subrequests: report.subrequests,
+          budget: report.budget,
         },
         worker: logger.correlationId,
       });

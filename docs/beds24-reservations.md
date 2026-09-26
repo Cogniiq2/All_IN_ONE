@@ -249,10 +249,32 @@ Default: **today − 12 months** through **today + `BOOKING_INVENTORY_MONTHS`**
 short of the next one's start, because the provider's arrival filter is
 inclusive at both ends: no gap, no duplicate query.
 
-Subsequent runs re-read the same horizon and upsert. That is deliberate:
-correctness over micro-optimisation, and the whole horizon for two units is a
-few dozen `GET`s. If a reliable provider-side modification filter is
-established later, `provider_modified_at` is already indexed for it.
+Windows are aligned to a fixed epoch (2000-01-01, in steps of
+`BOOKING_RESERVATION_WINDOW_DAYS`) and clipped to the horizon, so a window
+keeps its identity as the horizon slides by a day.
+
+**One run does not cover the whole horizon.** A Cloudflare Worker on the Free
+plan may make 50 outbound requests per invocation, and the full horizon (22
+windows for two units, and a write per window) does not fit in one. Each run
+spends from a budget (`RESERVATION_SYNC_SUBREQUEST_BUDGET`, default 40):
+
+1. it first refreshes the **near-term** windows (arrivals from a week ago to 60
+   days ahead) for every unit;
+2. it then continues a **rotation** over every (unit, window) task, from the
+   cursor the previous scheduled run left in its own heartbeat
+   (`report.cursor`);
+3. it stops before a task could overspend. An interrupted task is not done, and
+   it becomes the next run's first task.
+
+Writes are batched: one read of the existing ids plus one upsert per window
+(per column shape), not two requests per reservation. The heartbeat carries
+`tasks`, `tasksDone`, `tasksFailed`, `tasksRemaining`, `cycleComplete`,
+`failedUnits`, `subrequests` and `budget`. A run that did not reach every
+task is healthy (the next run continues). A run with a failed task, a failed
+row or a reader-truncated window is `ok: false`, and it names the unit.
+With 16 reservations, a cycle completes in two hourly runs (35 and 20
+requests). If a reliable provider-side modification filter is established
+later, `provider_modified_at` is already indexed for it.
 
 ---
 
@@ -264,6 +286,7 @@ established later, `provider_modified_at` is already indexed for it.
 | `BOOKING_INVENTORY_MONTHS` | `18` | forward edge, shared with the inventory sync |
 | `BOOKING_RESERVATION_BACKFILL_MONTHS` | `12` | how far back a backfill reaches (1–60) |
 | `BOOKING_RESERVATION_WINDOW_DAYS` | `90` | width of one provider query (7–365) |
+| `RESERVATION_SYNC_SUBREQUEST_BUDGET` | `40` | outbound requests one run may spend (Beds24 + database). Keep it ≤ 45 on the Workers Free plan (limit 50). |
 | `BEDS24_RESERVATION_STATUSES` | *unset* | comma-separated statuses to request. **Leave unset** until the live validation in §2 proves the account accepts a `status` filter. Then `new,request,confirmed,cancelled,black`. |
 
 Nothing new is required to run the import. The existing `BEDS24_REFRESH_TOKEN`
@@ -295,8 +318,10 @@ the shared secret header; it needs no browser and no session. It records a
 heartbeat under `reservation_sync` (counts only) and the System page flags it
 overdue after two hours.
 
-The **first** run is the backfill and is the slow one. Run it by hand once
-(§10) before putting it on a schedule.
+The **first** cycle is the backfill. At the hourly schedule it completes in a
+few runs by itself. An explicit `{ "from": …, "to": … }` run that the budget
+cuts short answers with `resumeFrom`: call it again with that as `from`.
+Explicit runs never move the scheduled cursor.
 
 ---
 

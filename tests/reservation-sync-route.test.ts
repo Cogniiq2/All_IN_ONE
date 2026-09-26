@@ -29,7 +29,7 @@ const PII = {
   reference: '4123456789',
 };
 
-const h = vi.hoisted(() => ({ runs: 0, heartbeats: [] as Array<Record<string, unknown>>, fail: false }));
+const h = vi.hoisted(() => ({ runs: 0, heartbeats: [] as Array<Record<string, unknown>>, fail: false, options: [] as Array<Record<string, unknown>>, tasksFailed: 0 }));
 
 vi.mock('@/lib/supabase/server', () => ({
   isSupabaseConfigured: () => true,
@@ -45,8 +45,9 @@ vi.mock('@/lib/booking/commands', () => ({
 }));
 
 vi.mock('@/lib/booking/reservation-sync', () => ({
-  syncReservations: async () => {
+  syncReservations: async (_logger: unknown, options: Record<string, unknown>) => {
     h.runs += 1;
+    h.options.push(options);
     if (h.fail) throw new Error('provider unreachable');
     return {
       fetched: 42,
@@ -60,6 +61,16 @@ vi.mock('@/lib/booking/reservation-sync', () => ({
       windowFrom: '2025-09-21',
       windowTo: '2028-03-21',
       truncated: false,
+      tasks: 22,
+      tasksDone: 9,
+      tasksFailed: h.tasksFailed,
+      tasksRemaining: 13,
+      cycleComplete: false,
+      cursor: '2026-12-24|schulstrasse-i',
+      resumeFrom: '',
+      subrequests: 38,
+      budget: 40,
+      failedUnits: h.tasksFailed ? 'schulstrasse-ii' : '',
     };
   },
 }));
@@ -78,6 +89,8 @@ beforeEach(() => {
   h.runs = 0;
   h.heartbeats.length = 0;
   h.fail = false;
+  h.options.length = 0;
+  h.tasksFailed = 0;
   vi.stubEnv('BOOKING_SYNC_SECRET', SECRET);
   vi.stubEnv('SUPABASE_URL', 'https://x.supabase.co');
   vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'k');
@@ -141,6 +154,16 @@ describe('the response', () => {
       windowFrom: '2025-09-21',
       windowTo: '2028-03-21',
       truncated: false,
+      tasks: 22,
+      tasksDone: 9,
+      tasksFailed: 0,
+      tasksRemaining: 13,
+      cycleComplete: false,
+      cursor: '2026-12-24|schulstrasse-i',
+      resumeFrom: '',
+      subrequests: 38,
+      budget: 40,
+      failedUnits: '',
     });
   });
 
@@ -169,6 +192,22 @@ describe('the heartbeat', () => {
     expect(h.heartbeats[0]).toMatchObject({ job: 'reservation_sync', ok: true });
     const report = JSON.stringify(h.heartbeats[0].report);
     for (const value of Object.values(PII)) expect(report).not.toContain(value);
+  });
+
+  it('a run that did not reach every window is healthy; a failed window is not, and is named', async () => {
+    await POST(request({ 'x-bolagio-signature': SECRET }));
+    expect(h.heartbeats[0]).toMatchObject({ ok: true, report: { tasksRemaining: 13, cycleComplete: false, cursor: '2026-12-24|schulstrasse-i', subrequests: 38, budget: 40 } });
+    h.tasksFailed = 1;
+    await POST(request({ 'x-bolagio-signature': SECRET }));
+    expect(h.heartbeats[1]).toMatchObject({ ok: false, report: { tasksFailed: 1, failedUnits: 'schulstrasse-ii' } });
+    h.tasksFailed = 0;
+  });
+
+  it('the scheduled run resumes the rotation; an explicit window never moves it', async () => {
+    await POST(request({ 'x-bolagio-signature': SECRET }));
+    await POST(request({ 'x-bolagio-signature': SECRET }, JSON.stringify({ from: '2026-01-01', to: '2026-06-30' })));
+    expect(h.options[0]).toMatchObject({ resume: true });
+    expect(h.options[1]).toMatchObject({ resume: false, from: '2026-01-01' });
   });
 
   it('records a failed pass and answers without detail', async () => {
