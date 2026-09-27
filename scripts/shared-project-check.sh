@@ -163,8 +163,13 @@ for f in supabase/migrations/20260916120000_booking_foundation.sql \
          supabase/migrations/20260919120000_admin_operators.sql \
          supabase/migrations/20260920120000_booking_production_hardening.sql \
          supabase/migrations/20260921120000_platform_completion.sql \
-         supabase/migrations/20260922120000_finance_foundation.sql; do
-  psql "$T" -v ON_ERROR_STOP=1 -q -f "$f" >/dev/null 2>&1 || { echo "FAILED — $f did not apply"; FAILED=1; }
+         supabase/migrations/20260922120000_finance_foundation.sql \
+         supabase/migrations/20260923120000_reservation_import.sql \
+         supabase/migrations/20260924120000_guest_privileges.sql \
+         supabase/migrations/20260925120000_legal_compliance.sql \
+         supabase/migrations/20260926120000_booking_com_finance_statement.sql \
+         supabase/migrations/20260927120000_finance_ingestion_pipeline.sql; do
+  psql "$T" -1 -v ON_ERROR_STOP=1 -q -f "$f" >/dev/null 2>&1 || { echo "FAILED — $f did not apply"; FAILED=1; }
 done
 psql "$T" -v ON_ERROR_STOP=1 -q -f supabase/ops/verify.sql 2>&1 | grep -E "FAILED|passed" | tail -1
 psql "$T" -v ON_ERROR_STOP=1 -q -f supabase/ops/shared_project_hardening_verify.sql >/dev/null 2>&1 \

@@ -125,32 +125,85 @@ service-role key reaches all data), the inventory's risk report, the optional
 `bolagio_app` role and the service-role possession rules are in
 **`docs/supabase-shared-project.md`**. What follows is the command sequence.
 
-Shared-project sequence (what `ops/staging/migrate.sh` runs; on production,
-by hand, in this order):
+### 6a. ALL IN ONE today: apply #12 (20260927) — the only step left
+
+State on 2026-09-27 (read-only catalog check): #1–#11 applied (exactly the 56
+tables, 11 views, 10 enums and 63 functions they create — no drift), #12 not
+applied, the Cogniiq hardening in place. Run from the repository root with
+`psql` (not the Dashboard SQL editor: the scripts use psql meta-commands),
+`DATABASE_URL` = the project's **direct** Postgres connection string
+(Dashboard → Project Settings → Database → Connection string → URI, role
+`postgres`). Take a backup first (Dashboard → Database → Backups).
+
+```bash
+# 1. shared-project preflight (read-only; exit ≠ 0 = stop and read the message)
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/ops/shared_project_preflight.sql
+
+# 2. the Sep-27 migration, in ONE transaction (it also queues the finance backfill)
+psql "$DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f supabase/migrations/20260927120000_finance_ingestion_pipeline.sql
+
+# 3. shared-project verify (raises on the first failure; requires #1–#12)
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/ops/shared_project_verify.sql
+```
+
+Expected: step 1 lists #1–#11 `applied` and #12 `NOT applied`, then
+`ok — #1–#11 applied, #12 not applied`, `ok — no collision: 67 relation(s),
+10 enum(s), 63 function(s)`, and ends `shared-project preflight passed`.
+Step 2 prints one row (`bolagio_finance_enqueue_missing` = the number of
+historical bookings queued; `0` today). Step 3 ends
+`shared-project verification passed`. Optional blast-radius evidence: run
+`supabase/ops/shared_project_inventory.sql` into a file before step 2 and
+after step 3 and diff — every changed object line names a `bolagio_` object.
+
+Rollback of #12 (drops only its own queue, triggers, views and functions;
+posted finance rows stay): `psql "$DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f
+supabase/ops/rollback_20260927.sql`, after which the preflight passes again
+and reports #12 not applied.
+
+Proven on a throwaway cluster shaped like this project (Cogniiq fixture +
+hardening + Supabase default privileges + #1–#11) by
+`scripts/shared-project-migration-check.sh`: preflight passes on #1–#11 and
+refuses a foreign `bolagio_` object, a squatted #12 name, a missing #12
+prerequisite and a gapped chain; #12 applies; verify passes; every
+non-`bolagio_` relation, column, policy, grant, function, trigger, type,
+default privilege, role and row count is unchanged; rollback and double
+re-apply keep all of that true.
+
+### 6b. A fresh shared project: the whole chain
+
+The full sequence, for a shared project with no BoLaGio objects yet (what
+`ops/staging/migrate.sh` ran for #1–#6; on production, by hand, in this
+order). The shared-project preflight REQUIRES #1–#11 (it is written for the
+next step, #12), so on a fresh project run the plain `preflight.sql` (§2)
+before the chain, and the shared-project pair around #12:
 
 ```bash
 # 1. inventory before (read-only; keep the file)
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v format=unaligned \
      -f supabase/ops/shared_project_inventory.sql > inventory-before.txt
 
-# 2. shared-project preflight (read-only; exit ≠ 0 = collision or missing role — stop)
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/ops/shared_project_preflight.sql
+# 2. plain preflight (read-only)
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/ops/preflight.sql
 
-# 3. the six migrations, ONE transaction EACH (never -1 across files: #2 must commit before #3)
+# 3. #1–#11, ONE transaction EACH (never -1 across files: #2 must commit before #3)
 for f in supabase/migrations/20260916120000_booking_foundation.sql \
          supabase/migrations/20260917100000_booking_core_states.sql \
          supabase/migrations/20260917110000_booking_core_hardening.sql \
          supabase/migrations/20260919120000_admin_operators.sql \
          supabase/migrations/20260920120000_booking_production_hardening.sql \
-         supabase/migrations/20260921120000_platform_completion.sql; do
+         supabase/migrations/20260921120000_platform_completion.sql \
+         supabase/migrations/20260922120000_finance_foundation.sql \
+         supabase/migrations/20260923120000_reservation_import.sql \
+         supabase/migrations/20260924120000_guest_privileges.sql \
+         supabase/migrations/20260925120000_legal_compliance.sql \
+         supabase/migrations/20260926120000_booking_com_finance_statement.sql; do
   psql "$DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f "$f" || { echo "STOP at $f"; break; }
 done
 
 # 4. seed (idempotent; every unit stays is_bookable = false)
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/seed/bolagio_booking_units.sql
 
-# 5. shared-project verify (raises on the first failure; supersedes verify.sql)
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/ops/shared_project_verify.sql
+# 5. then §6a: shared-project preflight → #12 → shared-project verify
 
 # 6. inventory after, and the diff — every changed line must name a bolagio_* object (or btree_gist)
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v format=unaligned \
@@ -158,9 +211,11 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v format=unaligned \
 diff -u inventory-before.txt inventory-after.txt
 ```
 
-`shared_project_preflight.sql` contains every check of `preflight.sql` (§2)
-plus name-collision and blast-radius checks; `shared_project_verify.sql`
-contains every assertion of `verify.sql` (§4) plus the shared-project
+`shared_project_preflight.sql` knows the whole chain (#1–#12): it requires
+#1–#11, validates #12's prerequisites, checks that every `bolagio_*` object is
+one the chain creates (exact names and function signatures), and prints the
+blast-radius record. `shared_project_verify.sql` contains every assertion of
+`verify.sql` (§4), explicit assertions for #7–#12, and the shared-project
 invariants. In the shared project use the `shared_project_*` pair; the plain
 pair remains for the local throwaway clusters (`scripts/db-ops-check.sh`).
 

@@ -7,6 +7,9 @@
 -- It does not write. It does not call any provider. It creates one helper
 -- function in pg_temp (session-local, gone at disconnect).
 --
+-- Current through 20260927 (#12): it REQUIRES #1–#12 and fails on a project
+-- where #12 is not applied — run it after the migration, not before.
+--
 -- Contains every assertion of supabase/ops/verify.sql PLUS the invariants
 -- that matter because the project is shared with unrelated (Cogniiq) tables:
 --
@@ -125,6 +128,53 @@ do $$ begin
 end $$;
 
 \echo ''
+\echo '── #7–#12: finance, reservations, privileges, legal, Booking.com, ingestion pipeline ──'
+do $$ declare t text; begin
+  -- #7 finance foundation
+  foreach t in array array['bolagio_finance_transactions','bolagio_finance_transaction_lines','bolagio_finance_payments','bolagio_finance_reconciliations',
+                           'bolagio_finance_tax_codes','bolagio_finance_periods','bolagio_finance_import_batches','bolagio_finance_import_rows',
+                           'bolagio_minibar_products','bolagio_minibar_movements'] loop
+    perform pg_temp.v_assert(to_regclass('public.' || t) is not null, format('#7 %s exists', t));
+  end loop;
+  perform pg_temp.v_assert(to_regprocedure('bolagio_finance_post_transaction(jsonb,jsonb,text)') is not null, '#7 bolagio_finance_post_transaction exists');
+  perform pg_temp.v_assert(to_regprocedure('bolagio_finance_record_payment(jsonb,text)') is not null, '#7 bolagio_finance_record_payment exists');
+  perform pg_temp.v_assert(to_regclass('public.bolagio_finance_exception_counts') is not null, '#7 the exception-counts view exists');
+  perform pg_temp.v_assert(not exists (select 1 from bolagio_finance_transactions where status = 'posted' and gross_cents <> net_cents + vat_cents), '#7 every posted transaction balances: gross = net + VAT');
+  -- #8 reservation import
+  perform pg_temp.v_assert(to_regclass('public.bolagio_reservations') is not null, '#8 bolagio_reservations exists');
+  perform pg_temp.v_assert(exists (select 1 from pg_indexes where indexname = 'bolagio_reservations_provider_uq'), '#8 one row per provider booking id (unique index)');
+  perform pg_temp.v_assert(pg_get_constraintdef((select oid from pg_constraint where conname = 'bolagio_scheduler_runs_job_check')) like '%reservation_sync%', '#8 the scheduler heartbeat accepts reservation_sync');
+  perform pg_temp.v_assert(not exists (select 1 from bolagio_reservations group by provider, external_booking_id having count(*) > 1), '#8 no provider booking id appears twice');
+  -- #9 guest privileges
+  foreach t in array array['bolagio_guest_identities','bolagio_privilege_campaigns','bolagio_privilege_grants','bolagio_privilege_redemptions'] loop
+    perform pg_temp.v_assert(to_regclass('public.' || t) is not null, format('#9 %s exists', t));
+  end loop;
+  -- #10 legal compliance
+  perform pg_temp.v_assert(exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'bolagio_booking_intents' and column_name = 'terms_evidence'), '#10 bolagio_booking_intents.terms_evidence exists');
+  perform pg_temp.v_assert(exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'bolagio_guest_identities' and column_name = 'marketing_consent_confirmed_at'), '#10 double opt-in confirmation column exists');
+  -- #11 Booking.com finance statement
+  perform pg_temp.v_assert(to_regclass('public.bolagio_finance_ota_settlements') is not null and to_regclass('public.bolagio_finance_ota_payouts') is not null, '#11 settlements and payouts exist');
+  perform pg_temp.v_assert(to_regprocedure('bolagio_finance_record_ota_settlement(jsonb,text)') is not null, '#11 bolagio_finance_record_ota_settlement exists');
+  perform pg_temp.v_assert(not exists (select 1 from bolagio_finance_ota_settlements where net_cents <> gross_cents - commission_cents - payment_service_fee_cents), '#11 every settlement line balances: gross − commission − fee = net');
+  perform pg_temp.v_assert(not exists (select 1 from bolagio_finance_ota_settlements where amendment_state = 'current' group by identity_key having count(*) > 1), '#11 one current line per settlement identity');
+  -- #12 finance ingestion pipeline
+  perform pg_temp.v_assert(to_regclass('public.bolagio_finance_ingestion_queue') is not null, '#12 bolagio_finance_ingestion_queue exists');
+  perform pg_temp.v_assert(exists (select 1 from pg_trigger t join pg_proc p on p.oid = t.tgfoid where t.tgname = 'bolagio_booking_intents_finance_enqueue' and t.tgrelid = 'public.bolagio_booking_intents'::regclass and p.proname = 'bolagio_finance_enqueue_on_intent' and t.tgenabled <> 'D'), '#12 booking changes queue finance work (trigger enabled)');
+  perform pg_temp.v_assert(exists (select 1 from pg_trigger t join pg_proc p on p.oid = t.tgfoid where t.tgname = 'bolagio_payment_events_finance_enqueue' and t.tgrelid = 'public.bolagio_payment_events'::regclass and p.proname = 'bolagio_finance_enqueue_on_payment_event' and t.tgenabled <> 'D'), '#12 verified refund events queue finance work (trigger enabled)');
+  foreach t in array array['bolagio_finance_enqueue_missing(boolean,integer)','bolagio_finance_claim_ingestion(text,integer)','bolagio_finance_settle_ingestion(uuid,timestamptz,boolean,text)','bolagio_finance_enqueue(uuid,text)'] loop
+    perform pg_temp.v_assert(to_regprocedure(t) is not null, format('#12 %s exists', t));
+    perform pg_temp.v_assert(has_function_privilege('service_role', t, 'execute') and not has_function_privilege('anon', t, 'execute') and not has_function_privilege('authenticated', t, 'execute'),
+      format('#12 %s: service_role only', t));
+  end loop;
+  foreach t in array array['bolagio_finance_refund_events','bolagio_finance_ingestion_gaps','bolagio_finance_pipeline_status'] loop
+    perform pg_temp.v_assert(exists (select 1 from pg_class where oid = to_regclass('public.' || t) and reloptions @> array['security_invoker=true']), format('#12 %s is a security_invoker view', t));
+    perform pg_temp.v_assert(not has_table_privilege('anon', 'public.' || t, 'select') and not has_table_privilege('authenticated', 'public.' || t, 'select'), format('#12 the browser cannot read %s', t));
+  end loop;
+  perform pg_temp.v_assert((select count(*) from bolagio_finance_pipeline_status) = 1, '#12 the pipeline status view answers in one row');
+  perform pg_temp.v_assert(not exists (select 1 from bolagio_finance_ingestion_queue where state not in ('pending','done','failed')), '#12 every queue row has a known state');
+end $$;
+
+\echo ''
 \echo '── §A–§E shared-project invariants ─────────────────────────────────────'
 do $$
 declare r record; n int; bad text;
@@ -153,7 +203,7 @@ begin
       perform pg_temp.v_assert(has_app, format('%s: bolagio_app policies exist only when the role exists', r.relname));
     end if;
   end loop;
-  perform pg_temp.v_assert(n >= 19, format('%s bolagio_ tables verified (expected at least 19)', n));
+  perform pg_temp.v_assert(n >= 57, format('%s bolagio_ tables verified (expected at least 57: #1–#12)', n));
 
   -- §B every bolagio_ view: no browser privilege
   select string_agg(g.table_name || ' → ' || g.grantee, ', ') into bad

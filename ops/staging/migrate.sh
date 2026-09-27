@@ -4,10 +4,13 @@
 #
 #   CONFIRM_STAGING=yes DATABASE_URL='postgres://…' ops/staging/migrate.sh
 #
-# Order (docs/supabase-shared-project.md §3):
-#   inventory (before) → shared-project preflight → the six migrations, each
-#   in its OWN transaction and its own psql invocation → seed → shared-project
-#   verify → inventory (after) → diff
+# Order (docs/supabase-migration-runbook.md §6):
+#   inventory (before)
+#   → gate: shared-project preflight when #1–#11 are already applied (ALL IN
+#     ONE today), plain preflight.sql on a project that has none of them
+#   → #1–#11 not yet applied, each in its OWN transaction → seed
+#   → shared-project preflight (the gate for #12) → #12 in its own transaction
+#   → shared-project verify → inventory (after) → diff
 #
 # Refuses when:
 #   * CONFIRM_STAGING is not exactly "yes"
@@ -40,40 +43,45 @@ MIGRATIONS=(
   supabase/migrations/20260919120000_admin_operators.sql
   supabase/migrations/20260920120000_booking_production_hardening.sql
   supabase/migrations/20260921120000_platform_completion.sql
+  supabase/migrations/20260922120000_finance_foundation.sql
+  supabase/migrations/20260923120000_reservation_import.sql
+  supabase/migrations/20260924120000_guest_privileges.sql
+  supabase/migrations/20260925120000_legal_compliance.sql
+  supabase/migrations/20260926120000_booking_com_finance_statement.sql
+  supabase/migrations/20260927120000_finance_ingestion_pipeline.sql
 )
 
 echo "── 1. inventory (before) → $OUT/inventory-before-$STAMP.txt"
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -v format=unaligned -f supabase/ops/shared_project_inventory.sql > "$OUT/inventory-before-$STAMP.txt"
 
-echo "── 2. shared-project preflight (read-only; stops on collision)"
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/ops/shared_project_preflight.sql > "$OUT/preflight-$STAMP.txt" 2>&1 \
-  || { echo "preflight FAILED — see $OUT/preflight-$STAMP.txt"; grep -E "ERROR" "$OUT/preflight-$STAMP.txt" | head -5; exit 1; }
-grep -E "NOTICE:  no collision|passed" "$OUT/preflight-$STAMP.txt" | sed 's/psql:[^ ]* //'
-
-# Applied-markers, the same ones supabase/ops/preflight.sql §3 uses. A file whose
-# marker is present is skipped: the older files are idempotent statement by
-# statement but not as a whole once LATER files have replaced their views, so
-# re-running #1 on a fully migrated database fails harmlessly at a constraint
-# that already exists. FORCE_REAPPLY=yes runs every file regardless.
+# Applied-markers, the same ones supabase/ops/shared_project_preflight.sql §3
+# uses. A file whose marker is present is skipped: the older files are
+# idempotent statement by statement but not as a whole once LATER files have
+# replaced their views. FORCE_REAPPLY=yes runs every file regardless.
 applied() { # index
   local q
   case "$1" in
-    0) q="select to_regclass('public.bolagio_booking_intents') is not null" ;;
-    1) q="select exists (select 1 from pg_enum e join pg_type t on t.oid=e.enumtypid where t.typname='bolagio_booking_status' and e.enumlabel='locking')" ;;
-    2) q="select to_regclass('public.bolagio_outbox_events') is not null and to_regprocedure('bolagio_booking_transition(uuid,bolagio_booking_status,bolagio_booking_status,text,jsonb,text,text,jsonb)') is not null" ;;
-    3) q="select to_regclass('public.bolagio_operators') is not null" ;;
-    4) q="select to_regclass('public.bolagio_scheduler_runs') is not null and to_regprocedure('bolagio_begin_external_operation(text,bolagio_external_provider,text,uuid,jsonb,boolean)') is not null" ;;
-    5) q="select to_regclass('public.bolagio_message_deliveries') is not null and to_regprocedure('bolagio_request_cancellation(uuid,text,text,boolean,integer,text)') is not null" ;;
+    0)  q="select to_regclass('public.bolagio_booking_intents') is not null" ;;
+    1)  q="select exists (select 1 from pg_enum e join pg_type t on t.oid=e.enumtypid where t.typname='bolagio_booking_status' and e.enumlabel='locking')" ;;
+    2)  q="select to_regclass('public.bolagio_outbox_events') is not null and to_regprocedure('bolagio_booking_transition(uuid,bolagio_booking_status,bolagio_booking_status,text,jsonb,text,text,jsonb)') is not null" ;;
+    3)  q="select to_regclass('public.bolagio_operators') is not null" ;;
+    4)  q="select to_regclass('public.bolagio_scheduler_runs') is not null and to_regprocedure('bolagio_begin_external_operation(text,bolagio_external_provider,text,uuid,jsonb,boolean)') is not null" ;;
+    5)  q="select to_regclass('public.bolagio_message_deliveries') is not null and to_regprocedure('bolagio_request_cancellation(uuid,text,text,boolean,integer,text)') is not null" ;;
+    6)  q="select to_regclass('public.bolagio_finance_transactions') is not null and to_regprocedure('bolagio_finance_post_transaction(jsonb,jsonb,text)') is not null" ;;
+    7)  q="select to_regclass('public.bolagio_reservations') is not null" ;;
+    8)  q="select to_regclass('public.bolagio_guest_identities') is not null and to_regclass('public.bolagio_privilege_redemptions') is not null" ;;
+    9)  q="select exists (select 1 from information_schema.columns where table_schema='public' and table_name='bolagio_booking_intents' and column_name='terms_evidence') and exists (select 1 from information_schema.columns where table_schema='public' and table_name='bolagio_guest_identities' and column_name='marketing_consent_confirmed_at')" ;;
+    10) q="select to_regclass('public.bolagio_finance_ota_settlements') is not null and to_regprocedure('bolagio_finance_record_ota_settlement(jsonb,text)') is not null" ;;
+    11) q="select to_regclass('public.bolagio_finance_ingestion_queue') is not null and exists (select 1 from pg_trigger where tgname='bolagio_booking_intents_finance_enqueue')" ;;
   esac
   [ "$(psql "$DATABASE_URL" -Atc "$q")" = "t" ]
 }
 
-echo "── 3. migrations, each in its own transaction (psql -1 per file; #2 must commit before #3)"
-for i in "${!MIGRATIONS[@]}"; do
-  f="${MIGRATIONS[$i]}"
-  if [ "${FORCE_REAPPLY:-}" != "yes" ] && applied "$i"; then
+apply_file() { # index
+  local f="${MIGRATIONS[$1]}"
+  if [ "${FORCE_REAPPLY:-}" != "yes" ] && applied "$1"; then
     echo "   $f — already applied, skipped"
-    continue
+    return 0
   fi
   echo "   $f"
   if ! psql "$DATABASE_URL" -1 -v ON_ERROR_STOP=1 -q -f "$f" > "$OUT/migrate-$(basename "$f" .sql)-$STAMP.log" 2>&1; then
@@ -81,10 +89,35 @@ for i in "${!MIGRATIONS[@]}"; do
     grep -E "ERROR" "$OUT/migrate-$(basename "$f" .sql)-$STAMP.log" | head -5 >&2
     exit 1
   fi
-done
+}
+
+shared_preflight() { # label
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/ops/shared_project_preflight.sql > "$OUT/preflight-$1-$STAMP.txt" 2>&1 \
+    || { echo "shared-project preflight FAILED — see $OUT/preflight-$1-$STAMP.txt"; grep -E "ERROR" "$OUT/preflight-$1-$STAMP.txt" | head -5; exit 1; }
+  grep -E "NOTICE:  ok — (#1|no collision)|passed" "$OUT/preflight-$1-$STAMP.txt" | sed 's/psql:[^ ]* //'
+}
+
+all_1_to_11=yes
+for i in $(seq 0 10); do applied "$i" || all_1_to_11=no; done
+
+echo "── 2. gate (read-only)"
+if [ "$all_1_to_11" = "yes" ]; then
+  shared_preflight before
+else
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/ops/preflight.sql > "$OUT/preflight-plain-$STAMP.txt" 2>&1 \
+    || { echo "preflight FAILED — see $OUT/preflight-plain-$STAMP.txt"; grep -E "ERROR" "$OUT/preflight-plain-$STAMP.txt" | head -5; exit 1; }
+  echo "   plain preflight passed (#1–#11 not all applied yet; the shared-project preflight gates #12 below)"
+fi
+
+echo "── 3. #1–#11, each in its own transaction (psql -1 per file; #2 must commit before #3)"
+for i in $(seq 0 10); do apply_file "$i"; done
 
 echo "── 4. seed (idempotent; leaves is_bookable = false)"
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/seed/bolagio_booking_units.sql
+
+echo "── 4b. shared-project preflight (the gate for #12), then #12 in its own transaction"
+shared_preflight before-12
+apply_file 11
 
 echo "── 5. shared-project verify"
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/ops/shared_project_verify.sql > "$OUT/verify-$STAMP.txt" 2>&1 \

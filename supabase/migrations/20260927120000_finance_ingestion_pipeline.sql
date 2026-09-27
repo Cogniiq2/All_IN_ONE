@@ -341,13 +341,15 @@ do $$ declare fn text; begin
   foreach fn in array array[
     'bolagio_finance_enqueue_missing(boolean,integer)',
     'bolagio_finance_claim_ingestion(text,integer)',
-    'bolagio_finance_settle_ingestion(uuid,timestamptz,boolean,text)'
+    'bolagio_finance_settle_ingestion(uuid,timestamptz,boolean,text)',
+    -- Called by the triggers (as their definer); granted explicitly so the
+    -- service role's access never depends on a project's default privileges.
+    'bolagio_finance_enqueue(uuid,text)'
   ] loop
     execute format('revoke all on function %s from public, anon, authenticated', fn);
     execute format('grant execute on function %s to service_role', fn);
   end loop;
   foreach fn in array array[
-    'bolagio_finance_enqueue(uuid,text)',
     'bolagio_finance_enqueue_on_intent()',
     'bolagio_finance_enqueue_on_payment_event()'
   ] loop
