@@ -28,6 +28,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowLeft, Briefcase, Check, Loader as Loader2, User } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
@@ -46,6 +47,7 @@ import { useUnitFlow } from '@/components/units/unit-flow-context';
 import { CtaButton } from '@/components/ui-kit/cta';
 import { DateField } from '@/components/ui-kit/date-field';
 import { AddToCalendar } from '@/components/booking/add-to-calendar';
+import { firstNameOf, saveReceipt } from '@/lib/success/receipt';
 import { EMAIL_PATTERN, PrivacyNotice, SubmitError, inputClass, labelClass } from '@/components/enquiry/enquiry-fields';
 
 type Status = 'idle' | 'sending' | 'success' | 'error';
@@ -89,6 +91,7 @@ export function AppointmentModal() {
   const { locale } = useI18n();
   const de = locale === 'de';
   const { unit, stage, backToDetail, close } = useUnitFlow();
+  const router = useRouter();
 
   const open = stage === 'appointment' && Boolean(unit);
 
@@ -172,7 +175,23 @@ export function AppointmentModal() {
       });
       if (!response.ok) throw new Error(`Appointment request failed with ${response.status}`);
       // Only a real, fixed time counts. A request that went through is not one.
-      setConfirmed(readConfirmedAppointment(await readResponsePayload(response)) ?? null);
+      const fixed = readConfirmedAppointment(await readResponsePayload(response)) ?? null;
+      if (!fixed) {
+        // The usual case: a request, confirmed on a page of its own. The
+        // dialog lives in the persistent layout, so it closes first.
+        saveReceipt('appointment-request', {
+          firstName: firstNameOf(form.firstName),
+          unitSlug: unit?.slug,
+          party,
+          interest: party === 'company' ? 'long-term-commercial' : 'long-term-residential',
+        });
+        close();
+        router.push('/thank-you/appointment-request');
+        return;
+      }
+      // A time BoLaGio has actually fixed stays in the dialog, with its
+      // calendar entry — see lib/booking/calendar.ts.
+      setConfirmed(fixed);
       setStatus('success');
     } catch {
       setStatus('error');

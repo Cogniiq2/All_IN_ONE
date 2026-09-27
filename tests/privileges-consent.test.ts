@@ -21,6 +21,9 @@ type Row = Record<string, unknown>;
 const h = vi.hoisted(() => ({ identities: [] as Row[], grants: [] as Row[], reads: 0 }));
 
 /** A just-big-enough PostgREST builder over two in-memory tables. */
+// The client navigates to its confirmation page; no App Router is mounted here.
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }));
+
 vi.mock('@/lib/supabase/server', () => {
   function table(name: string): Row[] {
     if (name === 'bolagio_guest_identities') return h.identities;

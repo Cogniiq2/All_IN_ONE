@@ -31,6 +31,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowLeft, Banknote, Check, CreditCard, Loader as Loader2, Minus, Plus, Wallet } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
@@ -69,6 +70,7 @@ import { ContactFields, EMAIL_PATTERN } from '@/components/enquiry/enquiry-field
 import { AddToCalendar } from '@/components/booking/add-to-calendar';
 import { CheckoutSummary, checkoutReady, ORDER_BUTTON_LABEL } from '@/components/booking/checkout-summary';
 import { versionsOf } from '@/lib/legal/booking-terms';
+import { firstNameOf, saveReceipt } from '@/lib/success/receipt';
 
 /**
  * `paying` is the state where the inventory is HELD and the PayPal button is
@@ -108,6 +110,16 @@ export function BookingModal() {
   const de = locale === 'de';
   const { unit, stage, backToDetail, close } = useUnitFlow();
   const { stay, setStay } = useStay();
+  const router = useRouter();
+
+  /**
+   * Leave for a confirmation page. The dialog lives in the persistent layout,
+   * so it closes first — otherwise it would sit on top of the page it led to.
+   */
+  const finishAt = (path: string) => {
+    close();
+    router.push(path);
+  };
 
   const open = stage === 'booking' && Boolean(unit);
   const upcoming = unit?.status === 'in-preparation';
@@ -138,15 +150,6 @@ export function BookingModal() {
   const [confirmed, setConfirmed] = useState<ConfirmedStay | null>(null);
   const [reference, setReference] = useState<string | null>(null);
 
-  /**
-   * The booking status the SERVER returned after a capture.
-   *
-   * Distinct from `confirmed`, which only the backend's own confirmation
-   * fills. A guest who has paid but whose Beds24 finalization has not landed
-   * yet is `paid`, not `confirmed`, and must be told the first thing rather
-   * than the second — see the settling branch in SuccessState.
-   */
-  const [settledStatus, setSettledStatus] = useState<string | null>(null);
 
   /**
    * One id per opening of the dialog.
@@ -449,7 +452,24 @@ export function BookingModal() {
         }),
       });
       if (!response.ok) throw new Error(`Booking request failed with ${response.status}`);
-      setConfirmed(readConfirmedStay(await readResponsePayload(response)) ?? null);
+      const fixed = readConfirmedStay(await readResponsePayload(response)) ?? null;
+      if (!fixed) {
+        // A request (or, for a residence in preparation, a note to be told):
+        // each has its own confirmation page.
+        const kind = upcoming ? 'waitlist' : 'booking-request';
+        saveReceipt(kind, {
+          firstName: firstNameOf(contact.name),
+          unitSlug: unit?.slug,
+          ...(upcoming
+            ? {}
+            : { arrival: dates.arrival, departure: dates.departure, guests: clampGuestsFor(guests, maxGuests) ?? MIN_GUESTS }),
+        });
+        finishAt(`/thank-you/${kind}`);
+        return;
+      }
+      // A stay the endpoint itself confirmed stays in the dialog with its
+      // calendar entry: it carries no BoLaGio reference for a page to read.
+      setConfirmed(fixed);
       setDirection(1);
       setStatus('success');
     } catch {
@@ -501,7 +521,6 @@ export function BookingModal() {
               confirmed={confirmed}
               reference={reference}
               unitName={unit.name[locale]}
-              settledStatus={settledStatus}
               onClose={close}
             />
           ) : upcoming ? (
@@ -591,12 +610,16 @@ export function BookingModal() {
                         // browser. The confirmation screen reads the status:
                         // only a server-reported `confirmed` fills the
                         // confirmed stay; `paid` and the rest stay honest.
-                        setSettledStatus(result.status);
-                        if (result.status === 'confirmed' && dates.arrival && dates.departure) {
-                          setConfirmed({ arrival: dates.arrival, departure: dates.departure });
-                        }
-                        setStatus('success');
-                        setDirection(1);
+                        //
+                        // Both outcomes have their own page, and both pages
+                        // read the booking back from the backend by reference
+                        // rather than trusting this callback.
+                        saveReceipt('booking', { firstName: firstNameOf(contact.name), reference });
+                        finishAt(
+                          result.status === 'confirmed'
+                            ? `/booking/confirmed?ref=${encodeURIComponent(reference)}`
+                            : `/booking/payment-received?ref=${encodeURIComponent(reference)}`
+                        );
                       }}
                       onCancel={() => {
                         // The hold stands. The lease check verifies there is no
@@ -1077,22 +1100,21 @@ function StepPayment({
 
 /* ── Confirmation ───────────────────────────────────────────────────────── */
 
+/*
+ * The in-dialog confirmation is the fallback now. Every ordinary outcome has
+ * its own page — /thank-you/booking-request, /thank-you/waitlist,
+ * /booking/confirmed, /booking/payment-received — and this renders only for
+ * the two cases no page can describe from a reference: a stay the enquiry
+ * endpoint itself confirmed, and a hold with no payment route.
+ */
+
 function SuccessState({
-  firstName, upcoming, confirmed, reference, unitName, settledStatus, onClose,
+  firstName, upcoming, confirmed, reference, unitName, onClose,
 }: {
   firstName: string;
   upcoming: boolean;
   /** A booking the backend actually confirmed, or null. Never inferred here. */
   confirmed: ConfirmedStay | null;
-  /**
-   * The status the server reported after a capture, when one happened.
-   *
-   * `paid` means the money is ours and the reservation is not yet confirmed at
-   * the channel manager. That is a real, ordinary state — Beds24 can be slow,
-   * and the reconciliation engine finishes the job — and the guest is told
-   * exactly that instead of a confirmation we cannot stand behind.
-   */
-  settledStatus: string | null;
   /** The BoLaGio reference, when one was created. Never a Beds24 id. */
   reference: string | null;
   unitName: string;
@@ -1101,13 +1123,6 @@ function SuccessState({
   const { locale } = useI18n();
   const de = locale === 'de';
   const reduce = useReducedMotion();
-
-  /*
-   * Paid, and not yet confirmed. The word "confirmed" is reserved for a
-   * reservation the channel manager has actually accepted, so this branch says
-   * what is true: the money arrived and the dates are held.
-   */
-  const settled = !confirmed && settledStatus !== null && settledStatus !== 'confirmed';
 
   return (
     <motion.div
@@ -1122,8 +1137,6 @@ function SuccessState({
           ? de ? 'Wir melden uns' : 'We will be in touch'
           : confirmed
           ? de ? 'Ihre Buchung ist bestätigt' : 'Your booking is confirmed'
-          : settled
-          ? de ? 'Zahlung erhalten' : 'Payment received'
           : de ? 'Ihre Buchungsanfrage ist bei uns' : 'Your booking request has arrived'}
       </h3>
       <p className="body-copy mx-auto mt-3 text-[14.5px]">
@@ -1135,10 +1148,6 @@ function SuccessState({
           ? de
             ? `Danke, ${firstName}. Ihr Aufenthalt vom ${formatDateOrDash(confirmed.arrival)} bis ${formatDateOrDash(confirmed.departure)} ist bestätigt. Alle Anreisedetails schicken wir Ihnen per E-Mail.`
             : `Thank you, ${firstName}. Your stay from ${formatDateOrDash(confirmed.arrival)} to ${formatDateOrDash(confirmed.departure)} is confirmed. We are sending you all the arrival details by email.`
-          : settled
-          ? de
-            ? `Danke, ${firstName}. Ihre Zahlung ist bei uns eingegangen und Ihr Zeitraum ist für Sie reserviert. Die endgültige Bestätigung schicken wir Ihnen per E-Mail, sobald sie vorliegt — meist innerhalb weniger Minuten.`
-            : `Thank you, ${firstName}. Your payment has reached us and your dates are reserved for you. We will email you the final confirmation as soon as it is ready — usually within a few minutes.`
           : de
           ? `Danke, ${firstName}. Wir prüfen Ihren Zeitraum persönlich und melden uns mit Bestätigung, Preis und Zahlungsweg — meist am selben Tag.`
           : `Thank you, ${firstName}. We check your dates personally and come back with confirmation, price and payment details — usually the same day.`}

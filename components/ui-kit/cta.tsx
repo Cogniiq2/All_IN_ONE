@@ -51,6 +51,8 @@ export const ctaLabel = {
   writeWhatsApp: { de: 'Per WhatsApp schreiben', en: 'Message on WhatsApp' },
   contactUs: { de: 'Kontakt aufnehmen', en: 'Get in touch' },
   readJournal: { de: 'Zum Journal', en: 'Read the journal' },
+  discoverBayreuth: { de: 'Bayreuth entdecken', en: 'Discover Bayreuth' },
+  toHomepage: { de: 'Zur Startseite', en: 'Back to the homepage' },
   keepMePosted: { de: 'Informiert werden', en: 'Keep me posted' },
   back: { de: 'Zurück', en: 'Back' },
   send: { de: 'Anfrage senden', en: 'Send enquiry' },

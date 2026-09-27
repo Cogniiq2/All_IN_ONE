@@ -4,15 +4,14 @@
  * Shared form furniture for both enquiry forms.
  *
  * The short-term and long-term enquiries ask different questions, but they are
- * the same brand speaking, so the field styling, the error treatment and the
- * confirmation state live here once.
+ * the same brand speaking, so the field styling and the error treatment live
+ * here once. Their confirmations are pages of their own (/thank-you/*).
  */
 
-import { Check, CircleAlert, MessageCircle } from 'lucide-react';
-import { motion, useReducedMotion } from 'framer-motion';
+import { CircleAlert, MessageCircle } from 'lucide-react';
 import type { Locale } from '@/lib/content/apartments';
 import { contact } from '@/lib/content/brand';
-import { CtaButton, label } from '@/components/ui-kit/cta';
+import { label } from '@/components/ui-kit/cta';
 
 export const inputClass =
   'w-full min-h-[46px] px-3.5 py-2.5 bg-secondary/40 border border-border rounded-md text-[15px] ' +
@@ -192,47 +191,5 @@ export function SubmitError({ locale }: { locale: Locale }) {
         </a>
       </div>
     </div>
-  );
-}
-
-/** The confirmation state, shared by both enquiries. */
-export function EnquirySuccess({
-  locale,
-  firstName,
-  title,
-  onClose,
-}: {
-  locale: Locale;
-  firstName: string;
-  title: string;
-  onClose: () => void;
-}) {
-  const reduce = useReducedMotion();
-  const de = locale === 'de';
-
-  return (
-    <motion.div
-      initial={reduce ? false : { opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="px-6 py-12 text-center"
-    >
-      <div
-        className="w-14 h-14 mx-auto mb-5 rounded-full flex items-center justify-center"
-        style={{ background: 'hsl(var(--champagne) / 0.25)' }}
-      >
-        <Check className="w-6 h-6" style={{ color: 'hsl(var(--champagne-dark))' }} aria-hidden="true" />
-      </div>
-      <h3 className="display-3">{title}</h3>
-      <p className="body-copy mx-auto mt-3 text-[14px]">
-        {de
-          ? `Danke, ${firstName}. ${contact.responseWindow.de}`
-          : `Thank you, ${firstName}. ${contact.responseWindow.en}`}
-      </p>
-      <div className="mt-8">
-        <CtaButton onClick={onClose} variant="secondary">
-          {label('close', locale)}
-        </CtaButton>
-      </div>
-    </motion.div>
   );
 }

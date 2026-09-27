@@ -18,21 +18,27 @@
  *
  * The word "confirmed" appears on exactly one branch, and that branch is
  * driven by `isConfirmedStatus`, not by the presence of a query parameter.
+ *
+ * A confirmed booking and a paid one are handed on to their own pages —
+ * /booking/confirmed and /booking/payment-received — as soon as the status
+ * is read (components/success/booking-routing.ts). What stays here is what
+ * needs explaining: a payment that failed or was cancelled, a booking still
+ * waiting before any money moved, and a reference nobody can find.
  * ══════════════════════════════════════════════════════════════════════════
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Check, Clock, CircleAlert, Loader as Loader2 } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
 import { brand, contact } from '@/lib/content/brand';
 import { fetchBookingStatus, formatMoney } from '@/lib/booking/client';
 import { isBookingReference } from '@/lib/booking/reference';
 import { formatDateOrDash } from '@/lib/booking/date-format';
-import { track } from '@/lib/booking/analytics';
 import { isConfirmedStatus, type BookingIntentView } from '@/lib/booking/types';
 import { CtaLink } from '@/components/ui-kit/cta';
 import { Section } from '@/components/ui-kit/section';
+import { nextBookingPage } from '@/components/success/booking-routing';
 
 /**
  * Statuses that are still moving. The page waits on these, briefly.
@@ -57,6 +63,7 @@ export default function BookingReturnClient() {
   const { locale } = useI18n();
   const de = locale === 'de';
   const params = useSearchParams();
+  const router = useRouter();
 
   const reference = params?.get('ref') ?? '';
   const cancelled = params?.get('cancelled') === '1';
@@ -78,13 +85,12 @@ export default function BookingReturnClient() {
         if (!active) return;
         setBooking(next);
         setLoading(false);
-        if (isConfirmedStatus(next.status)) {
-          track('booking_confirmed', {
-            unitSlug: next.unitSlug,
-            nights: next.nights,
-            amountCents: next.totalCents ?? undefined,
-            currency: next.currency,
-          });
+        // A confirmed booking, or one whose money has arrived, has a page of
+        // its own that says so properly (and tracks the conversion there).
+        // This page keeps the outcomes that need explaining.
+        const destination = nextBookingPage(next);
+        if (!destination.startsWith('/booking/return')) {
+          router.replace(destination);
           return;
         }
         // Keep asking only while the booking is genuinely still in motion.
@@ -104,7 +110,7 @@ export default function BookingReturnClient() {
       active = false;
       if (timer) clearTimeout(timer);
     };
-  }, [reference, valid]);
+  }, [reference, valid, router]);
 
   const state = useMemo(() => {
     if (!valid || failed) return 'unknown' as const;

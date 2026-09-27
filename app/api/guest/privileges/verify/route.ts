@@ -50,7 +50,9 @@ export async function GET(request: NextRequest) {
 
   // Relative redirect to our own page, built from the request's own origin —
   // never from a parameter, so there is no open redirect to find here.
-  const destination = new URL('/guest/privileges', url.origin);
-  destination.searchParams.set('state', outcome === 'verified' ? 'verified' : 'link-invalid');
+  const destination =
+    outcome === 'verified'
+      ? new URL('/guest/privileges/welcome', url.origin)
+      : new URL('/guest/privileges?state=link-invalid', url.origin);
   return NextResponse.redirect(destination, { status: 303, headers: { 'cache-control': 'no-store' } });
 }

@@ -1,10 +1,12 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useI18n } from '@/lib/i18n';
 import { Section, SectionHeader } from '@/components/ui-kit/section';
 import { CONTROL_HEIGHT } from '@/components/ui-kit/date-field';
+import { saveReceipt } from '@/lib/success/receipt';
 
 /**
  * The unsubscribe confirmation.
@@ -48,6 +50,7 @@ const COPY = {
 export default function UnsubscribeClient({ id, sig }: { id?: string; sig?: string }) {
   const { locale } = useI18n();
   const t = COPY[locale] ?? COPY.de;
+  const router = useRouter();
   const [phase, setPhase] = useState<Phase>('idle');
   const usable = Boolean(id && sig);
 
@@ -60,7 +63,13 @@ export default function UnsubscribeClient({ id, sig }: { id?: string; sig?: stri
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ id, sig }),
       });
-      setPhase(response.ok ? 'done' : 'error');
+      if (response.ok) {
+        // The confirmation page speaks only to the tab that did this.
+        saveReceipt('privileges-unsubscribed', {});
+        router.push('/guest/privileges/unsubscribed');
+        return;
+      }
+      setPhase('error');
     } catch {
       setPhase('error');
     }

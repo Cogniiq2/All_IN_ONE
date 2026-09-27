@@ -254,7 +254,7 @@ describe('verification', () => {
     const token = h.lastToken as string;
     const response = await verify(link(token));
     expect(response.status).toBe(303);
-    expect(response.headers.get('location')).toContain('state=verified');
+    expect(response.headers.get('location')).toContain('/guest/privileges/welcome');
     expect(h.grants).toHaveLength(1);
   });
 

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 import { SITE_URL } from '@/lib/content/brand';
 import PrivilegesClient from './privileges-client';
 
@@ -42,7 +43,10 @@ export default function PrivilegesPage({
     typeof searchParams.campaign === 'string' && /^[a-z0-9][a-z0-9-]{1,48}$/.test(searchParams.campaign)
       ? searchParams.campaign
       : undefined;
-  const state = searchParams.state === 'verified' || searchParams.state === 'link-invalid' ? searchParams.state : undefined;
+  // A verified address has its own page now. Kept for links already in
+  // mailboxes that still carry the old `?state=verified`.
+  if (searchParams.state === 'verified') redirect('/guest/privileges/welcome');
+  const state = searchParams.state === 'link-invalid' ? searchParams.state : undefined;
 
   return <PrivilegesClient property={property} campaign={campaign} initialState={state} />;
 }

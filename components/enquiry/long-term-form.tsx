@@ -24,6 +24,7 @@
  */
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { Loader as Loader2 } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
@@ -39,10 +40,10 @@ import { brand, ENQUIRY_ENDPOINT } from '@/lib/content/brand';
 import { todayIso } from '@/lib/booking/availability';
 import { CtaButton } from '@/components/ui-kit/cta';
 import { DateField } from '@/components/ui-kit/date-field';
+import { firstNameOf, saveReceipt } from '@/lib/success/receipt';
 import {
   ContactFields,
   EMAIL_PATTERN,
-  EnquirySuccess,
   inputClass,
   labelClass,
   OptionalHint,
@@ -50,7 +51,7 @@ import {
   PrivacyNotice,
 } from '@/components/enquiry/enquiry-fields';
 
-type Status = 'idle' | 'sending' | 'success' | 'error';
+type Status = 'idle' | 'sending' | 'error';
 
 /** Who is enquiring. Determines which legal framework a tenancy would fall
  *  under, which is why it is asked — not as a qualification filter. */
@@ -91,6 +92,7 @@ export function LongTermEnquiryForm({
 }) {
   const { locale } = useI18n();
   const de = locale === 'de';
+  const router = useRouter();
 
   const units = lettableUnits();
   const preselected = unitSlug ? getRentalUnit(unitSlug) : undefined;
@@ -168,22 +170,24 @@ export function LongTermEnquiryForm({
       });
 
       if (!response.ok) throw new Error(`Rental enquiry failed with status ${response.status}`);
-      setStatus('success');
+      // A company, or a commercial unit, is a business conversation and gets
+      // the business confirmation; everything else is a home.
+      const business = form.party === 'company' || form.interest === 'long-term-commercial';
+      const kind = business ? 'business-enquiry' : 'rental-enquiry';
+      saveReceipt(kind, {
+        firstName: firstNameOf(form.name),
+        unitSlug: unit?.slug,
+        party: form.party,
+        request: form.request,
+        interest: form.interest || undefined,
+      });
+      onClose();
+      router.push(`/thank-you/${kind}`);
     } catch {
       setStatus('error');
     }
   };
 
-  if (status === 'success') {
-    return (
-      <EnquirySuccess
-        locale={locale}
-        firstName={form.name.split(' ')[0]}
-        title={de ? 'Ihre Mietanfrage ist bei uns' : 'Your rental enquiry has arrived'}
-        onClose={onClose}
-      />
-    );
-  }
 
   return (
     <motion.form initial={false} onSubmit={handleSubmit} className="px-6 py-6 space-y-5" noValidate>

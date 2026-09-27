@@ -25,6 +25,7 @@
  */
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { Loader as Loader2 } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
@@ -33,10 +34,10 @@ import { brand, ENQUIRY_ENDPOINT } from '@/lib/content/brand';
 import { MAX_GUESTS, MIN_GUESTS, nextDayIso, todayIso, type StayQuery } from '@/lib/booking/availability';
 import { CtaButton } from '@/components/ui-kit/cta';
 import { DateField } from '@/components/ui-kit/date-field';
+import { firstNameOf, saveReceipt } from '@/lib/success/receipt';
 import {
   ContactFields,
   EMAIL_PATTERN,
-  EnquirySuccess,
   inputClass,
   labelClass,
   OptionalHint,
@@ -44,7 +45,7 @@ import {
   PrivacyNotice,
 } from '@/components/enquiry/enquiry-fields';
 
-type Status = 'idle' | 'sending' | 'success' | 'error';
+type Status = 'idle' | 'sending' | 'error';
 
 export function ShortTermEnquiryForm({
   unitSlug,
@@ -57,6 +58,7 @@ export function ShortTermEnquiryForm({
 }) {
   const { locale } = useI18n();
   const de = locale === 'de';
+  const router = useRouter();
 
   const [form, setForm] = useState({
     apartment: unitSlug ?? '',
@@ -114,22 +116,22 @@ export function ShortTermEnquiryForm({
       });
 
       if (!response.ok) throw new Error(`Enquiry failed with status ${response.status}`);
-      setStatus('success');
+      // The confirmation is a page of its own (/thank-you/stay-enquiry). The
+      // dialog lives in the persistent layout, so it closes before we leave.
+      saveReceipt('stay-enquiry', {
+        firstName: firstNameOf(form.name),
+        unitSlug: selected?.slug,
+        arrival: form.arrival || undefined,
+        departure: form.departure || undefined,
+        guests: Number(form.guests) || undefined,
+      });
+      onClose();
+      router.push('/thank-you/stay-enquiry');
     } catch {
       setStatus('error');
     }
   };
 
-  if (status === 'success') {
-    return (
-      <EnquirySuccess
-        locale={locale}
-        firstName={form.name.split(' ')[0]}
-        title={de ? 'Ihre Buchungsanfrage ist bei uns' : 'Your booking request has arrived'}
-        onClose={onClose}
-      />
-    );
-  }
 
   // Only units that declare the 'short-term' mode and are ready today. A
   // commercial unit can never appear in this list.

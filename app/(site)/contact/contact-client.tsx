@@ -8,14 +8,17 @@ import { Reveal } from '@/components/ui-kit/reveal';
 import { EnquiryButton } from '@/components/enquiry/enquiry-button';
 import { label } from '@/components/ui-kit/cta';
 import { LocationCards } from '@/components/contact/location-cards';
+import { GeneralQuestionForm } from '@/components/contact/general-question-form';
 
 /**
  * Contact.
  *
- * It maintains no form of its own. Each channel points at the journey that
- * already owns it — the accommodation channel hands the visitor the apartments,
- * where a booking actually starts — so there is no second, subtly different
- * copy of a flow to keep in step.
+ * Each channel points at the journey that already owns it — the
+ * accommodation channel hands the visitor the apartments, where a booking
+ * actually starts — so there is no second, subtly different copy of a flow to
+ * keep in step. The one form here is for the general question, which no other
+ * journey owns (components/contact/general-question-form.tsx); it sits after
+ * the router, so a visitor is shown the faster route first.
  *
  * No email address is shown: none has been confirmed. See contact.email in
  * lib/content/brand.ts. Nothing here invents one.
@@ -168,6 +171,33 @@ export default function ContactClient() {
                   </Link>
                 </div>
               ))}
+            </div>
+          </Reveal>
+
+          <Reveal delay={0.12}>
+            <div
+              id="frage"
+              className="mt-10 grid gap-8 p-7 lg:grid-cols-[0.8fr_1.2fr] lg:gap-12 lg:p-10"
+              style={{
+                background: 'hsl(var(--card))',
+                border: '1px solid hsl(var(--border))',
+                borderRadius: 'var(--radius-lg)',
+              }}
+            >
+              <div>
+                <p className="eyebrow">{de ? 'Allgemeine Frage' : 'A general question'}</p>
+                <div className="rule-gold mt-4 mb-5" aria-hidden="true" />
+                <h2 className="display-3">{de ? 'Alles andere fragen Sie hier' : 'For everything else, ask here'}</h2>
+                <p className="body-copy mt-3 text-[14px]">
+                  {de
+                    ? 'Zur Stadt, zu einer Rechnung, zu einer Zusammenarbeit — oder wenn Sie nicht sicher sind, wohin Ihre Frage gehört.'
+                    : 'About the city, an invoice, working together — or when you are not sure where your question belongs.'}
+                </p>
+                <p className="mt-3 text-[13px] text-muted-foreground">
+                  {de ? contact.responseWindow.de : contact.responseWindow.en}
+                </p>
+              </div>
+              <GeneralQuestionForm />
             </div>
           </Reveal>
 

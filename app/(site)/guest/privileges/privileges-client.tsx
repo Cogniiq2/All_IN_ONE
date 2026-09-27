@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useI18n } from '@/lib/i18n';
@@ -106,6 +107,7 @@ export default function PrivilegesClient({
   const { locale } = useI18n();
   const t = COPY[locale] ?? COPY.de;
 
+  const router = useRouter();
   const [phase, setPhase] = useState<Phase>(
     initialState === 'verified' ? 'sent' : initialState === 'link-invalid' ? 'invalid' : 'idle'
   );
@@ -133,7 +135,13 @@ export default function PrivilegesClient({
       }
       // Every other outcome is the same answer, by design: this endpoint
       // must not reveal whether an address is already known to us.
-      setPhase(response.ok ? 'sent' : 'error');
+      if (response.ok) {
+        // The confirmation has a page of its own. The button stays in its
+        // "one moment" state until the navigation lands.
+        router.push('/guest/privileges/check-inbox');
+        return;
+      }
+      setPhase('error');
     } catch {
       setPhase('error');
     }

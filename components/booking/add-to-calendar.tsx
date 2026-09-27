@@ -32,7 +32,7 @@ import {
 } from '@/lib/booking/calendar';
 import { CtaButton } from '@/components/ui-kit/cta';
 
-export function AddToCalendar({ event }: { event: CalendarEvent }) {
+export function AddToCalendar({ event, invert = false }: { event: CalendarEvent; invert?: boolean }) {
   const { locale } = useI18n();
   const de = locale === 'de';
   const reduce = useReducedMotion();
@@ -60,6 +60,7 @@ export function AddToCalendar({ event }: { event: CalendarEvent }) {
     <div>
       <CtaButton
         variant="secondary"
+        invert={invert}
         onClick={() => setOpen((current) => !current)}
         ariaLabel={de ? 'Zum Kalender hinzufügen' : 'Add to calendar'}
       >
@@ -82,11 +83,15 @@ export function AddToCalendar({ event }: { event: CalendarEvent }) {
               href={googleCalendarUrl(event)}
               target="_blank"
               rel="noopener noreferrer"
-              className="cta-secondary"
+              className={invert ? 'cta-secondary cta-secondary-invert' : 'cta-secondary'}
             >
               Google Calendar
             </a>
-            <button type="button" onClick={downloadIcs} className="cta-secondary">
+            <button
+              type="button"
+              onClick={downloadIcs}
+              className={invert ? 'cta-secondary cta-secondary-invert' : 'cta-secondary'}
+            >
               <Download className="h-4 w-4" aria-hidden="true" />
               {de ? 'Apple Kalender / .ics' : 'Apple Calendar / .ics'}
             </button>
