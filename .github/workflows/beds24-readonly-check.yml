@@ -493,6 +493,43 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      # ── PART A3 — WRITE-TEST CLEANUP VERIFICATION (read-only) ──────────
+      # After write-test run 38301108120: booking 94583556 (BLG-TEST99) on
+      # Schulstraße I, night 2026-12-11. Reads its status, offerId and
+      # infoItems (no guest fields), both rooms' calendars around the night,
+      # and the status of every booking arriving in that window. GET only.
+      - name: "Part A3 — verify write-test cleanup (read-only)"
+        if: always()
+        continue-on-error: true
+        env:
+          BEDS24_REFRESH_TOKEN: ${{ secrets.BEDS24_REFRESH_TOKEN }}
+        run: |
+          set -euo pipefail
+          cat <<'NODE_EOF' > "$RUNNER_TEMP/cleanup-check.mjs"
+          const BASE = 'https://beds24.com/api/v2';
+          const auth = await fetch(`${BASE}/authentication/token`, { headers: { accept: 'application/json', refreshToken: process.env.BEDS24_REFRESH_TOKEN?.trim() ?? '' } });
+          const token = (await auth.json().catch(() => null))?.token;
+          if (!token) { console.log(`✗ auth failed HTTP ${auth.status}`); process.exit(1); }
+          const get = async (path, params) => {
+            const r = await fetch(`${BASE}${path}?${new URLSearchParams(params)}`, { headers: { accept: 'application/json', token } });
+            return { status: r.status, body: await r.json().catch(() => null) };
+          };
+          const b = await get('/bookings', { id: '94583556', includeInfoItems: 'true', includeInvoiceItems: 'false' });
+          const bk = b.body?.data?.[0];
+          console.log(`booking 94583556 → HTTP ${b.status}: status=${bk?.status} subStatus=${bk?.subStatus} offerId=${bk?.offerId} price=${bk?.price} arrival=${bk?.arrival} departure=${bk?.departure} reference=${bk?.reference}`);
+          console.log(`  infoItems: ${JSON.stringify((bk?.infoItems ?? []).map((i) => ({ code: i.code, text: i.text })))}`);
+          console.log(`  notes contain marker: ${String(bk?.notes ?? '').includes('Bedroom setup: 2 Schlafzimmer')}`);
+          for (const [label, propertyId, roomId] of [['schulstrasse-i', '354659', '731147'], ['schulstrasse-ii', '354658', '731146']]) {
+            const c = await get('/inventory/rooms/calendar', { propertyId, roomId, startDate: '2026-12-08', endDate: '2026-12-15', includeNumAvail: 'true' });
+            const runs = (c.body?.data ?? []).flatMap((r) => r.calendar ?? []).map((r) => `${r.from}..${r.to ?? r.from}:numAvail=${r.numAvail}`);
+            console.log(`${label} calendar 12-08..12-15 → HTTP ${c.status}: ${runs.join(' ')}`);
+            const list = await get('/bookings', { propertyId, roomId, arrivalFrom: '2026-12-01', arrivalTo: '2026-12-15' });
+            console.log(`${label} bookings arriving 12-01..12-15: ${JSON.stringify((list.body?.data ?? []).map((x) => ({ id: x.id, status: x.status, arrival: x.arrival, departure: x.departure, reference: x.reference === 'BLG-TEST99' ? 'BLG-TEST99' : (x.reference ? '(other)' : null) })))}`);
+          }
+          console.log('GET only. Nothing was created or modified.');
+          NODE_EOF
+          node "$RUNNER_TEMP/cleanup-check.mjs"
+
       # ── PART B ─────────────────────────────────────────────────────────
       # No credential from here on. Feature-branch code executes only in
       # these steps, and only after the token has gone out of scope.
