@@ -395,10 +395,15 @@ jobs:
                     console.log(lines.slice(Math.max(0, i - before), i + after).join('\n'));
                   });
                 };
-                around('/inventory/rooms/offers', 0, 90, 1);
-                around('offerId', 4, 6, 12);
-                around('numAdult', 2, 4, 8);
-                around('infoItems', 3, 14, 4);
+                // Run 1 established the offers parameters (numAdults/numChildren)
+                // and that bookings carry offerId and infoItems. Run 2 prints
+                // the booking WRITE schema itself, to see what POST accepts.
+                const writeSchema = lines.findIndex((l, i) => i > 3300 && l.includes('statusCode:'));
+                console.log(`--- booking write schema around line ${writeSchema + 1}`);
+                console.log(lines.slice(Math.max(0, writeSchema - 120), writeSchema + 140).join('\n'));
+                const info = lines.findIndex((l, i) => i > 2990 && l.includes('infoItems:'));
+                console.log(`--- infoItems schema around line ${info + 1}`);
+                console.log(lines.slice(info, info + 40).join('\n'));
                 break;
               }
             } catch (e) { console.log(`${url} → ${e.message}`); }
@@ -434,17 +439,21 @@ jobs:
           console.log('\n══ 3. /inventory/rooms/offers — raw responses ══');
           const cases = [
             { nights: 1, guests: 2 }, { nights: 2, guests: 2 }, { nights: 3, guests: 2 }, { nights: 7, guests: 2 },
-            { nights: 1, guests: 1 }, { nights: 3, guests: 3 }, { nights: 3, guests: 4 }, { nights: 1, guests: 4 },
+            { nights: 1, guests: 1 }, { nights: 1, guests: 3 }, { nights: 3, guests: 3 }, { nights: 3, guests: 4 },
+            { nights: 1, guests: 4 }, { nights: 2, guests: 4 }, { nights: 7, guests: 4 },
           ];
           const captured = [];
           for (const u of UNITS) {
             for (const c of cases) {
               const departure = addDays(arrival, c.nights);
-              // The spelling the adapter sends today, and the plural form, so
-              // the run shows which one Beds24 actually honours.
-              for (const spelling of ['numAdult', 'numAdults']) {
-                if (spelling === 'numAdults' && !(c.nights === 3 && (c.guests === 2 || c.guests === 4))) continue;
-                const params = { propertyId: u.propertyId, roomId: u.roomId, arrival, departure, [spelling]: String(c.guests) };
+              // Run 1: `numAdult` (singular) is refused with HTTP 400 code 2002
+              // "Occupancy not defined"; the spec names numAdults/numChildren.
+              // Also one call filtered by the spec's `offerId` query parameter.
+              for (const spelling of ['numAdults', 'numAdults+offerId=1', 'numAdults+offerId=2']) {
+                if (spelling !== 'numAdults' && !(c.nights === 1 && c.guests === 2)) continue;
+                const params = { propertyId: u.propertyId, roomId: u.roomId, arrival, departure, numAdults: String(c.guests), numChildren: '0' };
+                if (spelling.endsWith('offerId=1')) params.offerId = '1';
+                if (spelling.endsWith('offerId=2')) params.offerId = '2';
                 const r = await get('/inventory/rooms/offers', params);
                 const label = `${u.slug} · ${c.nights}n · ${c.guests}g · ${spelling}`;
                 console.log(`\n--- ${label} → HTTP ${r.status}`);
@@ -459,7 +468,7 @@ jobs:
           console.log('\n══ 4. Booking object field names (values never printed) ══');
           const keys = new Set(); const infoCodes = new Set(); const offerIds = new Set();
           for (const u of UNITS) {
-            const r = await get('/bookings', { propertyId: u.propertyId, arrivalFrom: addDays(start, -400), arrivalTo: addDays(start, -21) });
+            const r = await get('/bookings', { propertyId: u.propertyId, arrivalFrom: addDays(start, -400), arrivalTo: addDays(start, -21), includeInfoItems: 'true' });
             for (const b of r.body?.data ?? []) {
               Object.keys(b).forEach((k) => keys.add(k));
               for (const it of b.infoItems ?? []) if (it?.code) infoCodes.add(String(it.code));
