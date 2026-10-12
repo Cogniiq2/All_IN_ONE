@@ -212,6 +212,8 @@ export interface Beds24Booking {
    * `0` on the existing channel reservations, which carry no website offer.
    */
   offerId?: number | string;
+  /** Internal notes (not guest-facing). The hold writes the bedroom marker here too. */
+  notes?: string;
   /** Structured key/value notes on the booking (spec: `infoItems[].code/.text`). */
   infoItems?: Array<{ id?: number; code?: string; text?: string }>;
 

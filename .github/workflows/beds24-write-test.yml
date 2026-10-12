@@ -16,9 +16,9 @@
 # ── Why it cannot fire by accident ───────────────────────────────────────
 #   1. `workflow_dispatch` only — never on push, PR or schedule.
 #   2. A typed confirmation input. The job is skipped unless it reads
-#      exactly HOLD-AND-RELEASE.
+#      exactly HOLD-CONFIRM-RELEASE.
 #   3. The test itself refuses to write unless
-#      BEDS24_WRITE_TEST_CONFIRM=HOLD-AND-RELEASE is in its environment.
+#      BEDS24_WRITE_TEST_CONFIRM=HOLD-CONFIRM-RELEASE is in its environment.
 #   4. It lives outside `tests/` under its own vitest config, so `npm test`
 #      cannot reach it.
 #
@@ -38,13 +38,14 @@
 
 name: "[TEMP] [LIVE] ⚠ Beds24 WRITE test — hold and release"
 
-# LIVE: creates and releases ONE real hold on the real Beds24 account.
+# LIVE: creates ONE real booking on the real Beds24 account (Offer 2, bedroom
+# marker), promotes it to the confirmed status, then cancels it.
 # Manual only — never on push, pull_request or schedule.
 on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Type HOLD-AND-RELEASE to confirm a real write to Beds24'
+        description: 'Type HOLD-CONFIRM-RELEASE to confirm a real write to Beds24'
         required: true
         default: ''
         type: string
@@ -71,7 +72,7 @@ jobs:
   hold-and-release:
     name: Create one hold, verify, release, verify
     # The typed confirmation. Anything else and the job does not start.
-    if: inputs.confirm == 'HOLD-AND-RELEASE'
+    if: inputs.confirm == 'HOLD-CONFIRM-RELEASE'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -96,12 +97,12 @@ jobs:
         # manager. This is the cheap gate before the expensive one.
         run: npm test
 
-      - name: "⚠ WRITE — create hold, verify blocked, release, verify restored"
+      - name: "⚠ WRITE — hold (Offer 2 + marker), verify stored + blocked, confirm, verify blocked, cancel, verify restored"
         id: write
         env:
           BEDS24_REFRESH_TOKEN: ${{ secrets.BEDS24_REFRESH_TOKEN }}
           BEDS24_MODE: live
-          BEDS24_WRITE_TEST_CONFIRM: HOLD-AND-RELEASE
+          BEDS24_WRITE_TEST_CONFIRM: HOLD-CONFIRM-RELEASE
         run: npm run test:beds24-write
 
       - name: Publish summary

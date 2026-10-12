@@ -32,7 +32,7 @@
  *
  * ── Why it cannot run by accident ────────────────────────────────────────
  * It lives outside `tests/`, under a config `npm test` does not use, and it
- * refuses to execute without `BEDS24_WRITE_TEST_CONFIRM=HOLD-AND-RELEASE`.
+ * refuses to execute without `BEDS24_WRITE_TEST_CONFIRM=HOLD-CONFIRM-RELEASE`.
  *
  * ── What it deliberately does NOT touch ──────────────────────────────────
  * Stripe, PayPal, n8n, payments, invoices, Supabase, booking intents, the
@@ -41,21 +41,23 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { beds24LiveProvider } from '@/lib/integrations/beds24/live';
+import { BEDROOM_INFO_CODE, beds24LiveProvider } from '@/lib/integrations/beds24/live';
+import { beds24Request } from '@/lib/integrations/beds24/client';
+import type { Beds24BookingsResponse } from '@/lib/integrations/beds24/types';
 import type { InventoryDay } from '@/lib/booking/types';
 import type { ProviderUnitRef } from '@/lib/integrations/provider';
 import { addDays } from '@/lib/booking/stay-rules';
 
 /* ── The guard ──────────────────────────────────────────────────────────── */
 
-const CONFIRMED = process.env.BEDS24_WRITE_TEST_CONFIRM === 'HOLD-AND-RELEASE';
+const CONFIRMED = process.env.BEDS24_WRITE_TEST_CONFIRM === 'HOLD-CONFIRM-RELEASE';
 
 describe('write-test guard', () => {
   it('refuses to write to Beds24 without explicit confirmation', () => {
     // A red test and zero writes is the correct outcome of an accidental run.
     expect(
       CONFIRMED,
-      'Set BEDS24_WRITE_TEST_CONFIRM=HOLD-AND-RELEASE to allow this test to write to Beds24.'
+      'Set BEDS24_WRITE_TEST_CONFIRM=HOLD-CONFIRM-RELEASE to allow this test to write to Beds24.'
     ).toBe(true);
   });
 });
@@ -126,7 +128,7 @@ async function readNight(date: string): Promise<InventoryDay | undefined> {
   return dayIn(days, date);
 }
 
-describe.runIf(CONFIRMED)('Beds24 hold and release, against the live account', () => {
+describe.runIf(CONFIRMED)('Beds24 hold, confirm and release, against the live account', () => {
   beforeAll(async () => {
     const from = addDays(new Date().toISOString().slice(0, 10), MIN_LEAD_DAYS);
     const to = addDays(from, SEARCH_DAYS);
@@ -153,7 +155,7 @@ describe.runIf(CONFIRMED)('Beds24 hold and release, against the live account', (
     );
   });
 
-  it('holds the night, confirms it is blocked, releases it, and confirms it is free again', async () => {
+  it('holds the night with Offer 2 and the bedroom marker, confirms it, verifies both block, then cancels it and verifies it is free', async () => {
     // ── Phase 1: the night must be free RIGHT NOW ──────────────────────
     // Re-read immediately before writing rather than trusting the search
     // above. This is also what makes a repeat run safe: a hold left behind
@@ -167,7 +169,20 @@ describe.runIf(CONFIRMED)('Beds24 hold and release, against the live account', (
         'If a previous run left a hold behind, cancel it in Beds24 first.'
     ).toBe(true);
 
-    const priceCents = baseline?.displayPriceCents ?? before!.displayPriceCents ?? 0;
+    // ── Phase 1b: price it the way the website does — the LIVE offer for
+    // "2 Schlafzimmer" (Offer 2), through the real adapter and mapping. ──
+    const quote = await beds24LiveProvider.fetchOffer({
+      unit: UNIT,
+      unitSlug: UNIT_SLUG,
+      checkIn,
+      checkOut,
+      adults: 1,
+      children: 0,
+      bedroomPackage: 'two_bedroom',
+    });
+    expect(quote.bedroomPricing).toEqual({ status: 'configured', offerId: 2 });
+    console.log(`  Live quote: Offer 2, ${quote.totalCents / 100} ${quote.currency}`);
+    const priceCents = quote.totalCents;
 
     try {
       // ── Phase 2: create the hold ─────────────────────────────────────
@@ -212,13 +227,46 @@ describe.runIf(CONFIRMED)('Beds24 hold and release, against the live account', (
           'close inventory for this property — see BOOKING RULES → BOOKING STATUS in Beds24. ' +
           'The hold is still being released by this test.'
       ).toBe(false);
+
+      // ── Phase 3b: did Beds24 STORE the offer and the bedroom marker? ──
+      // Read back with infoItems (the adapter's own read leaves them out).
+      // Soft assertions: every finding is reported, and the booking is
+      // still promoted and released whatever this phase finds.
+      const stored = await beds24Request<Beds24BookingsResponse>({
+        path: '/bookings',
+        query: { id: createdBookingId!, includeInfoItems: 'true', includeInvoiceItems: 'false' },
+      });
+      const record = stored.data?.[0];
+      const marker = (record?.infoItems ?? []).find((i) => i.code === BEDROOM_INFO_CODE);
+      console.log(`  Read back: offerId=${record?.offerId} status=${record?.status} price=${record?.price}`);
+      console.log(`  Read back: infoItems ${BEDROOM_INFO_CODE}=${JSON.stringify(marker?.text ?? null)}`);
+      console.log(`  Read back: notes contain marker=${String(record?.notes ?? '').includes('Bedroom setup: 2 Schlafzimmer')}`);
+      expect.soft(Number(record?.offerId), 'offerId did not persist on the Beds24 booking').toBe(2);
+      expect.soft(marker?.text, 'the bedroom-setup infoItem did not persist').toBe('Bedroom setup: 2 Schlafzimmer');
+      expect.soft(String(record?.notes ?? ''), 'the notes marker did not persist').toContain('Bedroom setup: 2 Schlafzimmer');
+      expect.soft(Math.round(Number(record?.price) * 100), 'the verified total did not persist').toBe(priceCents);
+
+      // ── Phase 3c: promote to the CONFIRMED status, exactly as the
+      // finalizer does after payment — does that status block too? ──
+      console.log(`\n  Promoting ${createdBookingId} to the confirmed status…`);
+      const confirmedBooking = await beds24LiveProvider.confirmBooking(createdBookingId!);
+      const readConfirmed = await beds24LiveProvider.getBooking(createdBookingId!);
+      console.log(`  After confirm: status=${readConfirmed?.status ?? confirmedBooking.status} offerId=${readConfirmed?.offerId}`);
+      expect.soft(readConfirmed?.status, 'the booking did not land in the confirmed status').toBe('confirmed');
+      const whileConfirmed = await readNight(checkIn);
+      console.log(`  While confirmed: available=${whileConfirmed?.available} canCheckIn=${whileConfirmed?.canCheckIn}`);
+      expect(
+        whileConfirmed?.available,
+        `A CONFIRMED booking did NOT block ${checkIn}. Paid bookings would not protect ` +
+          'inventory — check BOOKING RULES → BOOKING STATUS in Beds24. The booking is still being cancelled.'
+      ).toBe(false);
     } finally {
       // ── Phase 4: release, always ─────────────────────────────────────
       // In `finally` so a failed assertion in phase 3 still gives the night
       // back. Leaving a night closed on Booking.com and Airbnb because a test
       // threw would be a real cost to the business.
       if (createdBookingId) {
-        console.log(`\n  Releasing hold ${createdBookingId}…`);
+        console.log(`\n  Cancelling test booking ${createdBookingId}…`);
         await beds24LiveProvider.releaseHold(createdBookingId, 'write_test_cleanup');
         console.log('  ✓ Release call completed.');
       }
@@ -237,7 +285,11 @@ describe.runIf(CONFIRMED)('Beds24 hold and release, against the live account', (
     ).toBe(true);
     expect(after?.canCheckIn).toBe(baseline?.canCheckIn);
 
-    console.log(`\n  ✓ Hold blocked the night and the release gave it back. Inventory restored.`);
+    const final = await beds24LiveProvider.getBooking(createdBookingId!);
+    console.log(`  Final booking status: ${final?.status}`);
+    expect(final?.status, 'the test booking is not cancelled').toBe('cancelled');
+
+    console.log(`\n  ✓ Hold and confirmed status both blocked the night; the cancellation gave it back.`);
   });
 
   afterAll(() => {

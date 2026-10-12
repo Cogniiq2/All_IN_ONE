@@ -12,7 +12,7 @@ import path from 'node:path';
  * `npm test`. The separation is the safety mechanism, not a convention.
  *
  * The test additionally refuses to execute unless
- * `BEDS24_WRITE_TEST_CONFIRM=HOLD-AND-RELEASE` is set, so even running this
+ * `BEDS24_WRITE_TEST_CONFIRM=HOLD-CONFIRM-RELEASE` is set, so even running this
  * config by accident writes nothing.
  *
  *     npm run test:beds24-write

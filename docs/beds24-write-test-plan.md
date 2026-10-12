@@ -104,7 +104,7 @@ Schulstraße II is not touched. One unit answers the question; a second doubles
 the blast radius for no extra information.
 
 ```
-0. GUARD        refuse unless BEDS24_WRITE_TEST_CONFIRM=HOLD-AND-RELEASE
+0. GUARD        refuse unless BEDS24_WRITE_TEST_CONFIRM=HOLD-CONFIRM-RELEASE
                 → zero network calls if unset
 
 1. OFFLINE      npm test (75 tests)
@@ -179,7 +179,7 @@ undocumented. Layers 1 and 2 do not depend on it.
 2. GitHub → **Actions** → **`[TEMP] ⚠ Beds24 WRITE test — hold and release`**
 3. **Run workflow**, selecting branch
    `claude/opernstrasse-ii-iii-calendar-cta-dates`
-4. In the **confirm** box type exactly: `HOLD-AND-RELEASE`
+4. In the **confirm** box type exactly: `HOLD-CONFIRM-RELEASE`
    Anything else and the job is skipped without starting.
 5. Watch it. Open the Beds24 calendar for Schulstraße I alongside — you should
    see the night close and reopen.
@@ -189,7 +189,7 @@ Locally, if you ever prefer:
 ```bash
 BEDS24_MODE=live \
 BEDS24_REFRESH_TOKEN=... \
-BEDS24_WRITE_TEST_CONFIRM=HOLD-AND-RELEASE \
+BEDS24_WRITE_TEST_CONFIRM=HOLD-CONFIRM-RELEASE \
 npm run test:beds24-write
 ```
 
@@ -215,8 +215,8 @@ separate, later, equally deliberate test.
 | Layer | Mechanism |
 |---|---|
 | Trigger | `workflow_dispatch` only. Never push, PR or schedule |
-| Input | Job skipped unless `confirm` is exactly `HOLD-AND-RELEASE` |
-| Environment | Test refuses to write without `BEDS24_WRITE_TEST_CONFIRM=HOLD-AND-RELEASE` |
+| Input | Job skipped unless `confirm` is exactly `HOLD-CONFIRM-RELEASE` |
+| Environment | Test refuses to write without `BEDS24_WRITE_TEST_CONFIRM=HOLD-CONFIRM-RELEASE` |
 | Location | Lives in `scripts/beds24-write-test/`, outside `tests/` |
 | Config | Its own `vitest.write-test.config.ts`; `npm test`'s `include` cannot reach it |
 
