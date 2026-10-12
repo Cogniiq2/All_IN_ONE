@@ -27,6 +27,8 @@ import 'server-only';
  * ══════════════════════════════════════════════════════════════════════════
  */
 
+import { bedroomPackageForOfferId } from '@/lib/integrations/beds24/bedroom-pricing';
+import type { BedroomPackage } from '@/lib/booking/types';
 import { beds24Request } from '@/lib/integrations/beds24/client';
 import { toCents } from '@/lib/integrations/beds24/mapper';
 import type { Beds24Booking, Beds24BookingsResponse } from '@/lib/integrations/beds24/types';
@@ -70,6 +72,15 @@ export interface ProviderReservation {
   providerCancelledAt?: string;
   /** The BoLaGio reference, when the provider echoes one back. Evidence of a direct booking. */
   bolagioReference?: string;
+  /** Beds24 `booking.offerId` as read (0 on channel reservations — observed live). */
+  externalOfferId?: number;
+  /**
+   * The bedroom setup, derived from `externalOfferId` through the same mapping
+   * the direct-booking flow uses (1 → one_bedroom, 2 → two_bedroom). Undefined
+   * for any other offer id — a Booking.com or Airbnb reservation's setup is
+   * unknown, and is never guessed from the party size.
+   */
+  bedroomPackage?: BedroomPackage;
   /** Exactly what arrived. Server-side only; never logged, never returned by an API. */
   raw: Beds24Booking;
 }
@@ -414,6 +425,8 @@ export function mapReservation(booking: Beds24Booking): ProviderReservation | Ma
     providerModifiedAt: timestamp(booking.modifiedTime ?? booking.modified),
     providerCancelledAt: timestamp(booking.cancelTime ?? booking.cancelledTime),
     bolagioReference: reference,
+    externalOfferId: offerIdOf(booking.offerId),
+    bedroomPackage: bedroomPackageForOfferId(booking.offerId),
     raw: booking,
   };
 }
@@ -572,4 +585,10 @@ export async function readReservationById(externalBookingId: string): Promise<Pr
   if (!row) return null;
   const mapped = mapReservation(row);
   return isMalformed(mapped) ? null : mapped;
+}
+
+/** A Beds24 offer id as an integer, or undefined. */
+function offerIdOf(value: unknown): number | undefined {
+  const n = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+  return typeof n === 'number' && Number.isInteger(n) && n >= 0 ? n : undefined;
 }

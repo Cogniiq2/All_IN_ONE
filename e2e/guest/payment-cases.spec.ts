@@ -24,7 +24,7 @@ test('G05 · declined instrument: "nichts abgebucht", payment denied, hold intac
   expect(row.payment_capture_id).toBeNull();
   // The guest tries again: the same attempt is replayed (no second hold), the same order is reused, and the capture succeeds.
   await sims.paypal.mode('capture', 'success');
-  await page.getByRole('button', { name: 'Verbindlich buchen' }).click();
+  await page.getByRole('button', { name: 'Zahlungspflichtig buchen' }).click();
   await expect(page.locator('[data-sim="paypal"]')).toBeVisible();
   expect(sql(`select count(*) from bolagio_booking_intents`)).toBe('1');
   const again = await createOrder(page);

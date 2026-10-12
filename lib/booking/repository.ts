@@ -348,6 +348,11 @@ export interface CreateIntentInput {
    * shut by DIRECT_BOOKING_ENABLED — writes it.
    */
   bedroomPackage: BedroomPackage;
+  /**
+   * The Beds24 offer the quote was priced on (1 = 1 Schlafzimmer, 2 = 2
+   * Schlafzimmer). Same migration, same reasoning as `bedroomPackage`.
+   */
+  beds24OfferId: number | null;
   currency: string;
   guest: GuestDetails;
   idempotencyKey: string;
@@ -410,6 +415,7 @@ export async function createIntent(input: CreateIntentInput): Promise<IntentReco
       adults: input.adults,
       children: input.children,
       bedroom_package: input.bedroomPackage,
+      beds24_offer_id: input.beds24OfferId,
       currency: input.currency,
       guest_first_name: input.guest.firstName,
       guest_last_name: input.guest.lastName,

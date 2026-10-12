@@ -61,7 +61,8 @@ test('G02 · the same journey in English records the locale and renders English 
   await page.locator('#bk-phone').fill('+1 555 0100');
   await page.getByRole('button', { name: 'Continue' }).click();
   await page.getByRole('button', { name: /PayPal/ }).first().click();
-  await page.getByRole('button', { name: 'Book now' }).click();
+  // The order button's English label (ORDER_BUTTON_LABEL, § 312j BGB).
+  await page.getByRole('button', { name: 'Book and pay' }).click();
   const orderId = await createOrder(page);
   await approveAndReturn(page, orderId, true);
   await expect(page.getByRole('heading', { name: 'Your booking is confirmed' })).toBeVisible();
@@ -93,7 +94,7 @@ test('G04 · the buyer cancels at PayPal: the dialog returns to the payment step
   const reference = await driveToPayment(page);
   await createOrder(page);
   await buyerCancels(page);
-  await expect(page.getByRole('button', { name: 'Verbindlich buchen' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Zahlungspflichtig buchen' })).toBeVisible();
   expect(intent(reference)?.status).toBe('payment_session_created');
   expect(intent(reference)?.payment_status).toBe('order_created');
 

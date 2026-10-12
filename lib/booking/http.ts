@@ -51,8 +51,10 @@ const STATUS_BY_CODE: Record<BookingErrorCode, number> = {
   // A 409 here would invite the browser to try again, which is the one thing
   // an uncertain provider outcome must not do.
   pending_verification: 409,
-  // No confirmed price for the chosen bedroom package: a gate, like the terms.
-  pricing_unconfigured: 403,
+  // The package's Beds24 offer is not offered for this stay and party.
+  bedroom_setup_unavailable: 409,
+  // The live total moved: the body carries the fresh quote to confirm.
+  price_changed: 409,
   rate_limited: 429,
   unexpected: 500,
 };
@@ -67,7 +69,13 @@ const STATUS_BY_CODE: Record<BookingErrorCode, number> = {
 export function bookingErrorResponse(cause: unknown, logger: BookingLogger): NextResponse {
   if (cause instanceof BookingError) {
     return NextResponse.json(
-      { error: cause.code, ...(cause.meta ? { meta: cause.meta } : {}) },
+      {
+        error: cause.code,
+        ...(cause.meta ? { meta: cause.meta } : {}),
+        // Only `price_changed` carries one: the fresh, server-priced quote the
+        // guest must see before confirming again. Never a client amount.
+        ...(cause.quote ? { quote: cause.quote } : {}),
+      },
       { status: STATUS_BY_CODE[cause.code], headers: { ...NO_STORE, 'x-correlation-id': logger.correlationId } }
     );
   }

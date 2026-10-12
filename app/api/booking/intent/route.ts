@@ -5,7 +5,8 @@
  * BEFORE any money moves. Returns the guest-facing reference and the
  * authoritative quote.
  *
- *   { unitSlug, checkIn, checkOut, adults, children, bedroomPackage, guest{…}, acceptedTerms, attemptId? }
+ *   { unitSlug, checkIn, checkOut, adults, children, bedroomPackage, guest{…}, acceptedTerms,
+ *     expectedTotalCents, attemptId? }
  *   → { intent: BookingIntentView, quote: BookingQuote }
  *
  * ── What it will not accept ──────────────────────────────────────────────
@@ -66,6 +67,13 @@ export async function POST(request: NextRequest) {
         // The term versions the guest was shown. Malformed reads as absent,
         // which the service refuses as `terms_changed` — never as accepted.
         acceptedTerms: parseAcceptedVersions(body.acceptedTerms),
+        // The total the guest confirmed — compared with the fresh Beds24
+        // total, never used as one. Anything but a non-negative integer reads
+        // as absent, which the service answers with `price_changed`.
+        expectedTotalCents:
+          typeof body.expectedTotalCents === 'number' && Number.isInteger(body.expectedTotalCents) && body.expectedTotalCents >= 0
+            ? body.expectedTotalCents
+            : undefined,
       },
       logger
     );

@@ -35,7 +35,7 @@ vi.mock('@/lib/integrations/beds24', () => ({
     fetchOffer: async (r: { unitSlug: string; checkIn: string; checkOut: string; bedroomPackage: string }) => ({
       unitSlug: r.unitSlug, checkIn: r.checkIn, checkOut: r.checkOut,
       nights: Math.round((Date.parse(r.checkOut) - Date.parse(r.checkIn)) / 86_400_000),
-      adults: 2, children: 0, bedroomPackage: r.bedroomPackage, bedroomPricing: { status: 'not_configured' }, currency: 'EUR', totalCents: 100, components: [], expiresAt: '2030-01-01T00:00:00Z',
+      adults: 2, children: 0, bedroomPackage: r.bedroomPackage, bedroomPricing: { status: 'configured', offerId: 2 }, currency: 'EUR', totalCents: 100, components: [], expiresAt: '2030-01-01T00:00:00Z',
     }),
   }),
 }));

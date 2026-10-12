@@ -387,6 +387,9 @@ export function BookingModal() {
         // the booking if they are no longer the ones in force, and stores
         // them with the booking as evidence of what the guest agreed to.
         acceptedTerms: versionsOf(quote.terms),
+        // The total on screen. The server compares it with a fresh Beds24
+        // offer and refuses (`price_changed`) rather than charge anything else.
+        expectedTotalCents: quote.totalCents,
       });
 
       setReference(intent.reference);
@@ -437,6 +440,11 @@ export function BookingModal() {
         setDates((d) => ({ arrival: d.arrival, departure: undefined }));
         setDirection(-1);
         setStep(2);
+      }
+      // Beds24 re-priced the stay: show the server's fresh quote (never a
+      // locally adjusted one) and let the guest confirm the new total.
+      if (cause instanceof BookingRequestError && cause.code === 'price_changed' && cause.quote) {
+        setQuote(cause.quote);
       }
       // The terms changed under the guest: fetch the current ones so they are
       // what is on screen when the button is pressed again.

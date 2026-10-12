@@ -30,6 +30,11 @@ export const OPS_CODES = {
   BEDS24_HOLD_OUTCOME_UNKNOWN: 1,
   /** Beds24 answered, and the answer was no. Safe; nothing was created. */
   BEDS24_HOLD_REJECTED: 4,
+  /**
+   * The live Beds24 offer changed between the quote and the hold. Safe:
+   * nothing was created and the guest was shown the new total to confirm.
+   */
+  BEDS24_PRICE_CHANGED: 4,
   /** The hold was created but the booking Beds24 returned is not ours. */
   BEDS24_HOLD_MISMATCH: 1,
   /** The hold exists but the nights did not close. Overbooking risk, now. */

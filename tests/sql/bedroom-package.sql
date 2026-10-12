@@ -51,7 +51,29 @@ begin
 
   if not t_bp_insert('BLG-BP0009', null, 4, 0) then raise exception 'FAILED: a pre-migration (null) row refused'; end if;
   raise notice 'ok — a row without a package (written before the migration) stays valid';
+
+  update bolagio_booking_intents set beds24_offer_id = 2 where reference = 'BLG-BP0005';
+  begin
+    update bolagio_booking_intents set beds24_offer_id = 0 where reference = 'BLG-BP0005';
+    raise exception 'FAILED: offer id 0 stored on an intent';
+  exception when check_violation then null;
+  end;
+  raise notice 'ok — an intent records a positive Beds24 offer id';
+
+  insert into bolagio_reservations (unit_id, provider, external_booking_id, provider_status, status_class, check_in, check_out, source, external_offer_id, bedroom_package)
+  select id, 'beds24', 'bp-ota-1', 'confirmed', 'active', date '2027-04-01', date '2027-04-03', 'booking_com', 0, null from bolagio_units where slug = 'schulstrasse-i';
+  insert into bolagio_reservations (unit_id, provider, external_booking_id, provider_status, status_class, check_in, check_out, source, external_offer_id, bedroom_package)
+  select id, 'beds24', 'bp-direct-1', 'confirmed', 'active', date '2027-04-05', date '2027-04-07', 'direct', 2, 'two_bedroom' from bolagio_units where slug = 'schulstrasse-i';
+  begin
+    insert into bolagio_reservations (unit_id, provider, external_booking_id, provider_status, status_class, check_in, check_out, source, bedroom_package)
+    select id, 'beds24', 'bp-bad-1', 'confirmed', 'active', date '2027-04-09', date '2027-04-10', 'direct', 'suite' from bolagio_units where slug = 'schulstrasse-i';
+    raise exception 'FAILED: an unknown bedroom package was imported';
+  exception when check_violation then null;
+  end;
+  raise notice 'ok — reservations keep the offer id; a channel reservation''s setup stays unknown; only the two packages are storable';
 end $$;
+
+delete from bolagio_reservations where external_booking_id like 'bp-%';
 
 delete from bolagio_booking_intents;
 drop function t_bp_insert(text, text, int, int);

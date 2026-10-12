@@ -26,12 +26,7 @@ import 'server-only';
  * ══════════════════════════════════════════════════════════════════════════
  */
 
-import {
-  bedroomPricingTestOverride,
-  directBookingPermitted,
-  inventoryMonths,
-  quoteMinutes,
-} from '@/lib/booking/config';
+import { directBookingPermitted, inventoryMonths, quoteMinutes } from '@/lib/booking/config';
 import { appEnvironment } from '@/lib/config/environment';
 import { transitionIntent } from '@/lib/booking/commands';
 import { acquireHold, HoldError } from '@/lib/booking/hold';
@@ -80,7 +75,9 @@ import { ProviderError } from '@/lib/integrations/provider';
 export class BookingError extends Error {
   constructor(
     readonly code: BookingErrorCode,
-    readonly meta?: Record<string, number | string | boolean>
+    readonly meta?: Record<string, number | string | boolean>,
+    /** With `price_changed`: the fresh quote the guest must see and confirm. */
+    readonly quote?: BookingQuote
   ) {
     super(code);
     this.name = 'BookingError';
@@ -108,6 +105,10 @@ function fromProvider(error: unknown): BookingError {
         return new BookingError('stay_rules', error.meta);
       case 'rejected':
         return new BookingError('unexpected');
+      case 'offer_unavailable':
+        // The package's own offer is not offered for this stay and party, or
+        // the account no longer matches the mapping. Never another package.
+        return new BookingError('bedroom_setup_unavailable', error.meta);
       default:
         return new BookingError('provider_unavailable');
     }
@@ -234,21 +235,25 @@ export async function getQuote(
       currency: quote.currency,
       bedroomPackage: quote.bedroomPackage,
       bedroomPricing: quote.bedroomPricing.status,
+      offerId: 'offerId' in quote.bedroomPricing ? quote.bedroomPricing.offerId : undefined,
       durationMs: Date.now() - started,
     });
   } catch (cause) {
     const error = fromProvider(cause);
-    logger.warn('beds24.offer', {
+    // An offer that exists under the wrong name means the Beds24 account and
+    // the mapping disagree: an operations incident, not a guest's bad luck.
+    const fields = {
       unitSlug: unit.slug,
-      errorCode: error.code,
+      bedroomPackage: input.bedroomPackage,
+      reason: typeof error.meta?.reason === 'string' ? error.meta.reason : undefined,
       durationMs: Date.now() - started,
-    });
+    };
+    if (error.meta?.reason === 'offer_name_mismatch') {
+      logger.error('beds24.offer', undefined, { ...fields, errorCode: 'BEDS24_OFFER_MAPPING_MISMATCH' });
+    } else {
+      logger.warn('beds24.offer', { ...fields, errorCode: error.code });
+    }
     throw error;
-  }
-  // Local simulator runs only: see `bedroomPricingTestOverride`. The quote
-  // then SAYS it is a fixture, so the checkout labels it as test data.
-  if (quote.bedroomPricing.status === 'not_configured' && bedroomPricingTestOverride()) {
-    quote = { ...quote, bedroomPricing: { status: 'fixture' } };
   }
   return withBoLaGioTerms(quote);
 }
@@ -279,17 +284,19 @@ function withBoLaGioTerms(quote: BookingQuote): BookingQuote {
 /**
  * May this quote's price be charged for the bedroom package it names?
  *
- * Only when the provider has said the price IS that package's price. Today no
- * live quote can say so — `resolveBeds24BedroomPricing` reports the mapping as
- * not configured — so the answer on a live deployment is always no, and
- * `startBooking` refuses before an intent, a hold or a payment exists.
- *
- * Mock fixtures pass, so the flow stays testable end to end, but never on
- * production: a fixture price is not a price anyone may be charged.
+ *   configured  yes — the live Beds24 offer mapped to the package;
+ *   fixture     mock fixtures: yes for testing, never on production;
+ *   unverified  no — a replayed quote is not a fresh offer.
  */
 export function bedroomPricingBookable(quote: BookingQuote): boolean {
-  if (quote.bedroomPricing.status === 'fixture') return appEnvironment() !== 'production';
-  return false;
+  switch (quote.bedroomPricing.status) {
+    case 'configured':
+      return true;
+    case 'fixture':
+      return appEnvironment() !== 'production';
+    default:
+      return false;
+  }
 }
 
 /* ── Booking: intent + hold ────────────────────────────────────────────── */
@@ -305,6 +312,13 @@ export interface StartBookingInput extends StayRequest {
    * current ones and presses again. Stored on the intent as evidence.
    */
   acceptedTerms?: AcceptedTermsVersions | null;
+  /**
+   * The total the guest was SHOWN and confirmed, in minor units. Never used as
+   * a price — the price is always the fresh Beds24 offer. It is only compared:
+   * when the live total differs (or this is absent), nothing is created and
+   * the guest is shown the new total to confirm (`price_changed`).
+   */
+  expectedTotalCents?: number;
 }
 
 /**
@@ -381,17 +395,29 @@ export async function startBooking(
     logger
   );
 
-  // No confirmed price for this bedroom package: nothing is created. Checked
-  // after the live quote (so a conflict still reads as a conflict) and before
-  // the intent, so a refusal leaves no row, no lock and no Beds24 hold.
+  // Only a price Beds24 gave for THIS package is chargeable. Checked after the
+  // live quote and before the intent, so a refusal leaves no row, no lock and
+  // no Beds24 hold.
   if (!bedroomPricingBookable(quote)) {
     logger.warn('intent.create', {
       unitSlug: unit.slug,
       bedroomPackage: quote.bedroomPackage,
       bedroomPricing: quote.bedroomPricing.status,
-      errorCode: 'BEDROOM_PRICING_NOT_CONFIGURED',
+      errorCode: 'BEDROOM_PRICING_NOT_BOOKABLE',
     });
-    throw new BookingError('pricing_unconfigured');
+    throw new BookingError('bedroom_setup_unavailable');
+  }
+
+  // The guest confirms a total; Beds24 decides it. If they differ, the guest
+  // sees the fresh quote and confirms again — before any row or hold exists.
+  if (input.expectedTotalCents !== quote.totalCents) {
+    logger.info('intent.create', {
+      unitSlug: unit.slug,
+      outcome: 'price_changed',
+      amountCents: quote.totalCents,
+      currency: quote.currency,
+    });
+    throw new BookingError('price_changed', undefined, quote);
   }
 
   const intent =
@@ -404,6 +430,7 @@ export async function startBooking(
       adults: input.adults,
       children: input.children,
       bedroomPackage: input.bedroomPackage,
+      beds24OfferId: quote.bedroomPricing.status === 'unverified' ? null : quote.bedroomPricing.offerId,
       currency: quote.currency,
       guest,
       idempotencyKey,
@@ -474,6 +501,12 @@ function fromHoldFailure(cause: unknown): BookingError {
       return new BookingError('provider_unavailable');
     case 'uncertain':
       return new BookingError('pending_verification');
+    case 'price_changed':
+      // Beds24 re-priced the stay between the quote and the hold. Nothing was
+      // created; the guest sees the fresh total and confirms again.
+      return new BookingError('price_changed', undefined, withBoLaGioTerms(cause.failure.quote));
+    case 'bedroom_setup_unavailable':
+      return new BookingError('bedroom_setup_unavailable', cause.failure.meta);
     default:
       return new BookingError('unexpected');
   }
@@ -673,8 +706,8 @@ export function toView(intent: IntentRecord): BookingIntentView {
 /**
  * The quote behind an idempotent replay. The bedroom package is the one in the
  * request — part of the idempotency key, so it is the intent's own. Pricing is
- * reported as not configured: the original resolution is not stored, and the
- * replay is not a fresh offer, so it claims nothing about the package price.
+ * `unverified`: the replay is not a fresh offer, so it claims nothing about
+ * the package price (the intent's own total is what payment uses).
  */
 function quoteFromIntent(intent: IntentRecord, bedroomPackage: BedroomPackage): BookingQuote {
   return {
@@ -685,7 +718,7 @@ function quoteFromIntent(intent: IntentRecord, bedroomPackage: BedroomPackage): 
     adults: intent.adults,
     children: intent.children,
     bedroomPackage,
-    bedroomPricing: { status: 'not_configured' },
+    bedroomPricing: { status: 'unverified' },
     currency: intent.currency,
     totalCents: intent.quotedTotalCents ?? 0,
     components: intent.quoteComponents,

@@ -181,6 +181,8 @@ describe.runIf(CONFIRMED)('Beds24 hold and release, against the live account', (
         adults: 1,
         children: 0,
         bedroomPackage: 'two_bedroom',
+        // Offer 2 = "2 Schlafzimmer" (verified 2026-10-12).
+        providerOfferId: 2,
         guest: TEST_GUEST,
         totalCents: priceCents,
         currency: 'EUR',

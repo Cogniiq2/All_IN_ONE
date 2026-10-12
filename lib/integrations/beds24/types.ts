@@ -109,29 +109,54 @@ export interface Beds24Room {
   maxStay?: number | string;
 }
 
-/** `GET /inventory/rooms/offers` — bookable offers for a concrete stay. */
+/**
+ * `GET /inventory/rooms/offers` — bookable offers for a concrete stay.
+ *
+ * ── VERIFIED against the live account on 2026-10-12 ──────────────────────
+ * Both Schulstraße rooms, 1/2/3/7 nights, 1–4 guests (workflow
+ * beds24-readonly-check.yml, Part A2; recorded in
+ * tests/fixtures/beds24-offers-live-2026-10-12.json):
+ *
+ *   { "success": true, "type": "offer", "count": 1,
+ *     "pages": { "nextPageExists": false, "nextPageLink": null },
+ *     "data": [ { "roomId": 731147, "propertyId": 354659,
+ *                 "offers": [ { "offerId": 1, "offerName": "1 Schlafzimmer",
+ *                               "price": 434, "unitsAvailable": 1 },
+ *                             { "offerId": 2, "offerName": "2 Schlafzimmer",
+ *                               "price": 473, "unitsAvailable": 1 } ] } ] }
+ *
+ *   • rooms sit DIRECTLY in `data` — there is no `roomTypes` level;
+ *   • `offerId` (integer) identifies the offer; `offerName` is its label;
+ *   • `price` is the TOTAL for the stay in major units, every length-of-stay
+ *     rule already applied. No fee lines were returned in any case;
+ *   • an offer with no valid price for the party is simply ABSENT (Offer 1
+ *     for three or four guests);
+ *   • the query takes `numAdults` / `numChildren` (plural). `numAdult` is
+ *     refused: HTTP 400, code 2002 "Occupancy not defined".
+ */
 export interface Beds24OffersResponse {
   success?: boolean;
-  data?: Beds24PropertyOffers[];
-}
-
-export interface Beds24PropertyOffers {
-  propertyId?: number | string;
-  roomTypes?: Beds24RoomOffers[];
+  type?: string;
+  count?: number;
+  data?: Beds24RoomOffers[];
 }
 
 export interface Beds24RoomOffers {
   roomId?: number | string;
+  propertyId?: number | string;
   offers?: Beds24Offer[];
 }
 
 export interface Beds24Offer {
   offerId?: number | string;
-  name?: string;
+  offerName?: string;
+  /** The total for the stay, major units. */
   price?: number | string;
+  unitsAvailable?: number | string;
+  /** Not observed on this account; read if a property ever sends it. */
   currency?: string;
   cancellationPolicy?: string;
-  /** Present when the property configures fees separately from the rate. */
+  /** Not observed on this account; rendered as separate lines if Beds24 ever sends them. */
   fees?: Array<{ name?: string; amount?: number | string; type?: string }>;
 }
 
@@ -181,6 +206,14 @@ export interface Beds24Booking {
   referer?: string;
   /** The BoLaGio reference we write on a hold. Echoed back where supported. */
   reference?: string;
+  /**
+   * The Beds24 offer the booking was made on. Part of the booking object
+   * (spec: `booking.offerId`, integer) and observed on every live booking —
+   * `0` on the existing channel reservations, which carry no website offer.
+   */
+  offerId?: number | string;
+  /** Structured key/value notes on the booking (spec: `infoItems[].code/.text`). */
+  infoItems?: Array<{ id?: number; code?: string; text?: string }>;
 
   /*
    * ── Fields the RESERVATION IMPORT reads ─────────────────────────────────

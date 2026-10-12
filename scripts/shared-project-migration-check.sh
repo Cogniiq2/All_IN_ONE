@@ -16,6 +16,8 @@
 #      column, policy, grant, function, trigger, type, sequence, default
 #      privilege and row count is identical before and after — and the
 #      inventory diff contains only bolagio_ lines
+#   8  #13 (20261012 bedroom package): preflight/verify report it, it applies,
+#      rolls back and re-applies cleanly, touching nothing outside bolagio_
 #   7  rollback_20260927 in one transaction → #1–#11 state again (preflight
 #      passes, verify refuses) → re-apply twice → verify passes → still no
 #      non-bolagio change
@@ -220,6 +222,27 @@ fingerprint > "$WORK/fp_final.txt"
 diff -q "$WORK/fp_before.txt" "$WORK/fp_final.txt" >/dev/null && pass "still no non-bolagio change after rollback and re-apply" || fail "a non-bolagio object changed across rollback / re-apply"
 got="$(psql "$T" -Atc "select count(*) from bolagio_reservations")"
 [ "$got" = "1" ] && pass "BoLaGio data survived apply, rollback and re-apply (reservation still there)" || fail "BoLaGio data changed ($got reservations)"
+
+echo "── 8. #13 (20261012 bedroom package): apply, verify, roll back, re-apply ──"
+SEP13=supabase/migrations/20261012120000_booking_bedroom_package.sql
+must_pass "the preflight passes before #13" supabase/ops/shared_project_preflight.sql
+grep -q "#13 bedroom package not applied" "$WORK/out.txt" && pass "…and reports #13 not applied" || fail "it did not report #13 not applied"
+if psql "$T" -1 -v ON_ERROR_STOP=1 -q -f "$SEP13" > "$WORK/apply.txt" 2>&1; then pass "20261012 applied in one transaction"; else fail "20261012 did not apply"; cat "$WORK/apply.txt"; fi
+must_pass "the preflight passes after #13" supabase/ops/shared_project_preflight.sql
+grep -q "#13 bedroom package applied" "$WORK/out.txt" && pass "…and reports #13 applied" || fail "it did not report #13 applied"
+must_pass "shared-project verify passes after #13" supabase/ops/shared_project_verify.sql
+grep -q "#13 one_bedroom party check exists" "$WORK/out.txt" && pass "the #13 assertions ran" || fail "the #13 assertions did not run"
+fingerprint > "$WORK/fp_13.txt"
+diff -q "$WORK/fp_before.txt" "$WORK/fp_13.txt" >/dev/null && pass "#13 touched nothing outside bolagio_" || { fail "#13 changed a non-bolagio object"; diff "$WORK/fp_before.txt" "$WORK/fp_13.txt" | head; }
+if psql "$T" -1 -v ON_ERROR_STOP=1 -q -f supabase/ops/rollback_20261012.sql > "$WORK/rb.txt" 2>&1; then pass "rollback_20261012 ran in one transaction"; else fail "rollback_20261012 failed"; cat "$WORK/rb.txt"; fi
+must_pass "after the #13 rollback the preflight passes" supabase/ops/shared_project_preflight.sql
+grep -q "#13 bedroom package not applied" "$WORK/out.txt" && pass "…and reports #13 not applied again" || fail "rollback left #13 detectable"
+for i in 1 2; do
+  psql "$T" -1 -v ON_ERROR_STOP=1 -q -f "$SEP13" > "$WORK/apply.txt" 2>&1 && pass "re-apply $i of 20261012" || { fail "re-apply $i of 20261012 failed"; cat "$WORK/apply.txt"; }
+done
+must_pass "the verify passes after the #13 rollback and two re-applies" supabase/ops/shared_project_verify.sql
+got="$(psql "$T" -Atc "select count(*) from bolagio_reservations")"
+[ "$got" = "1" ] && pass "BoLaGio data survived #13 apply, rollback and re-apply" || fail "BoLaGio data changed across #13 ($got reservations)"
 
 rm -rf "$WORK"
 psql "$DATABASE_URL" -q -c "drop database if exists $DB;" >/dev/null 2>&1 || true

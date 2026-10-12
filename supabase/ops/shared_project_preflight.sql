@@ -28,6 +28,7 @@
 --   #10  20260925120000_legal_compliance
 --   #11  20260926120000_booking_com_finance_statement
 --   #12  20260927120000_finance_ingestion_pipeline      ← the next one
+--   #13  20261012120000_booking_bedroom_package        ← after #12 (one column, two checks)
 --
 -- On ALL IN ONE (checked read-only 2026-09-26/27) #1–#11 are applied and #12
 -- is not. This script REQUIRES #1–#11 and reports #12 either way: it passes
@@ -94,7 +95,7 @@ end $$;
 -- (not even a temporary object) is created.
 do $$
 declare
-  r record; missing text := ''; gap text := ''; first_missing int := null; twelve boolean := false;
+  r record; missing text := ''; gap text := ''; first_missing int := null; twelve boolean := false; thirteen boolean := false;
 begin
   for r in
     select * from (values
@@ -111,16 +112,19 @@ begin
                                                        and exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'bolagio_guest_identities' and column_name = 'marketing_consent_confirmed_at')),
   (11, '20260926120000_booking_com_finance_statement', to_regclass('public.bolagio_finance_ota_settlements') is not null and to_regprocedure('public.bolagio_finance_record_ota_settlement(jsonb,text)') is not null),
   (12, '20260927120000_finance_ingestion_pipeline',    to_regclass('public.bolagio_finance_ingestion_queue') is not null
-                                                       and exists (select 1 from pg_trigger where tgname = 'bolagio_booking_intents_finance_enqueue'))
+                                                       and exists (select 1 from pg_trigger where tgname = 'bolagio_booking_intents_finance_enqueue')),
+  (13, '20261012120000_booking_bedroom_package',       exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'bolagio_booking_intents' and column_name = 'beds24_offer_id')
+                                                       and exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'bolagio_reservations' and column_name = 'bedroom_package'))
 ) as c(n, migration, applied)
     order by n
   loop
     raise notice '#%  %  %  (expected: %)', lpad(r.n::text, 2), rpad(r.migration, 45), case when r.applied then 'applied    ' else 'NOT applied' end,
-      case when r.n <= 11 then 'applied' else 'applied or not — the next migration' end;
+      case when r.n <= 11 then 'applied' when r.n = 12 then 'applied or not — the next migration' else 'applied or not — after #12' end;
     if r.n <= 11 and not r.applied then missing := missing || format(' #%s %s', r.n, r.migration); end if;
     if not r.applied and first_missing is null then first_missing := r.n; end if;
     if r.applied and first_missing is not null then gap := gap || format(' #%s without #%s;', r.n, first_missing); end if;
     if r.n = 12 then twelve := r.applied; end if;
+    if r.n = 13 then thirteen := r.applied; end if;
   end loop;
   if gap <> '' then
     raise exception 'PREFLIGHT FAILED: the chain is out of order (%). Restore from backup or finish it by hand, in order.', gap;
@@ -133,6 +137,42 @@ begin
   else
     raise notice 'ok — #1–#11 applied, #12 not applied: the state #12 is written for';
   end if;
+  -- #13 is reported separately so the #12 statements above keep their meaning.
+  if thirteen then
+    raise notice 'ok — #13 bedroom package applied (re-applying it is idempotent)';
+  else
+    raise notice 'info — #13 bedroom package not applied: apply it after #12';
+  end if;
+end $$;
+
+\echo ''
+\echo '── 3b. #13 prerequisites and names (20261012 bedroom package) ─────────'
+do $$ begin
+  -- #13 adds nullable columns to bolagio_booking_intents and bolagio_reservations
+  -- (#1, #8), and CHECK constraints, one of which reads adults + children.
+  if to_regclass('public.bolagio_reservations') is null then
+    raise exception 'PREFLIGHT FAILED: #13 extends bolagio_reservations, which does not exist (#8 not applied)';
+  end if;
+  if (select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'bolagio_booking_intents'
+       and column_name in ('adults', 'children')) <> 2 then
+    raise exception 'PREFLIGHT FAILED: #13 reads bolagio_booking_intents.adults and .children, which do not both exist';
+  end if;
+  -- A column or constraint already carrying a #13 name must be #13's own shape.
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'bolagio_booking_intents'
+               and column_name = 'bedroom_package' and data_type <> 'text') then
+    raise exception 'PREFLIGHT FAILED: bolagio_booking_intents.bedroom_package exists with a type #13 did not create. Inspect it; do not apply #13 over it.';
+  end if;
+  if exists (select 1 from pg_constraint where conname in ('bolagio_intent_bedroom_package_value', 'bolagio_intent_bedroom_package_party')
+               and conrelid <> 'public.bolagio_booking_intents'::regclass) then
+    raise exception 'PREFLIGHT FAILED: a #13 constraint name is used on another table';
+  end if;
+  -- Existing rows must satisfy the party rule, or adding the constraint fails mid-migration.
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'bolagio_booking_intents' and column_name = 'bedroom_package') then
+    if exists (select 1 from bolagio_booking_intents where bedroom_package = 'one_bedroom' and adults + children > 2) then
+      raise exception 'PREFLIGHT FAILED: existing intents violate #13''s one_bedroom party rule';
+    end if;
+  end if;
+  raise notice 'ok — #13 prerequisites present and its names are free or its own';
 end $$;
 
 \echo ''

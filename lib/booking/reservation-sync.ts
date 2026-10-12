@@ -33,7 +33,12 @@ import 'server-only';
 import { createLogger, type BookingLogger } from '@/lib/booking/logger';
 import { inventoryMonths, reservationBackfillMonths, reservationStatusFilter, reservationWindowDays } from '@/lib/booking/config';
 import { listBookableUnits, type BookableUnit } from '@/lib/booking/repository';
-import { findIntentIdForProviderBooking, upsertReservation, upsertReservationBatch } from '@/lib/booking/reservation-repository';
+import {
+  findIntentIdForProviderBooking,
+  reservationOfferColumnsAvailable,
+  upsertReservation,
+  upsertReservationBatch,
+} from '@/lib/booking/reservation-repository';
 import { observeIntegration, readSchedulerStatus } from '@/lib/booking/commands';
 import { readReservationById, readReservations, type ProviderReservation } from '@/lib/integrations/beds24/reservations';
 import { propertyToday } from '@/lib/booking/stay-rules';
@@ -182,6 +187,11 @@ export async function syncReservations(
   const cursor = await readSyncCursor();
   spent += 1;
 
+  // Whether the bedroom-package columns exist yet (migration 20261012). One
+  // read per run until they do; never a reason to fail the import.
+  const writeOfferColumns = await reservationOfferColumnsAvailable().catch(() => false);
+  spent += 1;
+
   const tasks: SyncTask[] = [];
   for (const unit of units) {
     for (const w of alignedWindows(from, to, reservationWindowDays())) tasks.push({ unit, from: w.from, to: w.to, key: `${w.alignedFrom}|${unit.slug}` });
@@ -233,7 +243,7 @@ export async function syncReservations(
     const interruptedByBudget = read.truncated && maxPages < READER_PAGE_CAP;
     if (read.truncated && !interruptedByBudget) report.truncated = true;
 
-    const items: Array<{ unitId: string; reservation: ProviderReservation; directIntentId: string | null }> = [];
+    const items: Array<{ unitId: string; reservation: ProviderReservation; directIntentId: string | null; writeOfferColumns: boolean }> = [];
     for (const reservation of read.reservations) {
       report.fetched += 1;
       const roomId = reservation.externalRoomId;
@@ -252,7 +262,7 @@ export async function syncReservations(
           spent += 1;
         }
       }
-      items.push({ unitId: task.unit.id, reservation, directIntentId });
+      items.push({ unitId: task.unit.id, reservation, directIntentId, writeOfferColumns });
     }
 
     try {
@@ -392,6 +402,10 @@ async function store(reservation: ProviderReservation, queried: BookableUnit, lo
       unitId: queried.id,
       reservation,
       directIntentId,
+      // The bedroom setup Beds24 recorded (offerId) reaches the local record
+      // as soon as a webhook refreshes the booking — confirmed direct
+      // bookings included.
+      writeOfferColumns: await reservationOfferColumnsAvailable().catch(() => false),
     });
 
     logger.info('reservation.sync', {

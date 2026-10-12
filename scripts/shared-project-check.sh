@@ -168,7 +168,8 @@ for f in supabase/migrations/20260916120000_booking_foundation.sql \
          supabase/migrations/20260924120000_guest_privileges.sql \
          supabase/migrations/20260925120000_legal_compliance.sql \
          supabase/migrations/20260926120000_booking_com_finance_statement.sql \
-         supabase/migrations/20260927120000_finance_ingestion_pipeline.sql; do
+         supabase/migrations/20260927120000_finance_ingestion_pipeline.sql \
+         supabase/migrations/20261012120000_booking_bedroom_package.sql; do
   psql "$T" -1 -v ON_ERROR_STOP=1 -q -f "$f" >/dev/null 2>&1 || { echo "FAILED — $f did not apply"; FAILED=1; }
 done
 psql "$T" -v ON_ERROR_STOP=1 -q -f supabase/ops/verify.sql 2>&1 | grep -E "FAILED|passed" | tail -1

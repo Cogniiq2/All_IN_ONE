@@ -31,7 +31,15 @@
  *
  * Control API:
  *   POST /__sim/reset
- *   POST /__sim/config   { blockingStatuses: [...], honourIdempotency: bool, nightlyCents }
+ *   POST /__sim/config   { blockingStatuses: [...], honourIdempotency: bool, nightlyCents,
+ *                          offerNightlyEur: { 1: n, 2: n } }   (fixture offer prices)
+ *
+ * Offers answer in the shape the LIVE account returns (verified 2026-10-12):
+ * `data[] → { roomId, propertyId, offers[{ offerId, offerName, price,
+ * unitsAvailable }] }`, Offer 1 "1 Schlafzimmer" for up to two guests and
+ * Offer 2 "2 Schlafzimmer" for up to four, an offer with no valid price for
+ * the party simply absent — and `numAdult` (singular) refused with HTTP 400
+ * code 2002, exactly as Beds24 refuses it. Prices are round fixtures.
  *   POST /__sim/mode     { op, mode }
  *   POST /__sim/block    { roomId, from, to }        [from, to) closed externally
  *   POST /__sim/unblock  { roomId, from, to }
@@ -54,7 +62,7 @@ export function createBeds24Sim() {
   function freshState() {
     return {
       modes: { ...DEFAULT_MODES },
-      config: { blockingStatuses: ['new', 'confirmed', 'request'], honourIdempotency: true, nightlyCents: 14_000, cleaningCents: 4_500, token: 'sim-beds24-token' },
+      config: { blockingStatuses: ['new', 'confirmed', 'request'], honourIdempotency: true, nightlyCents: 14_000, offerNightlyEur: { 1: 120, 2: 150 }, offerMaxGuests: { 1: 2, 2: 4 }, token: 'sim-beds24-token' },
       bookings: new Map(),
       blocks: [],
       idempotency: new Map(),
@@ -111,7 +119,7 @@ export function createBeds24Sim() {
   }
 
   function bookingView(b, { omitReference = false, statusOverride = null } = {}) {
-    const view = { id: b.id, roomId: b.roomId, propertyId: b.propertyId, status: statusOverride ?? b.status, arrival: b.arrival, departure: b.departure, numAdult: b.numAdult, numChild: b.numChild, price: b.price, referer: b.referer, reference: b.reference, notes: b.notes };
+    const view = { id: b.id, roomId: b.roomId, propertyId: b.propertyId, status: statusOverride ?? b.status, arrival: b.arrival, departure: b.departure, numAdult: b.numAdult, numChild: b.numChild, price: b.price, referer: b.referer, reference: b.reference, notes: b.notes, offerId: b.offerId ?? 0, infoItems: b.infoItems ?? [] };
     if (omitReference) delete view.reference;
     return view;
   }
@@ -143,14 +151,21 @@ export function createBeds24Sim() {
       const mode = state.modes.offers;
       if (failure(mode, req, res)) return;
       const q = url.searchParams;
+      // As the live API: the occupancy parameter is the PLURAL numAdults.
+      if (!q.get('numAdults')) return json(res, 400, { success: false, type: 'error', code: 2002, error: 'Occupancy not defined' });
       const roomId = q.get('roomId'); const propertyId = q.get('propertyId');
       const arrival = q.get('arrival'); const departure = q.get('departure');
+      const party = Number(q.get('numAdults')) + Number(q.get('numChildren') ?? 0);
       const closed = nightsClosed(roomId, arrival, departure);
       const nights = Math.round((Date.parse(departure) - Date.parse(arrival)) / 86_400_000);
+      const names = { 1: '1 Schlafzimmer', 2: '2 Schlafzimmer' };
       const offers = mode === 'unavailable' || closed.size > 0 || nights < 1
         ? []
-        : [{ offerId: 1, name: 'Standard', price: mode === 'no_price' ? undefined : (state.config.nightlyCents * nights) / 100, currency: 'EUR', fees: [{ name: 'Endreinigung', amount: state.config.cleaningCents / 100, type: 'fixed' }] }];
-      return json(res, 200, { success: true, data: [{ propertyId: Number(propertyId), roomTypes: [{ roomId: Number(roomId), offers }] }] });
+        : [1, 2]
+            .filter((id) => party <= state.config.offerMaxGuests[id])
+            .filter((id) => !q.get('offerId') || Number(q.get('offerId')) === id)
+            .map((id) => ({ offerId: id, offerName: names[id], price: mode === 'no_price' ? undefined : state.config.offerNightlyEur[id] * nights, unitsAvailable: 1 }));
+      return json(res, 200, { success: true, type: 'offer', count: 1, data: [{ roomId: Number(roomId), propertyId: Number(propertyId), offers }] });
     }
 
     if (url.pathname === '/bookings' && req.method === 'GET') {
@@ -192,7 +207,7 @@ export function createBeds24Sim() {
         }
         const closed = nightsClosed(item.roomId, item.arrival, item.departure);
         if (closed.size > 0) return json(res, 200, [{ success: false, errors: [{ field: 'arrival', message: 'not available' }] }]);
-        const b = { id: ++state.counter, roomId: item.roomId, propertyId: item.propertyId, status: item.status ?? 'new', arrival: item.arrival, departure: item.departure, numAdult: item.numAdult, numChild: item.numChild, price: item.price, referer: item.referer, reference: item.reference, notes: item.notes, createdAt: new Date().toISOString() };
+        const b = { id: ++state.counter, roomId: item.roomId, propertyId: item.propertyId, status: item.status ?? 'new', arrival: item.arrival, departure: item.departure, numAdult: item.numAdult, numChild: item.numChild, price: item.price, referer: item.referer, reference: item.reference, notes: item.notes, offerId: item.offerId, infoItems: item.infoItems, createdAt: new Date().toISOString() };
         state.bookings.set(String(b.id), b);
         if (key) state.idempotency.set(key, String(b.id));
         if (mode === 'response_lost') return req.socket.destroy();

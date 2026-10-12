@@ -19,7 +19,7 @@ function quote(overrides: Partial<BookingQuote> = {}): BookingQuote {
     adults: 2,
     children: 0,
     bedroomPackage: 'two_bedroom',
-    bedroomPricing: { status: 'fixture' },
+    bedroomPricing: { status: 'configured', offerId: 2 },
     currency: 'EUR',
     totalCents: 42500,
     components: [

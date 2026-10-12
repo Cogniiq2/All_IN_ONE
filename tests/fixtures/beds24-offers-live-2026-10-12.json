@@ -1,0 +1,867 @@
+{
+  "_about": "Real Beds24 V2 GET /inventory/rooms/offers responses, captured read-only on 2026-10-12 by .github/workflows/beds24-readonly-check.yml (Part A2, run 38272891875). Arrival 2026-11-08, numChildren=0. Prices and offer metadata only; no credentials, no guest data. The website must reproduce these totals by SELECTING the offer, never by computing.",
+  "capturedAt": "2026-10-12",
+  "arrival": "2026-11-08",
+  "units": {
+    "schulstrasse-i": {
+      "propertyId": 354659,
+      "roomId": 731147
+    },
+    "schulstrasse-ii": {
+      "propertyId": 354658,
+      "roomId": 731146
+    }
+  },
+  "rejectedSingularParameter": {
+    "query": "numAdult=2",
+    "httpStatus": 400,
+    "response": {
+      "success": false,
+      "type": "error",
+      "code": 2002,
+      "error": "Occupancy not defined"
+    }
+  },
+  "cases": [
+    {
+      "unit": "schulstrasse-i",
+      "nights": 1,
+      "guests": 2,
+      "query": "numAdults",
+      "httpStatus": 200,
+      "response": {
+        "success": true,
+        "type": "offer",
+        "count": 1,
+        "pages": {
+          "nextPageExists": false,
+          "nextPageLink": null
+        },
+        "data": [
+          {
+            "roomId": 731147,
+            "propertyId": 354659,
+            "offers": [
+              {
+                "offerId": 1,
+                "offerName": "1 Schlafzimmer",
+                "price": 434,
+                "unitsAvailable": 1
+              },
+              {
+                "offerId": 2,
+                "offerName": "2 Schlafzimmer",
+                "price": 473,
+                "unitsAvailable": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "unit": "schulstrasse-i",
+      "nights": 1,
+      "guests": 2,
+      "query": "numAdults+offerId=1",
+      "httpStatus": 200,
+      "response": {
+        "success": true,
+        "type": "offer",
+        "count": 1,
+        "pages": {
+          "nextPageExists": false,
+          "nextPageLink": null
+        },
+        "data": [
+          {
+            "roomId": 731147,
+            "propertyId": 354659,
+            "offers": [
+              {
+                "offerId": 1,
+                "offerName": "1 Schlafzimmer",
+                "price": 434,
+                "unitsAvailable": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "unit": "schulstrasse-i",
+      "nights": 1,
+      "guests": 2,
+      "query": "numAdults+offerId=2",
+      "httpStatus": 200,
+      "response": {
+        "success": true,
+        "type": "offer",
+        "count": 1,
+        "pages": {
+          "nextPageExists": false,
+          "nextPageLink": null
+        },
+        "data": [
+          {
+            "roomId": 731147,
+            "propertyId": 354659,
+            "offers": [
+              {
+                "offerId": 2,
+                "offerName": "2 Schlafzimmer",
+                "price": 473,
+                "unitsAvailable": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "unit": "schulstrasse-i",
+      "nights": 2,
+      "guests": 2,
+      "query": "numAdults",
+      "httpStatus": 200,
+      "response": {
+        "success": true,
+        "type": "offer",
+        "count": 1,
+        "pages": {
+          "nextPageExists": false,
+          "nextPageLink": null
+        },
+        "data": [
+          {
+            "roomId": 731147,
+            "propertyId": 354659,
+            "offers": [
+              {
+                "offerId": 1,
+                "offerName": "1 Schlafzimmer",
+                "price": 788,
+                "unitsAvailable": 1
+              },
+              {
+                "offerId": 2,
+                "offerName": "2 Schlafzimmer",
+                "price": 866,
+                "unitsAvailable": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "unit": "schulstrasse-i",
+      "nights": 3,
+      "guests": 2,
+      "query": "numAdults",
+      "httpStatus": 200,
+      "response": {
+        "success": true,
+        "type": "offer",
+        "count": 1,
+        "pages": {
+          "nextPageExists": false,
+          "nextPageLink": null
+        },
+        "data": [
+          {
+            "roomId": 731147,
+            "propertyId": 354659,
+            "offers": [
+              {
+                "offerId": 1,
+                "offerName": "1 Schlafzimmer",
+                "price": 1122,
+                "unitsAvailable": 1
+              },
+              {
+                "offerId": 2,
+                "offerName": "2 Schlafzimmer",
+                "price": 1239,
+                "unitsAvailable": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "unit": "schulstrasse-i",
+      "nights": 7,
+      "guests": 2,
+      "query": "numAdults",
+      "httpStatus": 200,
+      "response": {
+        "success": true,
+        "type": "offer",
+        "count": 1,
+        "pages": {
+          "nextPageExists": false,
+          "nextPageLink": null
+        },
+        "data": [
+          {
+            "roomId": 731147,
+            "propertyId": 354659,
+            "offers": [
+              {
+                "offerId": 1,
+                "offerName": "1 Schlafzimmer",
+                "price": 2618,
+                "unitsAvailable": 1
+              },
+              {
+                "offerId": 2,
+                "offerName": "2 Schlafzimmer",
+                "price": 2891,
+                "unitsAvailable": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "unit": "schulstrasse-i",
+      "nights": 1,
+      "guests": 1,
+      "query": "numAdults",
+      "httpStatus": 200,
+      "response": {
+        "success": true,
+        "type": "offer",
+        "count": 1,
+        "pages": {
+          "nextPageExists": false,
+          "nextPageLink": null
+        },
+        "data": [
+          {
+            "roomId": 731147,
+            "propertyId": 354659,
+            "offers": [
+              {
+                "offerId": 1,
+                "offerName": "1 Schlafzimmer",
+                "price": 434,
+                "unitsAvailable": 1
+              },
+              {
+                "offerId": 2,
+                "offerName": "2 Schlafzimmer",
+                "price": 473,
+                "unitsAvailable": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "unit": "schulstrasse-i",
+      "nights": 1,
+      "guests": 3,
+      "query": "numAdults",
+      "httpStatus": 200,
+      "response": {
+        "success": true,
+        "type": "offer",
+        "count": 1,
+        "pages": {
+          "nextPageExists": false,
+          "nextPageLink": null
+        },
+        "data": [
+          {
+            "roomId": 731147,
+            "propertyId": 354659,
+            "offers": [
+              {
+                "offerId": 2,
+                "offerName": "2 Schlafzimmer",
+                "price": 473,
+                "unitsAvailable": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "unit": "schulstrasse-i",
+      "nights": 3,
+      "guests": 3,
+      "query": "numAdults",
+      "httpStatus": 200,
+      "response": {
+        "success": true,
+        "type": "offer",
+        "count": 1,
+        "pages": {
+          "nextPageExists": false,
+          "nextPageLink": null
+        },
+        "data": [
+          {
+            "roomId": 731147,
+            "propertyId": 354659,
+            "offers": [
+              {
+                "offerId": 2,
+                "offerName": "2 Schlafzimmer",
+                "price": 1239,
+                "unitsAvailable": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "unit": "schulstrasse-i",
+      "nights": 3,
+      "guests": 4,
+      "query": "numAdults",
+      "httpStatus": 200,
+      "response": {
+        "success": true,
+        "type": "offer",
+        "count": 1,
+        "pages": {
+          "nextPageExists": false,
+          "nextPageLink": null
+        },
+        "data": [
+          {
+            "roomId": 731147,
+            "propertyId": 354659,
+            "offers": [
+              {
+                "offerId": 2,
+                "offerName": "2 Schlafzimmer",
+                "price": 1239,
+                "unitsAvailable": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "unit": "schulstrasse-i",
+      "nights": 1,
+      "guests": 4,
+      "query": "numAdults",
+      "httpStatus": 200,
+      "response": {
+        "success": true,
+        "type": "offer",
+        "count": 1,
+        "pages": {
+          "nextPageExists": false,
+          "nextPageLink": null
+        },
+        "data": [
+          {
+            "roomId": 731147,
+            "propertyId": 354659,
+            "offers": [
+              {
+                "offerId": 2,
+                "offerName": "2 Schlafzimmer",
+                "price": 473,
+                "unitsAvailable": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "unit": "schulstrasse-i",
+      "nights": 2,
+      "guests": 4,
+      "query": "numAdults",
+      "httpStatus": 200,
+      "response": {
+        "success": true,
+        "type": "offer",
+        "count": 1,
+        "pages": {
+          "nextPageExists": false,
+          "nextPageLink": null
+        },
+        "data": [
+          {
+            "roomId": 731147,
+            "propertyId": 354659,
+            "offers": [
+              {
+                "offerId": 2,
+                "offerName": "2 Schlafzimmer",
+                "price": 866,
+                "unitsAvailable": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "unit": "schulstrasse-i",
+      "nights": 7,
+      "guests": 4,
+      "query": "numAdults",
+      "httpStatus": 200,
+      "response": {
+        "success": true,
+        "type": "offer",
+        "count": 1,
+        "pages": {
+          "nextPageExists": false,
+          "nextPageLink": null
+        },
+        "data": [
+          {
+            "roomId": 731147,
+            "propertyId": 354659,
+            "offers": [
+              {
+                "offerId": 2,
+                "offerName": "2 Schlafzimmer",
+                "price": 2891,
+                "unitsAvailable": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "unit": "schulstrasse-ii",
+      "nights": 1,
+      "guests": 2,
+      "query": "numAdults",
+      "httpStatus": 200,
+      "response": {
+        "success": true,
+        "type": "offer",
+        "count": 1,
+        "pages": {
+          "nextPageExists": false,
+          "nextPageLink": null
+        },
+        "data": [
+          {
+            "roomId": 731146,
+            "propertyId": 354658,
+            "offers": [
+              {
+                "offerId": 1,
+                "offerName": "1 Schlafzimmer",
+                "price": 384,
+                "unitsAvailable": 1
+              },
+              {
+                "offerId": 2,
+                "offerName": "2 Schlafzimmer",
+                "price": 423,
+                "unitsAvailable": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "unit": "schulstrasse-ii",
+      "nights": 1,
+      "guests": 2,
+      "query": "numAdults+offerId=1",
+      "httpStatus": 200,
+      "response": {
+        "success": true,
+        "type": "offer",
+        "count": 1,
+        "pages": {
+          "nextPageExists": false,
+          "nextPageLink": null
+        },
+        "data": [
+          {
+            "roomId": 731146,
+            "propertyId": 354658,
+            "offers": [
+              {
+                "offerId": 1,
+                "offerName": "1 Schlafzimmer",
+                "price": 384,
+                "unitsAvailable": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "unit": "schulstrasse-ii",
+      "nights": 1,
+      "guests": 2,
+      "query": "numAdults+offerId=2",
+      "httpStatus": 200,
+      "response": {
+        "success": true,
+        "type": "offer",
+        "count": 1,
+        "pages": {
+          "nextPageExists": false,
+          "nextPageLink": null
+        },
+        "data": [
+          {
+            "roomId": 731146,
+            "propertyId": 354658,
+            "offers": [
+              {
+                "offerId": 2,
+                "offerName": "2 Schlafzimmer",
+                "price": 423,
+                "unitsAvailable": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "unit": "schulstrasse-ii",
+      "nights": 2,
+      "guests": 2,
+      "query": "numAdults",
+      "httpStatus": 200,
+      "response": {
+        "success": true,
+        "type": "offer",
+        "count": 1,
+        "pages": {
+          "nextPageExists": false,
+          "nextPageLink": null
+        },
+        "data": [
+          {
+            "roomId": 731146,
+            "propertyId": 354658,
+            "offers": [
+              {
+                "offerId": 1,
+                "offerName": "1 Schlafzimmer",
+                "price": 688,
+                "unitsAvailable": 1
+              },
+              {
+                "offerId": 2,
+                "offerName": "2 Schlafzimmer",
+                "price": 766,
+                "unitsAvailable": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "unit": "schulstrasse-ii",
+      "nights": 3,
+      "guests": 2,
+      "query": "numAdults",
+      "httpStatus": 200,
+      "response": {
+        "success": true,
+        "type": "offer",
+        "count": 1,
+        "pages": {
+          "nextPageExists": false,
+          "nextPageLink": null
+        },
+        "data": [
+          {
+            "roomId": 731146,
+            "propertyId": 354658,
+            "offers": [
+              {
+                "offerId": 1,
+                "offerName": "1 Schlafzimmer",
+                "price": 972,
+                "unitsAvailable": 1
+              },
+              {
+                "offerId": 2,
+                "offerName": "2 Schlafzimmer",
+                "price": 1089,
+                "unitsAvailable": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "unit": "schulstrasse-ii",
+      "nights": 7,
+      "guests": 2,
+      "query": "numAdults",
+      "httpStatus": 200,
+      "response": {
+        "success": true,
+        "type": "offer",
+        "count": 1,
+        "pages": {
+          "nextPageExists": false,
+          "nextPageLink": null
+        },
+        "data": [
+          {
+            "roomId": 731146,
+            "propertyId": 354658,
+            "offers": [
+              {
+                "offerId": 1,
+                "offerName": "1 Schlafzimmer",
+                "price": 2268,
+                "unitsAvailable": 1
+              },
+              {
+                "offerId": 2,
+                "offerName": "2 Schlafzimmer",
+                "price": 2541,
+                "unitsAvailable": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "unit": "schulstrasse-ii",
+      "nights": 1,
+      "guests": 1,
+      "query": "numAdults",
+      "httpStatus": 200,
+      "response": {
+        "success": true,
+        "type": "offer",
+        "count": 1,
+        "pages": {
+          "nextPageExists": false,
+          "nextPageLink": null
+        },
+        "data": [
+          {
+            "roomId": 731146,
+            "propertyId": 354658,
+            "offers": [
+              {
+                "offerId": 1,
+                "offerName": "1 Schlafzimmer",
+                "price": 384,
+                "unitsAvailable": 1
+              },
+              {
+                "offerId": 2,
+                "offerName": "2 Schlafzimmer",
+                "price": 423,
+                "unitsAvailable": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "unit": "schulstrasse-ii",
+      "nights": 1,
+      "guests": 3,
+      "query": "numAdults",
+      "httpStatus": 200,
+      "response": {
+        "success": true,
+        "type": "offer",
+        "count": 1,
+        "pages": {
+          "nextPageExists": false,
+          "nextPageLink": null
+        },
+        "data": [
+          {
+            "roomId": 731146,
+            "propertyId": 354658,
+            "offers": [
+              {
+                "offerId": 2,
+                "offerName": "2 Schlafzimmer",
+                "price": 423,
+                "unitsAvailable": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "unit": "schulstrasse-ii",
+      "nights": 3,
+      "guests": 3,
+      "query": "numAdults",
+      "httpStatus": 200,
+      "response": {
+        "success": true,
+        "type": "offer",
+        "count": 1,
+        "pages": {
+          "nextPageExists": false,
+          "nextPageLink": null
+        },
+        "data": [
+          {
+            "roomId": 731146,
+            "propertyId": 354658,
+            "offers": [
+              {
+                "offerId": 2,
+                "offerName": "2 Schlafzimmer",
+                "price": 1089,
+                "unitsAvailable": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "unit": "schulstrasse-ii",
+      "nights": 3,
+      "guests": 4,
+      "query": "numAdults",
+      "httpStatus": 200,
+      "response": {
+        "success": true,
+        "type": "offer",
+        "count": 1,
+        "pages": {
+          "nextPageExists": false,
+          "nextPageLink": null
+        },
+        "data": [
+          {
+            "roomId": 731146,
+            "propertyId": 354658,
+            "offers": [
+              {
+                "offerId": 2,
+                "offerName": "2 Schlafzimmer",
+                "price": 1089,
+                "unitsAvailable": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "unit": "schulstrasse-ii",
+      "nights": 1,
+      "guests": 4,
+      "query": "numAdults",
+      "httpStatus": 200,
+      "response": {
+        "success": true,
+        "type": "offer",
+        "count": 1,
+        "pages": {
+          "nextPageExists": false,
+          "nextPageLink": null
+        },
+        "data": [
+          {
+            "roomId": 731146,
+            "propertyId": 354658,
+            "offers": [
+              {
+                "offerId": 2,
+                "offerName": "2 Schlafzimmer",
+                "price": 423,
+                "unitsAvailable": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "unit": "schulstrasse-ii",
+      "nights": 2,
+      "guests": 4,
+      "query": "numAdults",
+      "httpStatus": 200,
+      "response": {
+        "success": true,
+        "type": "offer",
+        "count": 1,
+        "pages": {
+          "nextPageExists": false,
+          "nextPageLink": null
+        },
+        "data": [
+          {
+            "roomId": 731146,
+            "propertyId": 354658,
+            "offers": [
+              {
+                "offerId": 2,
+                "offerName": "2 Schlafzimmer",
+                "price": 766,
+                "unitsAvailable": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "unit": "schulstrasse-ii",
+      "nights": 7,
+      "guests": 4,
+      "query": "numAdults",
+      "httpStatus": 200,
+      "response": {
+        "success": true,
+        "type": "offer",
+        "count": 1,
+        "pages": {
+          "nextPageExists": false,
+          "nextPageLink": null
+        },
+        "data": [
+          {
+            "roomId": 731146,
+            "propertyId": 354658,
+            "offers": [
+              {
+                "offerId": 2,
+                "offerName": "2 Schlafzimmer",
+                "price": 2541,
+                "unitsAvailable": 1
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

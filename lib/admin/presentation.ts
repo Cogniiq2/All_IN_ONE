@@ -249,6 +249,7 @@ export function reservationOccupies(statusClass: string): boolean {
 const CODE_TITLE: Readonly<Record<string, string>> = {
   BEDS24_HOLD_OUTCOME_UNKNOWN: 'Channel-manager hold outcome unknown',
   BEDS24_HOLD_REJECTED: 'Channel-manager hold refused',
+  BEDS24_PRICE_CHANGED: 'Price changed at the channel manager before the hold',
   BEDS24_HOLD_MISMATCH: 'Channel-manager hold is not ours',
   BEDS24_HOLD_DID_NOT_BLOCK: 'Hold exists but nights did not close',
   BEDS24_RELEASE_FAILED: 'Release could not be confirmed',

@@ -61,6 +61,9 @@ select 'finance_ingestion_pipeline (20260927120000)' as migration,
        case when to_regclass('public.bolagio_finance_ingestion_queue') is not null
              and exists (select 1 from pg_trigger where tgname = 'bolagio_booking_intents_finance_enqueue')
             then 'applied' else 'not applied' end as actual;
+select 'booking_bedroom_package (20261012120000)' as migration,
+       case when exists (select 1 from information_schema.columns where table_name = 'bolagio_booking_intents' and column_name = 'bedroom_package')
+            then 'applied' else 'not applied' end as actual;
 
 \echo ''
 \echo '── 4. Supabase migration history (if the CLI has been used) ────────────'

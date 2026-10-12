@@ -9,6 +9,8 @@
 --
 -- Current through 20260927 (#12): it REQUIRES #1–#12 and fails on a project
 -- where #12 is not applied — run it after the migration, not before.
+-- #13 (20261012, bedroom package) is verified when present and reported as
+-- not applied otherwise, so this script stays usable between #12 and #13.
 --
 -- Contains every assertion of supabase/ops/verify.sql PLUS the invariants
 -- that matter because the project is shared with unrelated (Cogniiq) tables:
@@ -172,6 +174,22 @@ do $$ declare t text; begin
   end loop;
   perform pg_temp.v_assert((select count(*) from bolagio_finance_pipeline_status) = 1, '#12 the pipeline status view answers in one row');
   perform pg_temp.v_assert(not exists (select 1 from bolagio_finance_ingestion_queue where state not in ('pending','done','failed')), '#12 every queue row has a known state');
+end $$;
+
+\echo ''
+\echo '── #13: bedroom package (verified when applied) ──'
+do $$ begin
+  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'bolagio_booking_intents' and column_name = 'bedroom_package') then
+    raise notice 'info — #13 20261012120000_booking_bedroom_package not applied: its assertions skipped';
+    return;
+  end if;
+  perform pg_temp.v_assert(exists (select 1 from pg_constraint where conname = 'bolagio_intent_bedroom_package_value' and conrelid = 'public.bolagio_booking_intents'::regclass), '#13 bedroom_package value check exists');
+  perform pg_temp.v_assert(exists (select 1 from pg_constraint where conname = 'bolagio_intent_bedroom_package_party' and conrelid = 'public.bolagio_booking_intents'::regclass), '#13 one_bedroom party check exists');
+  perform pg_temp.v_assert(exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'bolagio_booking_intents' and column_name = 'beds24_offer_id'), '#13 bolagio_booking_intents.beds24_offer_id exists');
+  perform pg_temp.v_assert(exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'bolagio_reservations' and column_name = 'bedroom_package')
+                           and exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'bolagio_reservations' and column_name = 'external_offer_id'), '#13 bolagio_reservations carries bedroom_package and external_offer_id');
+  perform pg_temp.v_assert(not exists (select 1 from bolagio_reservations where bedroom_package is not null and bedroom_package not in ('one_bedroom','two_bedroom')), '#13 every imported bedroom_package is a known package');
+  perform pg_temp.v_assert(not exists (select 1 from bolagio_booking_intents where bedroom_package is not null and bedroom_package not in ('one_bedroom','two_bedroom')), '#13 every stored bedroom_package is a known package');
 end $$;
 
 \echo ''

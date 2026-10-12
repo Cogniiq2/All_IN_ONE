@@ -47,8 +47,11 @@ describe('the guest path', () => {
     const stay = futureStay(60, 2);
     const quote = await h.call('POST', '/api/booking/quote', { unitSlug: 'schulstrasse-i', ...stay, adults: 2, children: 0, bedroomPackage: 'two_bedroom' });
     expect(quote.status).toBe(200);
-    expect(quote.body.totalCents).toBe(14_000 * 2 + 4_500);
-    expect(quote.body.components.map((c: any) => c.code)).toEqual(['accommodation', 'fee:endreinigung']);
+    // The simulator's Offer 2 ("2 Schlafzimmer", fixture €150/night), taken
+    // verbatim: one accommodation line, no fee rows — the live shape.
+    expect(quote.body.totalCents).toBe(15_000 * 2);
+    expect(quote.body.components.map((c: any) => c.code)).toEqual(['accommodation']);
+    expect(quote.body.bedroomPricing).toEqual({ status: 'configured', offerId: 2 });
 
     // Somebody else (Booking.com) takes one of the nights.
     await h.beds24.block('731147', stay.checkIn, stay.checkOut);

@@ -103,30 +103,20 @@ describe('calendar mapping', () => {
 
 describe('offer mapping', () => {
   const request = {
+    unit: { provider: 'beds24' as const, externalPropertyId: '1001', externalRoomId: '2002' },
     unitSlug: 'schulstrasse-i',
-    externalRoomId: '2002',
     checkIn: '2026-09-20',
     checkOut: '2026-09-23',
     adults: 2,
     children: 0,
+    bedroomPackage: 'two_bedroom' as const,
   };
   const expires = '2026-09-20T12:00:00Z';
+  const room = (offers: unknown[], roomId = 2002) => ({ data: [{ roomId, propertyId: 1001, offers }] }) as never;
 
-  it('prices a stay and totals its fees', () => {
+  it('prices the stay from the package offer and totals provider fees', () => {
     const quote = mapOffer(
-      {
-        data: [
-          {
-            propertyId: 1001,
-            roomTypes: [
-              {
-                roomId: 2002,
-                offers: [{ price: '420.00', currency: 'EUR', fees: [{ name: 'Cleaning', amount: 45 }] }],
-              },
-            ],
-          },
-        ],
-      },
+      room([{ offerId: 2, offerName: '2 Schlafzimmer', price: '420.00', currency: 'EUR', fees: [{ name: 'Cleaning', amount: 45 }] }]),
       request,
       expires
     );
@@ -138,29 +128,20 @@ describe('offer mapping', () => {
     expect(quote.components[0].taxCategory).toBe('accommodation');
     // A fee's tax treatment is recorded as unknown rather than guessed at.
     expect(quote.components[1].taxCategory).toBe('unknown');
+    expect(quote.bedroomPricing).toEqual({ status: 'configured', offerId: 2 });
   });
 
-  it('takes the cheapest offer the provider is willing to sell', () => {
+  it('never takes the cheapest offer — only the package offer', () => {
     const quote = mapOffer(
-      {
-        data: [
-          {
-            roomTypes: [
-              { roomId: 2002, offers: [{ price: 500 }, { price: 420 }, { price: 'n/a' }] },
-            ],
-          },
-        ],
-      },
+      room([{ offerId: 1, offerName: '1 Schlafzimmer', price: 100 }, { offerId: 2, offerName: '2 Schlafzimmer', price: 500 }]),
       request,
       expires
     );
-    expect(quote.totalCents).toBe(42_000);
+    expect(quote.totalCents).toBe(50_000);
   });
 
   it('ignores offers belonging to another room', () => {
-    expect(() =>
-      mapOffer({ data: [{ roomTypes: [{ roomId: 9999, offers: [{ price: 100 }] }] }] }, request, expires)
-    ).toThrowError(ProviderError);
+    expect(() => mapOffer(room([{ offerId: 2, price: 100 }], 9999), request, expires)).toThrowError(ProviderError);
   });
 
   it('reports no offers as an availability conflict, not an empty result', () => {
@@ -177,7 +158,7 @@ describe('offer mapping', () => {
 
   it('rejects an offer whose price cannot be read', () => {
     try {
-      mapOffer({ data: [{ roomTypes: [{ roomId: 2002, offers: [{ price: 'free' }] }] }] }, request, expires);
+      mapOffer(room([{ offerId: 2, offerName: '2 Schlafzimmer', price: 'free' }]), request, expires);
       throw new Error('should have thrown');
     } catch (cause) {
       expect((cause as ProviderError).code).toBe('unavailable');
@@ -246,8 +227,11 @@ describe('mock provider fixtures', () => {
       bedroomPackage: 'two_bedroom' as const,
     });
     expect(quote.nights).toBe(3);
-    expect(quote.totalCents).toBe(3 * 14_000 + 4_500);
-    expect(quote.components.map((c) => c.code)).toEqual(['accommodation', 'fee:cleaning']);
+    // Fixture Offer 2 (€150/night), selected by the real mapper; no fee lines,
+    // as the live account returns none.
+    expect(quote.totalCents).toBe(3 * 15_000);
+    expect(quote.components.map((c) => c.code)).toEqual(['accommodation']);
+    expect(quote.bedroomPricing).toEqual({ status: 'fixture', offerId: 2 });
   });
 
   it('refuses a stay that overlaps an occupied fixture night', async () => {
@@ -293,6 +277,7 @@ describe('mock provider fixtures', () => {
         ...stay('15'),
         reference: 'BLG-ABC234',
         guest: { firstName: 'A', lastName: 'B', email: 'a@b.de', phone: '+49123456' },
+        providerOfferId: 2,
         totalCents: quote.totalCents,
         currency: 'EUR',
         idempotencyKey: 'key-1',
@@ -310,6 +295,7 @@ describe('mock provider fixtures', () => {
       adults: 2,
       children: 0,
       bedroomPackage: 'two_bedroom' as const,
+      providerOfferId: 2,
       reference: 'BLG-ABC234',
       guest: { firstName: 'A', lastName: 'B', email: 'a@b.de', phone: '+49123456' },
       totalCents: 46_500,

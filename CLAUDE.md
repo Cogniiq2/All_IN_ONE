@@ -114,9 +114,28 @@ Unless explicitly instructed:
 
 - `archive/admin-app/` — an unrelated archived Vite/React admin application with its own
   `package.json`. It is never built or served by the website.
-- `supabase/` — migrations belonging to that archived/admin application, not to the website.
+- The archived admin app's own database files inside `supabase/`: the migrations dated
+  before `20260916` (`20260612…` invoices/emails, `20260815…` lockdown) and
+  `supabase/functions/paypal-webhook/`.
 
-Neither is part of the BoLaGio website build. Do not change them for website work.
+None of these is part of the BoLaGio website build. Do not change them for website work.
+
+### `supabase/` IS the website's database
+
+Everything else under `supabase/` belongs to the website and is live:
+
+```
+supabase/migrations/20260916…  onward   booking core, admin, finance, reservations, legal,
+                                        bedroom package — applied in filename order
+supabase/ops/                           preflight, verify, per-migration rollback_<date>.sql,
+                                        shared-project hardening/preflight/verify
+supabase/seed/bolagio_booking_units.sql units + Beds24 mapping (is_bookable stays false)
+```
+
+Rules: never edit a migration that has been applied — add a new one, with a matching
+`supabase/ops/rollback_<date>.sql`. Register every new migration in `scripts/db-test.sh`,
+`scripts/test-stack.sh`, `scripts/shared-project-check.sh`, `scripts/shared-project-migration-check.sh`
+and the shared-project preflight/verify, and add an assertion to `supabase/ops/verify.sql`.
 
 ---
 
@@ -184,8 +203,14 @@ Until that system is connected:
 - use enquiry-based flows where needed
 - keep booking-related components reusable for the future integration
 
-Current state: `PAYMENT_ENABLED = false` in `lib/content/brand.ts` and the enquiry flow in
-`components/enquiry/` stands in for booking. Respect that guard.
+Current state: a complete direct-booking engine exists (`lib/booking/`, `app/api/booking/`,
+`components/booking/`) — live Beds24 quote with the bedroom package mapped to its Beds24 offer
+(`lib/integrations/beds24/bedroom-pricing.ts`), inventory hold before payment, PayPal, verified
+finalization. It is SHUT: `DIRECT_BOOKING_ENABLED=false` on every environment and
+`bolagio_units.is_bookable=false`, so every guest takes the enquiry flow. The website never
+computes a price — Beds24 offers carry every rate, surcharge and bedroom difference
+(docs/beds24-contract.md §5). `PAYMENT_ENABLED` in `brand.ts` is a legacy constant and is not the
+gate; do not switch either gate on without the owners.
 
 ---
 

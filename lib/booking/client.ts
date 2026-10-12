@@ -30,7 +30,9 @@ import type {
 export class BookingRequestError extends Error {
   constructor(
     readonly code: BookingErrorCode,
-    readonly meta?: Record<string, number | string | boolean>
+    readonly meta?: Record<string, number | string | boolean>,
+    /** With `price_changed`: the server's fresh quote, to show and confirm. */
+    readonly quote?: BookingQuote
   ) {
     super(code);
     this.name = 'BookingRequestError';
@@ -58,10 +60,13 @@ async function call<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   }
 
   if (!response.ok) {
-    const parsed = body as { error?: string; meta?: Record<string, number | string | boolean> } | undefined;
+    const parsed = body as
+      | { error?: string; meta?: Record<string, number | string | boolean>; quote?: BookingQuote }
+      | undefined;
     throw new BookingRequestError(
       (parsed?.error as BookingErrorCode) ?? 'unexpected',
-      parsed?.meta
+      parsed?.meta,
+      parsed?.quote
     );
   }
 
@@ -122,6 +127,8 @@ export function createBookingIntent(
     attemptId: string;
     /** The versions of the terms rendered on screen when the button was pressed. */
     acceptedTerms: AcceptedTermsVersions;
+    /** The total the guest is looking at. Compared server-side, never charged. */
+    expectedTotalCents: number;
   },
   signal?: AbortSignal
 ): Promise<{ intent: BookingIntentView; quote: BookingQuote }> {

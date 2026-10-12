@@ -75,6 +75,12 @@ export interface OfferRequest {
 }
 
 export interface HoldRequest extends OfferRequest {
+  /**
+   * The provider offer the verified total belongs to (Beds24 `offerId`), from
+   * the quote this hold is made for. Written to the booking so the provider
+   * records which package was sold.
+   */
+  providerOfferId: number;
   reference: string;
   guest: GuestDetails;
   totalCents: number;
@@ -106,6 +112,8 @@ export interface ProviderBooking {
   checkOut?: IsoDate;
   /** The BoLaGio reference the provider echoes back, when it does. */
   reference?: string;
+  /** The provider offer the booking is on, when it says. */
+  offerId?: number;
 }
 
 /**
@@ -118,7 +126,7 @@ export interface ProviderBooking {
  */
 export class ProviderError extends Error {
   constructor(
-    readonly code: 'availability_conflict' | 'stay_rules' | 'unavailable' | 'rejected',
+    readonly code: 'availability_conflict' | 'stay_rules' | 'unavailable' | 'rejected' | 'offer_unavailable',
     message: string,
     readonly meta?: Record<string, number | string | boolean>
   ) {

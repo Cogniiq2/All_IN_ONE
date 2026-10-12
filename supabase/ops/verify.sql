@@ -108,6 +108,15 @@ do $$ begin
   else
     raise notice 'finance ingestion pipeline (20260927) is not applied: its assertions skipped';
   end if;
+  if exists (select 1 from information_schema.columns where table_name = 'bolagio_booking_intents' and column_name = 'bedroom_package') then
+    perform pg_temp.v_assert(exists (select 1 from pg_constraint where conname = 'bolagio_intent_bedroom_package_value'), 'bedroom_package accepts only the two packages');
+    perform pg_temp.v_assert(exists (select 1 from pg_constraint where conname = 'bolagio_intent_bedroom_package_party'), 'one_bedroom is held to two guests by the database');
+    perform pg_temp.v_assert(exists (select 1 from information_schema.columns where table_name = 'bolagio_booking_intents' and column_name = 'beds24_offer_id'), 'intents record the Beds24 offer');
+    perform pg_temp.v_assert(exists (select 1 from information_schema.columns where table_name = 'bolagio_reservations' and column_name = 'bedroom_package'), 'imported reservations carry the bedroom package');
+    raise notice 'ok — bedroom package (20261012) verified';
+  else
+    raise notice 'bedroom package (20261012) is not applied: its assertions skipped';
+  end if;
   perform pg_temp.v_assert(not exists (
     select 1 from bolagio_booking_intents where refund_state = 'completed' and (refund_id is null or refunded_amount_cents <= 0)), 'no completed refund without evidence');
   perform pg_temp.v_assert(not exists (

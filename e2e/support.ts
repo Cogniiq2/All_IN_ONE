@@ -230,7 +230,7 @@ export async function driveToPayment(page: Page, opts: { stay?: { arrival: strin
   await next(page);
   await expect(page.getByRole('heading', { name: 'Wie möchten Sie zahlen?' })).toBeVisible();
   await page.getByRole('button', { name: /PayPal/ }).first().click();
-  await page.getByRole('button', { name: 'Verbindlich buchen' }).click();
+  await page.getByRole('button', { name: 'Zahlungspflichtig buchen' }).click();
   if (opts.expectPayPal === false) return '';
   await expect(page.locator('[data-sim="paypal"]')).toBeVisible();
   const reference = latestReference();
@@ -278,6 +278,8 @@ async function api(pathname: string, body: unknown, ip: string): Promise<{ statu
     const quote = await api('/api/booking/quote', { unitSlug: b.unitSlug, checkIn: b.checkIn, checkOut: b.checkOut, adults: b.adults, children: b.children, bedroomPackage: b.bedroomPackage }, ip);
     const terms = quote.body?.terms;
     if (terms) body = { ...(body as Record<string, unknown>), acceptedTerms: { cancellation: terms.cancellation.version, withdrawal: terms.withdrawal.version, agb: terms.agb.version, privacy: terms.privacy.version, price: terms.price.version } };
+    // …and the total the checkout showed, which the server compares with a fresh Beds24 offer.
+    if (typeof quote.body?.totalCents === 'number' && !('expectedTotalCents' in (body as object))) body = { ...(body as Record<string, unknown>), expectedTotalCents: quote.body.totalCents };
   }
   const r = await fetch(`${state().app}${pathname}`, { method: 'POST', headers: { 'content-type': 'application/json', 'cf-connecting-ip': ip }, body: JSON.stringify(body) });
   const text = await r.text();

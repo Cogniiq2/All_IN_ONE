@@ -40,6 +40,7 @@ import { acquireLock, OverlapError, queueReconciliation, transitionIntent } from
 import type { BookingLogger } from '@/lib/booking/logger';
 import type { BookableUnit, IntentRecord } from '@/lib/booking/repository';
 import { addDays } from '@/lib/booking/stay-rules';
+import { quoteHashOf } from '@/lib/booking/quote-hash';
 import type { BookingQuote } from '@/lib/booking/types';
 import { bookingProvider } from '@/lib/integrations/beds24';
 import { ProviderError, type ProviderBooking } from '@/lib/integrations/provider';
@@ -59,6 +60,8 @@ export type HoldFailure =
   | { kind: 'conflict' }            // someone else has the dates. Safe.
   | { kind: 'stay_rules'; meta?: Record<string, number | string | boolean> }
   | { kind: 'unavailable' }         // Beds24 is down. Nothing was created.
+  | { kind: 'price_changed'; quote: BookingQuote } // fresh offer ≠ quoted. Nothing was created.
+  | { kind: 'bedroom_setup_unavailable'; meta?: Record<string, number | string | boolean> }
   | { kind: 'uncertain' }           // WE DO NOT KNOW. Do not retry.
   | { kind: 'rejected' };
 
@@ -110,9 +113,20 @@ export async function acquireHold(
   // window small is the whole mitigation, and Beds24's own account-level
   // Overbooking Protection is the backstop — see
   // docs/direct-booking-production-readiness.md.
+  //
+  // ── Price integrity ─────────────────────────────────────────────────────
+  // This re-check used to be made and its answer thrown away: the hold and
+  // the payment then used the earlier quote whatever Beds24 said now. The
+  // fresh offer is now the one that counts. It must be the same bedroom
+  // package's offer at the same total, or nothing is created and the guest is
+  // shown the fresh quote to confirm (`price_changed`). Because the intent
+  // carries the quoted total and the hold proceeds only when the fresh total
+  // equals it, the amount written to Beds24 and charged through PayPal is the
+  // verified fresh Beds24 amount.
 
+  let fresh: BookingQuote;
   try {
-    await provider.fetchOffer({
+    fresh = await provider.fetchOffer({
       unit: unitRef,
       unitSlug: unit.slug,
       checkIn: intent.checkIn,
@@ -126,6 +140,24 @@ export async function acquireHold(
   } catch (cause) {
     await unwindLock(locked, cause, logger);
     throw toHoldError(cause);
+  }
+
+  const freshOfferId = offerIdOf(fresh);
+  if (
+    fresh.totalCents !== quote.totalCents ||
+    fresh.currency !== quote.currency ||
+    freshOfferId === undefined ||
+    freshOfferId !== offerIdOf(quote) ||
+    (await quoteHashOf(fresh)) !== (await quoteHashOf(quote))
+  ) {
+    logger.info('beds24.hold', {
+      reference: intent.reference,
+      outcome: 'price_changed',
+      amountCents: fresh.totalCents,
+      currency: fresh.currency,
+    });
+    await unwindLock(locked, new Error('the live Beds24 offer changed between quote and hold'), logger, 'BEDS24_PRICE_CHANGED');
+    throw new HoldError({ kind: 'price_changed', quote: fresh });
   }
 
   /* ── 3. The hold itself, tracked ─────────────────────────────────────── */
@@ -168,10 +200,12 @@ export async function acquireHold(
           checkOut: intent.checkOut,
           adults: intent.adults,
           children: intent.children,
-          bedroomPackage: quote.bedroomPackage,
+          bedroomPackage: fresh.bedroomPackage,
+          providerOfferId: freshOfferId,
           guest: intent.guest!,
-          totalCents: quote.totalCents,
-          currency: quote.currency,
+          // The fresh, verified Beds24 total — equal to the persisted quote.
+          totalCents: fresh.totalCents,
+          currency: fresh.currency,
           idempotencyKey: `${intent.reference}:hold`,
           holdExpiresAt,
         })
@@ -233,7 +267,7 @@ export async function acquireHold(
 
   /* ── 4. Verify the booking is ours ───────────────────────────────────── */
 
-  const verification = await verifyHold(booking, intent, unitRef, logger);
+  const verification = await verifyHold(booking, intent, unitRef, freshOfferId, logger);
   if (!verification.ok) {
     /*
      * A booking exists and it is not the one we asked for. Releasing it would
@@ -356,6 +390,7 @@ async function verifyHold(
   booking: ProviderBooking,
   intent: IntentRecord,
   unitRef: { externalPropertyId: string; externalRoomId: string },
+  expectedOfferId: number,
   logger: BookingLogger
 ): Promise<VerificationResult> {
   const provider = bookingProvider();
@@ -382,6 +417,9 @@ async function verifyHold(
   }
   if (subject.checkIn && subject.checkIn !== intent.checkIn) mismatches.push('arrival');
   if (subject.checkOut && subject.checkOut !== intent.checkOut) mismatches.push('departure');
+  // The bedroom setup is part of what was sold. A booking on the other offer
+  // is the wrong product even on the right room and dates.
+  if (subject.offerId !== undefined && subject.offerId !== expectedOfferId) mismatches.push('offer');
 
   if (mismatches.length > 0) {
     return {
@@ -431,7 +469,12 @@ async function verifyHold(
  * the local range is safe. It is never called on an uncertain outcome; that
  * path keeps the range and escalates.
  */
-async function unwindLock(intent: IntentRecord, cause: unknown, logger: BookingLogger): Promise<void> {
+async function unwindLock(
+  intent: IntentRecord,
+  cause: unknown,
+  logger: BookingLogger,
+  failureCode: 'BEDS24_HOLD_REJECTED' | 'BEDS24_PRICE_CHANGED' = 'BEDS24_HOLD_REJECTED'
+): Promise<void> {
   const conflict = cause instanceof ProviderError && cause.code === 'availability_conflict';
   await transitionIntent(
     intent.id,
@@ -441,7 +484,7 @@ async function unwindLock(intent: IntentRecord, cause: unknown, logger: BookingL
       reason: conflict ? 'dates_taken' : 'hold_rejected',
       patch: {
         lockExpiresAt: null,
-        lastFailureCode: conflict ? 'BEDS24_HOLD_REJECTED' : 'BEDS24_HOLD_REJECTED',
+        lastFailureCode: failureCode,
         lastFailureReason: cause instanceof Error ? cause.message.slice(0, 200) : 'unknown',
       },
     },
@@ -458,6 +501,8 @@ function toHoldError(cause: unknown): HoldError {
         return new HoldError({ kind: 'stay_rules', meta: cause.meta });
       case 'unavailable':
         return new HoldError({ kind: 'unavailable' });
+      case 'offer_unavailable':
+        return new HoldError({ kind: 'bedroom_setup_unavailable', meta: cause.meta });
       default:
         return new HoldError({ kind: 'rejected' });
     }
@@ -465,4 +510,9 @@ function toHoldError(cause: unknown): HoldError {
   if (cause instanceof OverlapError) return new HoldError({ kind: 'conflict' });
   // An unrecognised throw from a provider call is uncertain, not failed.
   return new HoldError({ kind: 'uncertain' });
+}
+
+/** The provider offer a quote was priced on; undefined for a replayed quote. */
+function offerIdOf(quote: BookingQuote): number | undefined {
+  return quote.bedroomPricing.status === 'unverified' ? undefined : quote.bedroomPricing.offerId;
 }

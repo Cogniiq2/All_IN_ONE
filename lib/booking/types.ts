@@ -107,23 +107,22 @@ export interface QuoteComponent {
 export type BedroomPackage = 'one_bedroom' | 'two_bedroom';
 
 /**
- * Whether the quote's price is actually the price of the chosen bedroom
- * package.
+ * Where the quote's price for the chosen bedroom package came from.
  *
- *   not_configured  the provider has no confirmed mapping from a package to
- *                   its rate yet. The amounts are what Beds24 returned for the
- *                   stay, NOT a package price, and the booking button is
- *                   withheld. Every live quote is in this state today — see
- *                   `resolveBeds24BedroomPricing` in
- *                   lib/integrations/beds24/bedroom-pricing.ts.
- *   fixture         mock mode only. The amounts are test fixtures and are
- *                   refused on production by the service.
- *
- * A third state (a confirmed provider mapping) is added when Phase 2 maps the
- * packages to what the Beds24 account actually returns. It is deliberately
- * absent until then, so nothing can claim it.
+ *   configured  LIVE: the price is exactly the Beds24 offer mapped to the
+ *               package (one_bedroom → Offer 1, two_bedroom → Offer 2), found
+ *               by `resolveBeds24BedroomPricing`. `offerId` is that offer, and
+ *               is written to the Beds24 booking at hold time.
+ *   fixture     MOCK ONLY: the same selection over a fixture response. The
+ *               amounts are test data; the service never books them on
+ *               production and the checkout labels them.
+ *   unverified  an idempotent replay rebuilt from a stored intent rather than a
+ *               fresh offer. Never bookable; the dialog does not act on it.
  */
-export type BedroomPricing = { status: 'not_configured' } | { status: 'fixture' };
+export type BedroomPricing =
+  | { status: 'configured'; offerId: number }
+  | { status: 'fixture'; offerId: number }
+  | { status: 'unverified' };
 
 export interface BookingQuote {
   unitSlug: string;
@@ -287,10 +286,17 @@ export type BookingErrorCode =
    */
   | 'pending_verification'
   /**
-   * The provider has no confirmed price for the chosen bedroom package yet.
-   * Fail closed, like `terms_unavailable`: no intent, no hold, no payment.
+   * The Beds24 offer for the chosen bedroom package is not offered for this
+   * stay and party (absent from the live offers), or the mapping no longer
+   * matches the account. Never substituted with another package's offer.
    */
-  | 'pricing_unconfigured'
+  | 'bedroom_setup_unavailable'
+  /**
+   * The live Beds24 total differs from the total the guest confirmed. The
+   * response carries the fresh quote; nothing was created; the guest reviews
+   * the new total and confirms again.
+   */
+  | 'price_changed'
   /** Anything else. Deliberately opaque. */
   | 'unexpected';
 
@@ -301,6 +307,8 @@ export interface BookingErrorBody {
    * e.g. the minimum stay that was violated. Never free text from a provider.
    */
   meta?: Record<string, number | string | boolean>;
+  /** With `price_changed` only: the fresh, authoritative quote to show instead. */
+  quote?: BookingQuote;
 }
 
 /* ── Analytics ─────────────────────────────────────────────────────────── */

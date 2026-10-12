@@ -44,6 +44,31 @@ export interface UpsertReservationInput {
   reservation: ProviderReservation;
   /** Set when the reservation is provably one of BoLaGio's own direct bookings. */
   directIntentId?: string | null;
+  /**
+   * Whether the database has the 20261012 columns (`external_offer_id`,
+   * `bedroom_package`). Decided once per sync run by
+   * `reservationOfferColumnsAvailable()`; when false or absent they are simply
+   * not written, so the hourly import keeps working on a database the
+   * migration has not reached yet.
+   */
+  writeOfferColumns?: boolean;
+}
+
+let offerColumnsConfirmed = false;
+
+/**
+ * Does `bolagio_reservations` have the 20261012 offer columns?
+ *
+ * One cheap read (no rows needed), and only until it has once said yes:
+ * columns are never dropped in normal operation, and a "no" is re-asked on the
+ * next run so applying the migration takes effect without a redeploy.
+ */
+export async function reservationOfferColumnsAvailable(): Promise<boolean> {
+  if (offerColumnsConfirmed) return true;
+  const { error } = await supabaseAdmin().from('bolagio_reservations').select('external_offer_id').limit(1);
+  if (error) return false;
+  offerColumnsConfirmed = true;
+  return true;
 }
 
 export type UpsertOutcome = 'inserted' | 'updated';
@@ -153,6 +178,9 @@ function reservationColumns(input: UpsertReservationInput, now: string) {
     provider_modified_at: r.providerModifiedAt,
     provider_cancelled_at: r.providerCancelledAt,
     direct_intent_id: input.directIntentId ?? undefined,
+    ...(input.writeOfferColumns
+      ? { external_offer_id: r.externalOfferId, bedroom_package: r.bedroomPackage }
+      : {}),
   });
   return { authoritative, optional };
 }

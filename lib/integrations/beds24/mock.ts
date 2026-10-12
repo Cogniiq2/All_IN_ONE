@@ -34,16 +34,25 @@ import 'server-only';
  *   15th   quote succeeds, HOLD fails with a conflict. This is the real race:
  *          a Booking.com reservation landing between the quote and the hold.
  *
- * ── Bedroom packages: fixtures, and labelled as such ─────────────────────
- * Both `one_bedroom` and `two_bedroom` are quoted, each marked
- * `bedroomPricing: { status: 'fixture' }`, which the checkout renders as
- * "test data" and the service refuses to book on production. The two
- * packages deliberately cost the SAME here: a fixture supplement would be an
- * invented bedroom price, and the real one will come from Beds24.
+ *   16th   bedroom fixture: Offer 1 is absent, so `one_bedroom` is refused
+ *          as `bedroom_setup_unavailable` and `two_bedroom` is quoted.
+ *
+ * ── Bedroom packages: the REAL selection over a FIXTURE response ─────────
+ * The mock answers in exactly the shape Beds24 returns (verified 2026-10-12):
+ * `data[] → { roomId, propertyId, offers[] }`, Offer 1 "1 Schlafzimmer" for up
+ * to two guests and Offer 2 "2 Schlafzimmer" for up to four. That response
+ * goes through the real `mapOffer` and `resolveBeds24BedroomPricing`, so mock
+ * mode exercises the same selection the live adapter uses. Only the PRICES
+ * are fixtures — round test numbers, no commercial rule reproduced — and the
+ * quote is marked `bedroomPricing.status = 'fixture'`, which the checkout
+ * labels as test data and the service never books on production.
  * ══════════════════════════════════════════════════════════════════════════
  */
 
 import { quoteMinutes } from '@/lib/booking/config';
+import { BEDS24_BEDROOM_OFFERS } from '@/lib/integrations/beds24/bedroom-pricing';
+import { mapOffer } from '@/lib/integrations/beds24/mapper';
+import type { Beds24Offer, Beds24OffersResponse } from '@/lib/integrations/beds24/types';
 import {
   addDays,
   calendarFromReservations,
@@ -60,9 +69,9 @@ import {
   type ProviderBooking,
 } from '@/lib/integrations/provider';
 
-/** FIXTURE prices — mock mode only, never a BoLaGio rate. */
+/** FIXTURE prices — mock mode only, never a BoLaGio rate, never a rule. */
 const NIGHTLY_CENTS = 14_000;
-const CLEANING_CENTS = 4_500;
+const FIXTURE_OFFER_NIGHTLY_EUR: Readonly<Record<number, number>> = { 1: 120, 2: 150 };
 
 function firstOfMonth(date: IsoDate): IsoDate {
   return `${date.slice(0, 7)}-01`;
@@ -154,41 +163,40 @@ export const beds24MockProvider: BookingProvider = {
       if (!day.available) throw new ProviderError('availability_conflict', 'Night is taken');
     }
 
-    const accommodation = NIGHTLY_CENTS * nights;
+    const party = request.adults + request.children;
+    const offers: Beds24Offer[] = [];
+    for (const [pkg, mapped] of Object.entries(BEDS24_BEDROOM_OFFERS)) {
+      if (party > mapped.maxGuests) continue; // as Beds24: no valid price → absent
+      if (pkg === 'one_bedroom' && dayOfMonth(request.checkIn) === 16) continue; // fixture: Offer 1 withheld
+      offers.push({
+        offerId: mapped.offerId,
+        offerName: mapped.offerName,
+        price: FIXTURE_OFFER_NIGHTLY_EUR[mapped.offerId] * nights,
+        unitsAvailable: 1,
+      });
+    }
 
-    return {
-      unitSlug: request.unitSlug,
-      checkIn: request.checkIn,
-      checkOut: request.checkOut,
-      nights,
-      adults: request.adults,
-      children: request.children,
-      bedroomPackage: request.bedroomPackage,
-      // FIXTURE. Never a package price — see the header of this file.
-      bedroomPricing: { status: 'fixture' },
-      currency: 'EUR',
-      totalCents: accommodation + CLEANING_CENTS,
-      components: [
-        {
-          code: 'accommodation',
-          label: {
-            de: `Unterkunft · ${nights} ${nights === 1 ? 'Nacht' : 'Nächte'}`,
-            en: `Accommodation · ${nights} ${nights === 1 ? 'night' : 'nights'}`,
-          },
-          amountCents: accommodation,
-          taxCategory: 'accommodation',
-          mandatory: true,
-        },
-        {
-          code: 'fee:cleaning',
-          label: { de: 'Endreinigung', en: 'Final cleaning' },
-          amountCents: CLEANING_CENTS,
-          taxCategory: 'service',
-          mandatory: true,
-        },
-      ],
-      expiresAt: new Date(Date.now() + quoteMinutes() * 60_000).toISOString(),
+    const response: Beds24OffersResponse = {
+      success: true,
+      type: 'offer',
+      data: [{ roomId: Number(request.unit.externalRoomId), propertyId: Number(request.unit.externalPropertyId), offers }],
     };
+    const quote = mapOffer(
+      response,
+      {
+        unit: request.unit,
+        unitSlug: request.unitSlug,
+        checkIn: request.checkIn,
+        checkOut: request.checkOut,
+        adults: request.adults,
+        children: request.children,
+        bedroomPackage: request.bedroomPackage,
+      },
+      new Date(Date.now() + quoteMinutes() * 60_000).toISOString()
+    );
+    if (quote.bedroomPricing.status !== 'configured') return quote;
+    // FIXTURE prices: labelled as such, and never bookable on production.
+    return { ...quote, bedroomPricing: { status: 'fixture', offerId: quote.bedroomPricing.offerId } };
   },
 
   async createHold(request: HoldRequest): Promise<ProviderBooking> {
@@ -206,6 +214,7 @@ export const beds24MockProvider: BookingProvider = {
       checkIn: request.checkIn,
       checkOut: request.checkOut,
       reference: request.reference,
+      offerId: request.providerOfferId,
     };
     // Held in module scope so `getBooking` and `findBookings` can answer, which
     // is what lets the verification and reconciliation paths be exercised

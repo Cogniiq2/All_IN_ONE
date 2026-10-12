@@ -198,7 +198,7 @@ const QUOTE: BookingQuote = {
   adults: 2,
   children: 0,
   bedroomPackage: 'two_bedroom',
-  bedroomPricing: { status: 'fixture' },
+  bedroomPricing: { status: 'configured', offerId: 2 },
   currency: 'EUR',
   totalCents: 42500,
   components: [],
@@ -262,6 +262,50 @@ describe('the happy path', () => {
   it('emits a booking.held event', async () => {
     await acquireHold(makeIntent(), UNIT, QUOTE, logger);
     expect(transitions.find((t) => t.to === 'hold_created')).toBeDefined();
+  });
+});
+
+describe('price integrity at hold time', () => {
+  it('uses the fresh Beds24 offer: package, offer id and verified total reach the hold', async () => {
+    await acquireHold(makeIntent(), UNIT, QUOTE, logger);
+    const hold = provider.createHold.mock.calls[0][0];
+    expect(hold.bedroomPackage).toBe('two_bedroom');
+    expect(hold.providerOfferId).toBe(2);
+    expect(hold.totalCents).toBe(QUOTE.totalCents);
+  });
+
+  it('refuses when Beds24 re-priced the stay — no hold, lock unwound, fresh quote returned', async () => {
+    const repriced = { ...QUOTE, totalCents: QUOTE.totalCents + 3_900, components: [] };
+    provider.fetchOffer.mockResolvedValue(repriced);
+    const error = await acquireHold(makeIntent(), UNIT, QUOTE, logger).catch((e) => e);
+
+    expect(error).toBeInstanceOf(HoldError);
+    expect((error as HoldError).failure.kind).toBe('price_changed');
+    expect((error as { failure: { quote: BookingQuote } }).failure.quote.totalCents).toBe(repriced.totalCents);
+    expect(provider.createHold).not.toHaveBeenCalled();
+    const unwound = transitions.find((t) => t.to === 'hold_failed');
+    expect(unwound?.patch?.lastFailureCode).toBe('BEDS24_PRICE_CHANGED');
+  });
+
+  it('refuses when the fresh quote is on another offer, even at the same total', async () => {
+    provider.fetchOffer.mockResolvedValue({ ...QUOTE, bedroomPricing: { status: 'configured', offerId: 1 } });
+    const error = await acquireHold(makeIntent(), UNIT, QUOTE, logger).catch((e) => e);
+    expect((error as HoldError).failure.kind).toBe('price_changed');
+    expect(provider.createHold).not.toHaveBeenCalled();
+  });
+
+  it('refuses when the package\'s offer is no longer offered', async () => {
+    provider.fetchOffer.mockRejectedValue(new ProviderError('offer_unavailable', 'gone', { reason: 'offer_missing' }));
+    const error = await acquireHold(makeIntent(), UNIT, QUOTE, logger).catch((e) => e);
+    expect((error as HoldError).failure.kind).toBe('bedroom_setup_unavailable');
+    expect(provider.createHold).not.toHaveBeenCalled();
+  });
+
+  it('treats a Beds24 booking on the other offer as not ours', async () => {
+    provider.getBooking.mockResolvedValue({ ...GOOD_BOOKING, offerId: 1 });
+    const error = await acquireHold(makeIntent(), UNIT, QUOTE, logger).catch((e) => e);
+    expect((error as HoldError).failure.kind).toBe('uncertain');
+    expect(transitions.find((t) => t.to === 'manual_review')?.patch?.lastFailureCode).toBe('BEDS24_HOLD_MISMATCH');
   });
 });
 

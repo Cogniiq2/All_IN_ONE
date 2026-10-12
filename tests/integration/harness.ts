@@ -98,10 +98,6 @@ export async function startHarness(overrides: Record<string, string> = {}): Prom
     // honoured on local/staging only, so the checkout gate opens here without
     // an owner-approved production text.
     BOOKING_TEST_TERMS: 'true',
-    // The simulator has no bedroom-package mapping, and neither does the real
-    // account yet: every quote is `not_configured`. Local-only switch that lets
-    // the hold/payment paths still run (lib/booking/config.ts).
-    BOOKING_TEST_BEDROOM_PRICING: 'true',
     // Every success heartbeat is written: the tests reset the database between
     // cases, and a per-isolate throttle would remember the previous case.
     OBSERVE_SUCCESS_INTERVAL_MS: '0',
@@ -167,6 +163,18 @@ export async function startHarness(overrides: Record<string, string> = {}): Prom
       const { versionsOf } = await import('@/lib/legal/booking-terms');
       const terms = resolveCheckoutTerms();
       if (terms) body = { ...(body as Record<string, unknown>), acceptedTerms: versionsOf(terms) };
+    }
+    // …and the total it was shown. Tests not ABOUT price integrity send none,
+    // so the harness asks for the live quote the checkout would have shown —
+    // through the real quote route — and echoes its total, as the dialog does.
+    if (pathname === '/api/booking/intent' && body && typeof body === 'object' && !('expectedTotalCents' in body)) {
+      const b = body as Record<string, unknown>;
+      const quoted = await fetch(`${app}/api/booking/quote`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'cf-connecting-ip': `10.9.${requestCounter % 250}.1` },
+        body: JSON.stringify({ unitSlug: b.unitSlug, checkIn: b.checkIn, checkOut: b.checkOut, adults: b.adults, children: b.children, bedroomPackage: b.bedroomPackage }),
+      }).then((r) => r.json()).catch(() => null) as { totalCents?: number } | null;
+      if (typeof quoted?.totalCents === 'number') body = { ...b, expectedTotalCents: quoted.totalCents };
     }
     const response = await fetch(`${app}${pathname}`, {
       method,

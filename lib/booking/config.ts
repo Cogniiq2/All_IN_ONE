@@ -343,26 +343,6 @@ export function quoteMinutes(): number {
   return intEnv('BOOKING_QUOTE_MINUTES', 20, 5, 60);
 }
 
-/* ── Bedroom package pricing ───────────────────────────────────────────── */
-
-/**
- * Treat an unconfigured bedroom-package price as a test fixture — LOCAL ONLY.
- *
- * Every live quote reports its package price as `not_configured` until the
- * Beds24 mapping exists (lib/integrations/beds24/bedroom-pricing.ts), and the
- * service refuses to book it. The integration and e2e suites run the live
- * adapter against the local Beds24 SIMULATOR, so without this switch they
- * could no longer exercise the hold, payment and finalization paths at all.
- *
- * Honoured only on APP_ENV=local — the one environment where the provider URL
- * may point at a simulator — and refused by `validateEnvironment()` anywhere
- * else. The relabelled quote says `fixture`, which the checkout renders as
- * test data and the service never books on production.
- */
-export function bedroomPricingTestOverride(): boolean {
-  return env('BOOKING_TEST_BEDROOM_PRICING') === 'true' && appEnvironment() === 'local';
-}
-
 /* ── Cancellation and refund gates ─────────────────────────────────────── */
 
 /**

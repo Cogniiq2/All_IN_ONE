@@ -55,13 +55,12 @@ export const BEDROOM_PACKAGE_LABEL: Record<BedroomPackage, { de: string; en: str
 
 /**
  * Whether a bookable checkout may offer its button: a quote with approved
- * terms, whose price the provider has confirmed for the chosen bedroom
- * package. A `not_configured` package price withholds the button exactly as
- * missing terms do. The server enforces the same (`pricing_unconfigured`);
- * this is the courtesy, not the gate.
+ * terms, priced on the Beds24 offer of the chosen bedroom package (or a
+ * labelled mock fixture). A replayed, `unverified` quote never offers it. The
+ * server enforces the same; this is the courtesy, not the gate.
  */
 export function checkoutReady(quote: BookingQuote | null): quote is BookingQuote & { terms: CheckoutTerms } {
-  return Boolean(quote && quote.terms && quote.bedroomPricing.status !== 'not_configured');
+  return Boolean(quote && quote.terms && quote.bedroomPricing.status !== 'unverified');
 }
 
 export function CheckoutSummary({
@@ -132,19 +131,7 @@ export function CheckoutSummary({
           </div>
         </dl>
 
-        {/*
-          Whether the amounts above are the price OF the chosen bedroom setup.
-          Not yet, on any live quote: the Beds24 mapping is not configured, so
-          the guest is told plainly and the button is withheld. Fixture prices
-          (mock mode) say they are test data.
-        */}
-        {quote?.bedroomPricing.status === 'not_configured' && (
-          <p className="mt-2 text-[12px] leading-relaxed" style={muted} data-pricing="bedroom-unconfigured">
-            {de
-              ? 'Der Betrag ist der aktuelle Preis unseres Buchungssystems für diesen Zeitraum. Ein Preis für die gewählte Zimmeraufteilung ist dort noch nicht hinterlegt — eine Online-Buchung ist daher noch nicht möglich.'
-              : 'This amount is our booking system’s current price for these dates. A price for the selected bedroom setup is not set there yet, so online booking is not possible.'}
-          </p>
-        )}
+        {/* Mock fixtures say so. Live quotes are the Beds24 offer itself and need no caveat. */}
         {quote?.bedroomPricing.status === 'fixture' && (
           <p className="mt-2 text-[12px] font-semibold leading-relaxed" style={{ color: 'hsl(var(--destructive))' }} data-pricing="fixture">
             {de ? 'Testdaten — Beispielpreise, keine BoLaGio-Preise.' : 'Test data — example prices, not BoLaGio rates.'}

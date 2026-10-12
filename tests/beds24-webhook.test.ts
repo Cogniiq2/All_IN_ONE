@@ -123,6 +123,7 @@ vi.mock('@/lib/booking/service', () => ({
 }));
 
 vi.mock('@/lib/booking/reservation-repository', () => ({
+  reservationOfferColumnsAvailable: async () => true,
   upsertReservation: async (input: { reservation: Record<string, unknown> }) => {
     h.stored.push({
       externalBookingId: input.reservation.externalBookingId as string,

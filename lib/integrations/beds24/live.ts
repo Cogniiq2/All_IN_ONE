@@ -10,7 +10,7 @@ import 'server-only';
  */
 
 import { beds24ConfirmedStatus, quoteMinutes } from '@/lib/booking/config';
-import type { BookingQuote, InventoryDay } from '@/lib/booking/types';
+import type { BedroomPackage, BookingQuote, InventoryDay } from '@/lib/booking/types';
 import {
   ProviderError,
   type AvailabilityRequest,
@@ -21,7 +21,7 @@ import {
 } from '@/lib/integrations/provider';
 import { beds24Request } from '@/lib/integrations/beds24/client';
 import { mapCalendar, mapOffer } from '@/lib/integrations/beds24/mapper';
-import { resolveBeds24BedroomPricing } from '@/lib/integrations/beds24/bedroom-pricing';
+import { BEDS24_BEDROOM_OFFERS } from '@/lib/integrations/beds24/bedroom-pricing';
 import type {
   Beds24Booking,
   Beds24BookingStatus,
@@ -65,6 +65,14 @@ function confirmedStatus(): Beds24BookingStatus {
 /** Marks every reservation this website creates, for channel attribution. */
 const DIRECT_REFERER = 'BoLaGio Direct';
 
+/** The `infoItems` code that carries the bedroom setup on a direct booking. */
+export const BEDROOM_INFO_CODE = 'BOLAGIO_BEDROOM_SETUP';
+
+/** Exactly the Beds24 offer name, so the marker reads like the account. */
+function bedroomSetupLabel(bedroomPackage: BedroomPackage): string {
+  return BEDS24_BEDROOM_OFFERS[bedroomPackage].offerName;
+}
+
 export const beds24LiveProvider: BookingProvider = {
   mode: 'live',
 
@@ -97,44 +105,36 @@ export const beds24LiveProvider: BookingProvider = {
         roomId: request.unit.externalRoomId,
         arrival: request.checkIn,
         departure: request.checkOut,
-        numAdult: request.adults,
-        numChild: request.children,
+        // PLURAL on this endpoint. `numAdult` is refused with HTTP 400, code
+        // 2002 "Occupancy not defined" — verified live 2026-10-12. (The
+        // booking WRITE below uses the singular `numAdult`/`numChild`.)
+        // No `offerId` filter: every offer is fetched and the bedroom seam
+        // selects, so a missing offer is seen as missing, not as "no offers".
+        numAdults: request.adults,
+        numChildren: request.children,
       },
     });
 
     const expiresAt = new Date(Date.now() + quoteMinutes() * 60_000).toISOString();
-    // Offer selection is unchanged: `mapOffer` still decides the stay's total
-    // exactly as before. Whether that total is the price OF the requested
-    // bedroom package is a separate question with a separate, isolated answer.
-    const quote = mapOffer(
+    // The quote is the ONE offer mapped to the bedroom package, verbatim —
+    // see resolveBeds24BedroomPricing. Nothing is selected by price.
+    return mapOffer(
       response,
       {
+        unit: request.unit,
         unitSlug: request.unitSlug,
-        externalRoomId: String(request.unit.externalRoomId),
         checkIn: request.checkIn,
         checkOut: request.checkOut,
         adults: request.adults,
         children: request.children,
+        bedroomPackage: request.bedroomPackage,
       },
       expiresAt
     );
-    const bedroomPricing = resolveBeds24BedroomPricing({
-      unit: request.unit,
-      bedroomPackage: request.bedroomPackage,
-      offers: response,
-    });
-    return {
-      ...quote,
-      bedroomPackage: request.bedroomPackage,
-      bedroomPricing: { status: bedroomPricing.status },
-    };
   },
 
   async createHold(request: HoldRequest): Promise<ProviderBooking> {
-    // `request.bedroomPackage` is deliberately NOT written to Beds24 yet. How
-    // the account represents a package (offer, rate, room) is unconfirmed, and
-    // a guessed field would be a guessed mapping — see bedroom-pricing.ts. The
-    // service refuses every live hold until that mapping exists.
+    const setup = bedroomSetupLabel(request.bedroomPackage);
     const response = await beds24Request<Beds24BookingWriteResponse>({
       path: '/bookings',
       method: 'POST',
@@ -153,13 +153,24 @@ export const beds24LiveProvider: BookingProvider = {
           email: request.guest.email,
           phone: request.guest.phone,
           country: request.guest.country,
-          // Beds24 prices in major units.
+          // Beds24 prices in major units. The VERIFIED total from the fresh
+          // offer, written explicitly so the booking carries exactly the
+          // amount the guest is charged.
           price: request.totalCents / 100,
+          // The offer the total belongs to — a documented field of the V2
+          // booking object (`booking.offerId`, integer). This is how Beds24
+          // itself records which bedroom setup was sold.
+          offerId: request.providerOfferId,
+          // Housekeeping-readable, structured, and not guest-facing: a
+          // documented `infoItems` entry (code + text) on the booking.
+          infoItems: [{ code: BEDROOM_INFO_CODE, text: `Bedroom setup: ${setup}` }],
           // Channel attribution, and the BoLaGio reference so a person looking
           // at Beds24 can find the same reservation the guest is quoting.
           referer: DIRECT_REFERER,
           reference: request.reference,
-          notes: `BoLaGio ${request.reference} · hold until ${request.holdExpiresAt}`,
+          // Internal notes (not shown to the guest): the same marker, where a
+          // person scanning the booking list will see it first.
+          notes: `BoLaGio ${request.reference} · Bedroom setup: ${setup} · hold until ${request.holdExpiresAt}`,
         },
       ],
     });
@@ -244,7 +255,13 @@ function toProviderBooking(booking: Beds24Booking): ProviderBooking {
     checkIn: booking.arrival,
     checkOut: booking.departure,
     reference: booking.reference,
+    offerId: readOfferId(booking.offerId),
   };
+}
+
+function readOfferId(value: unknown): number | undefined {
+  const n = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+  return typeof n === 'number' && Number.isInteger(n) ? n : undefined;
 }
 
 function previousDay(date: string): string {
@@ -288,5 +305,6 @@ function readWriteResponse(
     checkIn: booking?.arrival,
     checkOut: booking?.departure,
     reference: booking?.reference,
+    offerId: readOfferId(booking?.offerId),
   };
 }

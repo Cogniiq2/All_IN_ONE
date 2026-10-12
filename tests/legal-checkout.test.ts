@@ -58,7 +58,7 @@ vi.mock('@/lib/integrations/beds24', () => ({
       const nights = Math.round((Date.parse(r.checkOut) - Date.parse(r.checkIn)) / 86_400_000);
       return {
         unitSlug: r.unitSlug, checkIn: r.checkIn, checkOut: r.checkOut, nights, adults: r.adults, children: r.children,
-        bedroomPackage: r.bedroomPackage, bedroomPricing: { status: 'not_configured' },
+        bedroomPackage: r.bedroomPackage, bedroomPricing: { status: 'configured', offerId: 2 },
         currency: 'EUR', totalCents: 32000, expiresAt: '2030-01-01T00:00:00Z',
         components: [
           { code: 'accommodation', label: { de: 'Unterkunft · 2 Nächte', en: 'Accommodation · 2 nights' }, amountCents: 26000, mandatory: true },
@@ -250,7 +250,7 @@ describe('the checkout cannot proceed without approved cancellation terms', () =
 function quote(terms: CheckoutTerms | null): BookingQuote {
   return {
     ...STAY, nights: 2, currency: 'EUR', totalCents: 32000, expiresAt: '2030-01-01T00:00:00Z',
-    bedroomPricing: { status: 'fixture' },
+    bedroomPricing: { status: 'configured', offerId: 2 },
     components: [
       { code: 'accommodation', label: { de: 'Unterkunft · 2 Nächte', en: 'Accommodation · 2 nights' }, amountCents: 26000, mandatory: true },
       { code: 'fee:endreinigung', label: { de: 'Endreinigung', en: 'Final cleaning' }, amountCents: 6000, mandatory: true },

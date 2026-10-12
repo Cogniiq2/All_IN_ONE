@@ -19,13 +19,13 @@ import 'server-only';
  */
 
 import { addDays, nightsBetween } from '@/lib/booking/stay-rules';
-import type { BookingQuote, InventoryDay, IsoDate, QuoteComponent } from '@/lib/booking/types';
+import type { BedroomPackage, BookingQuote, InventoryDay, IsoDate, QuoteComponent } from '@/lib/booking/types';
 import { ProviderError } from '@/lib/integrations/provider';
-import type { ProviderPropertySummary } from '@/lib/integrations/provider';
+import type { ProviderPropertySummary, ProviderUnitRef } from '@/lib/integrations/provider';
+import { resolveBeds24BedroomPricing } from '@/lib/integrations/beds24/bedroom-pricing';
 import type {
   Beds24CalendarEntry,
   Beds24CalendarResponse,
-  Beds24Offer,
   Beds24OffersResponse,
   Beds24PropertiesResponse,
   Beds24Room,
@@ -152,89 +152,72 @@ export function mapCalendar(
 }
 
 /**
- * What `mapOffer` produces: a quote before the bedroom package is attached.
- * The package and whether the price belongs to it are added by `fetchOffer`
- * in live.ts, from `resolveBeds24BedroomPricing` — never decided here.
- */
-export type Beds24StayQuote = Omit<BookingQuote, 'bedroomPackage' | 'bedroomPricing'>;
-
-/**
- * The authoritative total for a concrete stay.
+ * The authoritative quote for a concrete stay and bedroom package.
  *
- * An offers response with no offers is an availability conflict, not an empty
- * result — the dates were free when the calendar was cached and are not free
- * now, which is precisely the case the guest gets a premium screen for.
+ * Built from EXACTLY ONE Beds24 offer — the one `resolveBeds24BedroomPricing`
+ * maps the package to. The previous version took the cheapest offer for the
+ * room; with two offers per room that would have sold "2 Schlafzimmer" at the
+ * "1 Schlafzimmer" price. There is no selection logic left in this function.
+ *
+ * The total is the offer's `price`, verbatim: Beds24 has already applied the
+ * nightly rates, the per-apartment difference, the 1- and 2-night surcharges
+ * and the bedroom difference. Nothing here adds, subtracts or compares. Fee
+ * lines are rendered separately only if Beds24 itself returns them (it does
+ * not on this account — verified 2026-10-12).
  */
 export function mapOffer(
   response: Beds24OffersResponse,
   request: {
+    unit: ProviderUnitRef;
     unitSlug: string;
-    externalRoomId: string;
     checkIn: IsoDate;
     checkOut: IsoDate;
     adults: number;
     children: number;
+    bedroomPackage: BedroomPackage;
   },
   expiresAt: string
-): Beds24StayQuote {
-  const offers: Beds24Offer[] = [];
-  let currency = 'EUR';
+): BookingQuote {
+  const resolution = resolveBeds24BedroomPricing({
+    unit: request.unit,
+    bedroomPackage: request.bedroomPackage,
+    guests: request.adults + request.children,
+    offers: response,
+  });
 
-  for (const property of response.data ?? []) {
-    for (const room of property.roomTypes ?? []) {
-      // The response can carry several rooms; only the mapped one is ours.
-      if (String(room.roomId ?? '') !== request.externalRoomId) continue;
-      for (const offer of room.offers ?? []) {
-        offers.push(offer);
-        if (offer.currency) currency = offer.currency;
-      }
+  if (resolution.status !== 'configured') {
+    if (resolution.reason === 'no_offers') {
+      // Nothing bookable for the room: the dates went, which is the conflict
+      // case the guest gets a premium screen for.
+      throw new ProviderError('availability_conflict', 'Beds24 returned no bookable offer');
     }
+    throw new ProviderError('offer_unavailable', `Beds24 offer for ${request.bedroomPackage} not usable`, {
+      reason: resolution.reason,
+      bedroomPackage: request.bedroomPackage,
+    });
   }
 
-  if (offers.length === 0) {
-    throw new ProviderError('availability_conflict', 'Beds24 returned no bookable offer');
-  }
-
-  // The cheapest offer Beds24 is willing to sell. A price that cannot be read
-  // makes the offer unusable rather than free.
-  let best: { offer: Beds24Offer; cents: number } | undefined;
-  for (const offer of offers) {
-    const cents = toCents(offer.price);
-    if (cents === undefined) continue;
-    if (!best || cents < best.cents) best = { offer, cents };
-  }
-
-  if (!best) {
+  const { offer, offerId } = resolution;
+  // A price that cannot be read makes the offer unusable rather than free.
+  const accommodationCents = toCents(offer.price);
+  if (accommodationCents === undefined) {
     throw new ProviderError('unavailable', 'Beds24 offer carried no readable price');
   }
 
   const nights = nightsBetween(request.checkIn, request.checkOut);
-
-  /**
-   * Line items.
-   *
-   * The accommodation line is the rate Beds24 quoted. Fees the property
-   * configures separately come through as their own lines with their own tax
-   * category, which is why `QuoteComponent` carries one — German accommodation
-   * VAT, a cleaning service and a Kurtaxe are not one rate, and a schema that
-   * assumes they are has to be migrated under a deadline later.
-   *
-   * No tax is COMPUTED here and none is displayed as a breakdown. What is not
-   * known is not invented.
-   */
   const components: QuoteComponent[] = [
     {
       code: 'accommodation',
       label: { de: `Unterkunft · ${nights} ${nights === 1 ? 'Nacht' : 'Nächte'}`,
                en: `Accommodation · ${nights} ${nights === 1 ? 'night' : 'nights'}` },
-      amountCents: best.cents,
+      amountCents: accommodationCents,
       taxCategory: 'accommodation',
       mandatory: true,
     },
   ];
 
-  let totalCents = best.cents;
-  for (const fee of best.offer.fees ?? []) {
+  let totalCents = accommodationCents;
+  for (const fee of offer.fees ?? []) {
     const cents = toCents(fee.amount);
     if (cents === undefined || cents === 0) continue;
     const name = typeof fee.name === 'string' && fee.name.trim() !== '' ? fee.name.trim() : 'Zusatzleistung';
@@ -257,12 +240,14 @@ export function mapOffer(
     nights,
     adults: request.adults,
     children: request.children,
-    currency,
+    bedroomPackage: request.bedroomPackage,
+    bedroomPricing: { status: 'configured', offerId },
+    currency: typeof offer.currency === 'string' && /^[A-Z]{3}$/.test(offer.currency) ? offer.currency : 'EUR',
     totalCents,
     components,
     expiresAt,
-    cancellationPolicy: best.offer.cancellationPolicy
-      ? { de: best.offer.cancellationPolicy, en: best.offer.cancellationPolicy }
+    cancellationPolicy: offer.cancellationPolicy
+      ? { de: offer.cancellationPolicy, en: offer.cancellationPolicy }
       : undefined,
   };
 }
