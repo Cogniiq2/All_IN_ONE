@@ -119,6 +119,27 @@ let createdBookingId: string | undefined;
 
 const dayIn = (days: InventoryDay[], date: string) => days.find((d) => d.date === date);
 
+/** Apartment II — never written; only read, to prove nothing else moved. */
+const OTHER_UNIT: ProviderUnitRef = { provider: 'beds24', externalPropertyId: '354658', externalRoomId: '731146' };
+
+/**
+ * Availability of both apartments for a week around the target night, as a
+ * comparable string. Taken before the write and after the cleanup: the only
+ * acceptable difference is none at all.
+ */
+async function inventorySnapshot(): Promise<string> {
+  const from = addDays(checkIn, -3);
+  const to = addDays(checkOut, 3);
+  const parts: string[] = [];
+  for (const unit of [UNIT, OTHER_UNIT]) {
+    const days = await beds24LiveProvider.fetchAvailability({ unit, from, to });
+    parts.push(days.map((d) => `${unit.externalRoomId}:${d.date}:${d.available}:${d.canCheckIn}:${d.canCheckOut}`).join(','));
+  }
+  return parts.join('|');
+}
+
+let inventoryBefore: string;
+
 async function readNight(date: string): Promise<InventoryDay | undefined> {
   const days = await beds24LiveProvider.fetchAvailability({
     unit: UNIT,
@@ -183,6 +204,9 @@ describe.runIf(CONFIRMED)('Beds24 hold, confirm and release, against the live ac
     expect(quote.bedroomPricing).toEqual({ status: 'configured', offerId: 2 });
     console.log(`  Live quote: Offer 2, ${quote.totalCents / 100} ${quote.currency}`);
     const priceCents = quote.totalCents;
+
+    // Item 9's baseline: both apartments, a week around the night.
+    inventoryBefore = await inventorySnapshot();
 
     try {
       // ── Phase 2: create the hold ─────────────────────────────────────
@@ -284,6 +308,12 @@ describe.runIf(CONFIRMED)('Beds24 hold, confirm and release, against the live ac
         `${createdBookingId} by hand immediately.`
     ).toBe(true);
     expect(after?.canCheckIn).toBe(baseline?.canCheckIn);
+
+    // Nothing else moved: both apartments, the week around the night,
+    // exactly as before the write.
+    const inventoryAfter = await inventorySnapshot();
+    console.log(`  Inventory around the night, both apartments, unchanged: ${inventoryAfter === inventoryBefore}`);
+    expect(inventoryAfter, 'inventory around the test night differs from before the write').toBe(inventoryBefore);
 
     const final = await beds24LiveProvider.getBooking(createdBookingId!);
     console.log(`  Final booking status: ${final?.status}`);
