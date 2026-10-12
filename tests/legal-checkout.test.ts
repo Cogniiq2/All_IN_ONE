@@ -124,8 +124,11 @@ describe('legal readiness, with the registries as they are in the repository tod
     expect(resolveCheckoutTerms({ APP_ENV: 'production' })).toBeNull();
   });
 
-  it('does not guess company facts: address, directors, register and email are gaps', () => {
-    expect(companyIdentityGaps()).toEqual(['address', 'managingDirectors', 'register', 'email']);
+  it('does not guess company facts: register and email are still gaps', () => {
+    // Address and managing directors were supplied by the owners in
+    // lib/legal/company.ts; the commercial register and the contact email
+    // have not been, and must stay gaps rather than be guessed.
+    expect(companyIdentityGaps()).toEqual(['register', 'email']);
   });
 });
 

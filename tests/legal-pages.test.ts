@@ -86,6 +86,24 @@ describe('the AGB', () => {
     expect(html).toMatch(/Stornierung/);
     expect(html).toContain('data-legal-pending="true"');
   });
+
+  it('marks the unapproved cancellation and withdrawal sections as pending, never as final terms', () => {
+    // Each section, from its heading to the next one, must carry the marker
+    // and the visible label while no approved version exists in lib/legal.
+    const section = (heading: string) => {
+      const start = html.indexOf(heading);
+      expect(start, `${heading} section missing`).toBeGreaterThan(-1);
+      const next = html.indexOf('<h2', start + heading.length);
+      return html.slice(start, next === -1 ? undefined : next);
+    };
+    for (const heading of ['4. Stornierung', 'Widerrufsrecht']) {
+      const body = section(heading);
+      expect(body).toContain('data-legal-pending="true"');
+      expect(body).toContain('Noch nicht freigegeben');
+      // The placeholder wording is preserved, under the label.
+      expect(body).toContain('Die verbindlichen Konditionen werden vor Veröffentlichung ergänzt');
+    }
+  });
 });
 
 /* ── No tracking before consent ─────────────────────────────────────────── */

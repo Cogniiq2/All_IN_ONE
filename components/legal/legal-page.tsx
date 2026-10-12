@@ -85,3 +85,26 @@ export function Pending({ locale }: { locale: 'de' | 'en' }) {
     </span>
   );
 }
+
+/**
+ * Terms that exist only as a placeholder because the binding text has not
+ * been approved. The placeholder wording is kept, but it is never presented
+ * as final: a visible label says so, and the block is marked for anyone
+ * searching the DOM (`data-legal-pending`), exactly like `Pending`.
+ */
+export function PendingTerms({ locale, children }: { locale: 'de' | 'en'; children: ReactNode }) {
+  return (
+    <div data-legal-pending="true" role="note">
+      <p
+        className="text-[11px] font-semibold uppercase tracking-[0.14em]"
+        style={{ color: 'hsl(var(--champagne-dark))' }}
+      >
+        {locale === 'de' ? 'Noch nicht freigegeben' : 'Not yet approved'}
+      </p>
+      <p className="mt-1.5 whitespace-pre-line" style={{ color: 'hsl(var(--muted-foreground))' }}>
+        {children}
+      </p>
+    </div>
+  );
+}
+

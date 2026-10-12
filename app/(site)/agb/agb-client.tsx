@@ -4,7 +4,7 @@ import { useI18n } from '@/lib/i18n';
 import { brand } from '@/lib/content/brand';
 import { COMPANY } from '@/lib/legal/company';
 import { BOOKING_TERMS_DOCUMENTS, CANCELLATION_POLICIES, WITHDRAWAL_NOTICES, latest } from '@/lib/legal/booking-terms';
-import { LegalPage, LegalSection, Pending } from '@/components/legal/legal-page';
+import { LegalPage, LegalSection, Pending, PendingTerms } from '@/components/legal/legal-page';
 
 /**
  * AGB.
@@ -75,15 +75,28 @@ export default function AGBClient() {
             ? 'Preise werden individuell je Zeitraum, Aufenthaltsdauer und Personenzahl mitgeteilt. Über diese Website werden keine Zahlungen abgewickelt.'
             : 'Prices are quoted individually according to dates, length of stay and number of guests. No payments are processed through this website.'}
         </p>
-        <p>{pending}</p>
+        <PendingTerms locale={locale}>{pending}</PendingTerms>
       </LegalSection>
 
+      {/*
+        Fail closed: until an approved version exists in lib/legal, the
+        placeholder is shown — and visibly marked as not yet approved — never
+        as if it were the binding policy.
+      */}
       <LegalSection heading={de ? '4. Stornierung' : '4. Cancellation'}>
-        <p className="whitespace-pre-line">{cancellation ? cancellation.text[locale] : pending}</p>
+        {cancellation ? (
+          <p className="whitespace-pre-line">{cancellation.text[locale]}</p>
+        ) : (
+          <PendingTerms locale={locale}>{pending}</PendingTerms>
+        )}
       </LegalSection>
 
       <LegalSection heading={de ? 'Widerrufsrecht' : 'Right of withdrawal'}>
-        <p className="whitespace-pre-line">{withdrawal ? withdrawal.text[locale] : pending}</p>
+        {withdrawal ? (
+          <p className="whitespace-pre-line">{withdrawal.text[locale]}</p>
+        ) : (
+          <PendingTerms locale={locale}>{pending}</PendingTerms>
+        )}
       </LegalSection>
 
       <LegalSection heading={de ? '5. Nutzung der Apartments' : '5. Use of the apartments'}>
@@ -95,7 +108,7 @@ export default function AGBClient() {
       </LegalSection>
 
       <LegalSection heading={de ? '6. Haftung' : '6. Liability'}>
-        <p>{pending}</p>
+        <PendingTerms locale={locale}>{pending}</PendingTerms>
       </LegalSection>
     </LegalPage>
   );
