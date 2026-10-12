@@ -273,6 +273,23 @@ describe.runIf(CONFIRMED)('Beds24 hold, confirm and release, against the live ac
       // ── Phase 3c: promote to the CONFIRMED status, exactly as the
       // finalizer does after payment — does that status block too? ──
       console.log(`\n  Promoting ${createdBookingId} to the confirmed status…`);
+      // Run 38301108120: Beds24 refused this promotion as the adapter sends
+      // it. The exact write is repeated raw first and Beds24's answer printed
+      // — success flag, errors/warnings/info and the KEYS of the returned
+      // booking, never values — so the cause is visible, not inferred.
+      const raw = await beds24Request<unknown>({
+        path: '/bookings',
+        method: 'POST',
+        idempotencyKey: `confirm:${createdBookingId}`,
+        body: [{ id: Number(createdBookingId), status: 'confirmed' }],
+      });
+      const first = (Array.isArray(raw) ? raw[0] : raw) as Record<string, unknown> | undefined;
+      const shape = (v: unknown) => (v && typeof v === 'object' ? Object.keys(v as object).sort() : v);
+      console.log(`  Raw confirm answer: success=${String(first?.success)} keys=${JSON.stringify(shape(first))}`);
+      console.log(`    new=${JSON.stringify(shape(first?.new))} modified=${JSON.stringify(shape(first?.modified))}`);
+      for (const k of ['errors', 'warnings', 'info']) {
+        if (first?.[k]) console.log(`    ${k}: ${JSON.stringify(first[k]).slice(0, 600)}`);
+      }
       const confirmedBooking = await beds24LiveProvider.confirmBooking(createdBookingId!);
       const readConfirmed = await beds24LiveProvider.getBooking(createdBookingId!);
       console.log(`  After confirm: status=${readConfirmed?.status ?? confirmedBooking.status} offerId=${readConfirmed?.offerId}`);

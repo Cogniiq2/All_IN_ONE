@@ -65,8 +65,14 @@ function confirmedStatus(): Beds24BookingStatus {
 /** Marks every reservation this website creates, for channel attribution. */
 const DIRECT_REFERER = 'BoLaGio Direct';
 
-/** The `infoItems` code that carries the bedroom setup on a direct booking. */
-export const BEDROOM_INFO_CODE = 'BOLAGIO_BEDROOM_SETUP';
+/**
+ * The `infoItems` code that carries the bedroom setup on a direct booking.
+ *
+ * At most 20 characters: Beds24 truncates longer codes silently — the live
+ * write test of 2026-10-12 stored "BOLAGIO_BEDROOM_SETUP" as
+ * "BOLAGIO_BEDROOM_SETU" (booking 94583556). The text is stored in full.
+ */
+export const BEDROOM_INFO_CODE = 'BOLAGIO_BEDROOMS';
 
 /** Exactly the Beds24 offer name, so the marker reads like the account. */
 function bedroomSetupLabel(bedroomPackage: BedroomPackage): string {

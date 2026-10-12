@@ -129,7 +129,7 @@ describe('hold, payment, reservation', () => {
     const booking = sim.bookings[0];
     expect(booking.offerId).toBe(1);
     expect(booking.price).toBe(360);
-    expect(booking.infoItems).toEqual([{ code: 'BOLAGIO_BEDROOM_SETUP', text: 'Bedroom setup: 1 Schlafzimmer' }]);
+    expect(booking.infoItems).toEqual([{ code: 'BOLAGIO_BEDROOMS', text: 'Bedroom setup: 1 Schlafzimmer' }]);
     expect(booking.notes).toContain('Bedroom setup: 1 Schlafzimmer');
 
     // PayPal is asked for exactly the verified Beds24 total.

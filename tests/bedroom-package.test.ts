@@ -144,6 +144,10 @@ describe('resolveBeds24BedroomPricing', () => {
       .toMatchObject({ status: 'unavailable', reason: 'no_offers' });
   });
 
+  it('uses an infoItem code Beds24 stores whole (≤ 20 characters)', () => {
+    expect(BEDROOM_INFO_CODE.length).toBeLessThanOrEqual(20);
+  });
+
   it('reads an offer id back into a package — and nothing else', () => {
     expect(bedroomPackageForOfferId(1)).toBe('one_bedroom');
     expect(bedroomPackageForOfferId('2')).toBe('two_bedroom');
