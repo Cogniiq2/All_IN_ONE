@@ -627,6 +627,54 @@ jobs:
           NODE_EOF
           node "$RUNNER_TEMP/identity-audit.mjs"
 
+      # ── PART A5 — identity audit, second pass (read-only) ──────────────
+      # A4 truncated the Booking.com channel settings and got no texts.
+      # Prints every channel's id-like fields per property, and the property
+      # and room texts in de/en. GET only.
+      - name: "Part A5 — identity audit, channel ids and texts (read-only)"
+        if: always()
+        continue-on-error: true
+        env:
+          BEDS24_REFRESH_TOKEN: ${{ secrets.BEDS24_REFRESH_TOKEN }}
+        run: |
+          set -euo pipefail
+          cat <<'NODE_EOF' > "$RUNNER_TEMP/identity-audit-2.mjs"
+          const BASE = 'https://beds24.com/api/v2';
+          const PROPS = ['354659', '354658'];
+          const auth = await fetch(`${BASE}/authentication/token`, { headers: { accept: 'application/json', refreshToken: process.env.BEDS24_REFRESH_TOKEN?.trim() ?? '' } });
+          const token = (await auth.json().catch(() => null))?.token;
+          if (!token) { console.log(`✗ auth failed HTTP ${auth.status}`); process.exit(1); }
+          const get = async (path, params = {}) => {
+            const r = await fetch(`${BASE}${path}?${new URLSearchParams(params)}`, { headers: { accept: 'application/json', token } });
+            return { status: r.status, body: await r.json().catch(() => null) };
+          };
+          const walk = (v, path, out) => {
+            if (Array.isArray(v)) v.forEach((x, i) => walk(x, `${path}[${i}]`, out));
+            else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) walk(x, path ? `${path}.${k}` : k, out);
+            else out.push([path, v]);
+            return out;
+          };
+          for (const pid of PROPS) {
+            const r = await get('/channels/settings', { propertyId: pid });
+            for (const entry of r.body?.data ?? []) {
+              const ids = walk(entry, '', []).filter(([k, v]) => /(^|\.)(channel|id|[a-zA-Z]*(Id|ID|Code|code))$/.test(k) && v !== null && v !== '');
+              console.log(`settings ${pid} channel=${entry.channel}: ${ids.map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(' | ').slice(0, 1500)}`);
+            }
+          }
+          for (const pid of PROPS) {
+            for (const langs of [{ includeTexts: 'de' }, { includeTexts: 'en' }, { includeTexts: 'all', includeLanguages: 'all' }]) {
+              const r = await get('/properties', { id: pid, includeAllRooms: 'true', ...langs });
+              const texts = walk(r.body?.data?.[0] ?? {}, '', [])
+                .filter(([k, v]) => typeof v === 'string' && v.trim().length > 2 && /text|descr|summary|headline|title|name|tagline|feature|amenit/i.test(k) && !/bookingQuestions|offers\[/.test(k));
+              console.log(`\ntexts ${pid} ${JSON.stringify(langs)} → HTTP ${r.status}, ${texts.length} field(s)`);
+              for (const [k, v] of texts.slice(0, 40)) console.log(`  ${k} = ${JSON.stringify(v.replace(/\s+/g, ' ').slice(0, 300))}`);
+              if (texts.length > 3) break;
+            }
+          }
+          console.log('\nGET only. Nothing was created or modified.');
+          NODE_EOF
+          node "$RUNNER_TEMP/identity-audit-2.mjs"
+
       # ── PART B ─────────────────────────────────────────────────────────
       # No credential from here on. Feature-branch code executes only in
       # these steps, and only after the token has gone out of scope.
