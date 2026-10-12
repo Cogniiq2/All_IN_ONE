@@ -5,7 +5,7 @@
  * BEFORE any money moves. Returns the guest-facing reference and the
  * authoritative quote.
  *
- *   { unitSlug, checkIn, checkOut, adults, children, guest{…}, acceptedTerms, attemptId? }
+ *   { unitSlug, checkIn, checkOut, adults, children, bedroomPackage, guest{…}, acceptedTerms, attemptId? }
  *   → { intent: BookingIntentView, quote: BookingQuote }
  *
  * ── What it will not accept ──────────────────────────────────────────────
@@ -27,10 +27,11 @@ import {
   bookingJson,
   clientKey,
   rateLimit,
+  readBedroomPackage,
   readJson,
   requireBackend,
 } from '@/lib/booking/http';
-import { BookingError, startBooking } from '@/lib/booking/service';
+import { BookingError, requireDirectBooking, startBooking } from '@/lib/booking/service';
 import type { GuestDetails } from '@/lib/booking/types';
 import { parseAcceptedVersions } from '@/lib/legal/booking-terms';
 
@@ -46,6 +47,10 @@ export async function POST(request: NextRequest) {
     // reservation at the channel manager.
     rateLimit(clientKey(request, 'intent'), 10, 60_000);
     requireBackend();
+    // The launch gate answers before any input is judged: with direct booking
+    // off, every request is `booking_disabled`, whatever its body says.
+    // `startBooking` checks it again; this only fixes the order.
+    requireDirectBooking(logger);
 
     const body = await readJson(request);
     const result = await startBooking(
@@ -55,6 +60,7 @@ export async function POST(request: NextRequest) {
         checkOut: str(body.checkOut),
         adults: int(body.adults, 1),
         children: int(body.children, 0),
+        bedroomPackage: readBedroomPackage(body.bedroomPackage),
         guest: guest(body.guest),
         attemptId: typeof body.attemptId === 'string' ? body.attemptId.slice(0, 64) : undefined,
         // The term versions the guest was shown. Malformed reads as absent,

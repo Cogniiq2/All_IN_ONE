@@ -229,6 +229,7 @@ describe('mock provider fixtures', () => {
         checkOut: `${month}-06`,
         adults: 2,
         children: 0,
+        bedroomPackage: 'two_bedroom' as const,
       })
     ).rejects.toMatchObject({ code: 'stay_rules', meta: { minNights: 3 } });
   });
@@ -242,6 +243,7 @@ describe('mock provider fixtures', () => {
       checkOut: `${month}-07`,
       adults: 2,
       children: 0,
+      bedroomPackage: 'two_bedroom' as const,
     });
     expect(quote.nights).toBe(3);
     expect(quote.totalCents).toBe(3 * 14_000 + 4_500);
@@ -258,6 +260,7 @@ describe('mock provider fixtures', () => {
         checkOut: `${month}-21`,
         adults: 2,
         children: 0,
+        bedroomPackage: 'two_bedroom' as const,
       })
     ).rejects.toMatchObject({ code: 'availability_conflict' });
   });
@@ -271,6 +274,7 @@ describe('mock provider fixtures', () => {
       checkOut: `${month}-${String(Number(day) + 3).padStart(2, '0')}`,
       adults: 2,
       children: 0,
+      bedroomPackage: 'two_bedroom' as const,
     });
 
     await expect(beds24MockProvider.fetchOffer(stay('13'))).rejects.toMatchObject({
@@ -305,6 +309,7 @@ describe('mock provider fixtures', () => {
       checkOut: `${fixtureMonth(1)}-07`,
       adults: 2,
       children: 0,
+      bedroomPackage: 'two_bedroom' as const,
       reference: 'BLG-ABC234',
       guest: { firstName: 'A', lastName: 'B', email: 'a@b.de', phone: '+49123456' },
       totalCents: 46_500,

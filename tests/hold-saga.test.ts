@@ -197,6 +197,8 @@ const QUOTE: BookingQuote = {
   nights: 3,
   adults: 2,
   children: 0,
+  bedroomPackage: 'two_bedroom',
+  bedroomPricing: { status: 'fixture' },
   currency: 'EUR',
   totalCents: 42500,
   components: [],

@@ -54,10 +54,11 @@ vi.mock('@/lib/booking/repository', () => ({
 vi.mock('@/lib/integrations/beds24', () => ({
   bookingProvider: () => ({
     mode: 'mock',
-    fetchOffer: async (r: { unitSlug: string; checkIn: string; checkOut: string; adults: number; children: number }) => {
+    fetchOffer: async (r: { unitSlug: string; checkIn: string; checkOut: string; adults: number; children: number; bedroomPackage: string }) => {
       const nights = Math.round((Date.parse(r.checkOut) - Date.parse(r.checkIn)) / 86_400_000);
       return {
         unitSlug: r.unitSlug, checkIn: r.checkIn, checkOut: r.checkOut, nights, adults: r.adults, children: r.children,
+        bedroomPackage: r.bedroomPackage, bedroomPricing: { status: 'not_configured' },
         currency: 'EUR', totalCents: 32000, expiresAt: '2030-01-01T00:00:00Z',
         components: [
           { code: 'accommodation', label: { de: 'Unterkunft · 2 Nächte', en: 'Accommodation · 2 nights' }, amountCents: 26000, mandatory: true },
@@ -80,7 +81,7 @@ import type { BookingQuote } from '@/lib/booking/types';
 
 const logger = createLogger();
 const GUEST = { firstName: 'Ada', lastName: 'Lovelace', email: 'ada@example.com', phone: '+49 000 000', locale: 'de' as const };
-const STAY = { unitSlug: 'schulstrasse-i', checkIn: '2027-03-10', checkOut: '2027-03-12', adults: 2, children: 0 };
+const STAY = { unitSlug: 'schulstrasse-i', checkIn: '2027-03-10', checkOut: '2027-03-12', adults: 2, children: 0, bedroomPackage: 'two_bedroom' as const };
 
 /** Registries as they will look once BoLaGio has approved everything. */
 const APPROVED: LegalRegistries = {
@@ -249,6 +250,7 @@ describe('the checkout cannot proceed without approved cancellation terms', () =
 function quote(terms: CheckoutTerms | null): BookingQuote {
   return {
     ...STAY, nights: 2, currency: 'EUR', totalCents: 32000, expiresAt: '2030-01-01T00:00:00Z',
+    bedroomPricing: { status: 'fixture' },
     components: [
       { code: 'accommodation', label: { de: 'Unterkunft · 2 Nächte', en: 'Accommodation · 2 nights' }, amountCents: 26000, mandatory: true },
       { code: 'fee:endreinigung', label: { de: 'Endreinigung', en: 'Final cleaning' }, amountCents: 6000, mandatory: true },

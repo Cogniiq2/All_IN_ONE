@@ -38,6 +38,7 @@ import { useI18n } from '@/lib/i18n';
 import { brand, ENQUIRY_ENDPOINT } from '@/lib/content/brand';
 import { nightsBetween } from '@/lib/booking/availability';
 import { clampGuestsFor, maxGuestsFor, MIN_GUESTS } from '@/lib/booking/occupancy';
+import { BEDROOM_PACKAGE_GUEST_LIMIT, bedroomPackageFits } from '@/lib/booking/stay-rules';
 import { formatDateOrDash } from '@/lib/booking/date-format';
 import { PayPalButton } from '@/components/booking/paypal-button';
 import {
@@ -50,6 +51,7 @@ import {
 import { track } from '@/lib/booking/analytics';
 import type {
   AvailabilityCalendar,
+  BedroomPackage,
   BookingErrorCode,
   BookingQuote,
   InventoryDay,
@@ -68,7 +70,12 @@ import { useUnitFlow } from '@/components/units/unit-flow-context';
 import { CtaButton } from '@/components/ui-kit/cta';
 import { ContactFields, EMAIL_PATTERN } from '@/components/enquiry/enquiry-fields';
 import { AddToCalendar } from '@/components/booking/add-to-calendar';
-import { CheckoutSummary, checkoutReady, ORDER_BUTTON_LABEL } from '@/components/booking/checkout-summary';
+import {
+  BEDROOM_PACKAGE_LABEL,
+  CheckoutSummary,
+  checkoutReady,
+  ORDER_BUTTON_LABEL,
+} from '@/components/booking/checkout-summary';
 import { versionsOf } from '@/lib/legal/booking-terms';
 import { firstNameOf, saveReceipt } from '@/lib/success/receipt';
 
@@ -105,6 +112,9 @@ type MethodId = (typeof METHODS)[number]['id'];
 
 const LAST_STEP = 4;
 
+/** A residence that offers no bedroom choice. */
+const NO_BEDROOM_PACKAGES: readonly BedroomPackage[] = [];
+
 export function BookingModal() {
   const { locale } = useI18n();
   const de = locale === 'de';
@@ -131,6 +141,12 @@ export function BookingModal() {
   const [touched, setTouched] = useState(false);
 
   const [guests, setGuests] = useState(clampGuestsFor(stay.guests, maxGuests) ?? 2);
+  /**
+   * The bedroom setup — a separate, explicit choice, never derived from the
+   * party size and never pre-selected. Offered only where the residence's data
+   * lists packages; see `bedroomPackages` in lib/content/apartments.ts.
+   */
+  const [bedroomPackage, setBedroomPackage] = useState<BedroomPackage | undefined>(undefined);
   const [dates, setDates] = useState({ arrival: stay.arrival, departure: stay.departure });
   const [method, setMethod] = useState<MethodId>('card');
   const [contact, setContact] = useState({ name: '', email: '', phone: '' });
@@ -161,6 +177,15 @@ export function BookingModal() {
   const attemptId = useRef<string>('');
 
   const bookable = Boolean(calendar && !calendar.unsourced) && !upcoming;
+
+  const bedroomOptions: readonly BedroomPackage[] =
+    unit && 'bedroomPackages' in unit ? unit.bedroomPackages ?? NO_BEDROOM_PACKAGES : NO_BEDROOM_PACKAGES;
+  // A residence with no choice needs none; one with a choice needs a chosen
+  // package that fits the party. 1 Bedroom with three or four guests is not a
+  // stay this dialog will send.
+  const bedroomValid =
+    bedroomOptions.length === 0 ||
+    (bedroomPackage !== undefined && bedroomOptions.includes(bedroomPackage) && bedroomPackageFits(bedroomPackage, guests));
   const days: InventoryDay[] = calendar?.days ?? [];
 
   // In bookable mode only executable providers are offered, so the selection
@@ -187,6 +212,7 @@ export function BookingModal() {
     if (wasOpen.current) return;
     wasOpen.current = true;
     setGuests(clampGuestsFor(stay.guests, maxGuests) ?? 2);
+    setBedroomPackage(undefined);
     setDates({ arrival: stay.arrival, departure: stay.departure });
     setStep(1);
     setDirection(1);
@@ -242,6 +268,9 @@ export function BookingModal() {
   const loadQuote = useCallback(
     (signal?: AbortSignal) => {
       if (!unit || !bookable || !dates.arrival || !dates.departure) return;
+      // No package, or one the party does not fit: there is nothing honest to
+      // quote, and the server would refuse it. The checkout stays "on request".
+      if (!bedroomPackage || !bedroomPackageFits(bedroomPackage, guests)) return;
       setQuoteLoading(true);
       setNotice(null);
       fetchQuote(
@@ -251,6 +280,7 @@ export function BookingModal() {
           checkOut: dates.departure,
           adults: guests,
           children: 0,
+          bedroomPackage,
         },
         signal
       )
@@ -271,7 +301,7 @@ export function BookingModal() {
         })
         .finally(() => !signal?.aborted && setQuoteLoading(false));
     },
-    [unit, bookable, dates.arrival, dates.departure, guests]
+    [unit, bookable, dates.arrival, dates.departure, guests, bedroomPackage]
   );
 
   useEffect(() => {
@@ -286,11 +316,11 @@ export function BookingModal() {
   const contactValid = nameValid && emailValid && contact.phone.trim().length >= 5;
 
   const canAdvance = useMemo(() => {
-    if (step === 1) return guests >= MIN_GUESTS && guests <= maxGuests;
+    if (step === 1) return guests >= MIN_GUESTS && guests <= maxGuests && bedroomValid;
     if (step === 2) return complete;
     if (step === 3) return contactValid;
     return true;
-  }, [step, guests, maxGuests, complete, contactValid]);
+  }, [step, guests, maxGuests, bedroomValid, complete, contactValid]);
 
   const go = (delta: 1 | -1) => {
     if (delta === 1 && !canAdvance) { setTouched(true); return; }
@@ -326,6 +356,8 @@ export function BookingModal() {
     // Fail closed: no approved terms on screen, no booking. The button is
     // already withheld; this is the second line, not the first.
     if (!unit || !checkoutReady(quote)) return;
+    // The quote on screen must be the quote for the setup on screen.
+    if (!bedroomPackage || quote.bedroomPackage !== bedroomPackage) return;
     setStatus('sending');
     setNotice(null);
     setStay({ arrival: dates.arrival, departure: dates.departure, guests });
@@ -342,6 +374,7 @@ export function BookingModal() {
         checkOut: dates.departure!,
         adults: guests,
         children: 0,
+        bedroomPackage,
         guest: {
           firstName,
           lastName,
@@ -435,6 +468,8 @@ export function BookingModal() {
             departure: dates.departure ?? null,
             nights: nights ?? null,
             guests: clampGuestsFor(guests, maxGuests) ?? MIN_GUESTS,
+            // The guest's stated setup, for the person answering. No price.
+            bedroomPackage: bedroomPackage ?? null,
           },
           payment: {
             // A stated preference, not a transaction. No provider is contacted
@@ -545,7 +580,17 @@ export function BookingModal() {
             </Step>
           ) : (
             <Step key={step} direction={direction}>
-              {step === 1 && <StepGuests guests={guests} setGuests={setGuests} maxGuests={maxGuests} />}
+              {step === 1 && (
+                <StepGuests
+                  guests={guests}
+                  setGuests={setGuests}
+                  maxGuests={maxGuests}
+                  bedroomOptions={bedroomOptions}
+                  bedroomPackage={bedroomPackage}
+                  setBedroomPackage={setBedroomPackage}
+                  touched={touched}
+                />
+              )}
               {step === 2 && (
                 <StepDates
                   arrival={dates.arrival}
@@ -576,6 +621,7 @@ export function BookingModal() {
                   departure={dates.departure}
                   nights={nights}
                   guests={guests}
+                  bedroomPackage={bedroomPackage}
                   quote={quote}
                   quoteLoading={quoteLoading}
                   bookable={bookable}
@@ -838,8 +884,14 @@ function Progress({ step }: { step: number }) {
 /* ── Steps ──────────────────────────────────────────────────────────────── */
 
 function StepGuests({
-  guests, setGuests, maxGuests,
-}: { guests: number; setGuests: (n: number) => void; maxGuests: number }) {
+  guests, setGuests, maxGuests, bedroomOptions, bedroomPackage, setBedroomPackage, touched,
+}: {
+  guests: number; setGuests: (n: number) => void; maxGuests: number;
+  bedroomOptions: readonly BedroomPackage[];
+  bedroomPackage?: BedroomPackage;
+  setBedroomPackage: (p: BedroomPackage) => void;
+  touched: boolean;
+}) {
   const { locale } = useI18n();
   const de = locale === 'de';
 
@@ -886,6 +938,92 @@ function StepGuests({
           </button>
         ))}
       </div>
+
+      {bedroomOptions.length > 0 && (
+        <BedroomSetup
+          options={bedroomOptions}
+          value={bedroomPackage}
+          onChange={setBedroomPackage}
+          guests={guests}
+          touched={touched}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * The bedroom setup, as its own choice beside the party size.
+ *
+ * Nothing is pre-selected and nothing switches automatically when the party
+ * changes: if 1 Bedroom no longer fits, the guest is told why and chooses. No
+ * price or supplement is shown — what a setup costs comes from Beds24, and is
+ * only ever rendered from a server quote at checkout.
+ */
+function BedroomSetup({
+  options, value, onChange, guests, touched,
+}: {
+  options: readonly BedroomPackage[];
+  value?: BedroomPackage;
+  onChange: (p: BedroomPackage) => void;
+  guests: number;
+  touched: boolean;
+}) {
+  const { locale } = useI18n();
+  const de = locale === 'de';
+  const headingId = 'booking-bedroom-setup';
+
+  const describe = (p: BedroomPackage) => {
+    const limit = BEDROOM_PACKAGE_GUEST_LIMIT[p];
+    return p === 'one_bedroom'
+      ? de ? `Für bis zu ${limit} Personen` : `For up to ${limit} guests`
+      : de ? `Die vollständige Wohnung mit zwei Schlafzimmern · 1–${limit} Personen` : `The full two-bedroom setup · 1–${limit} guests`;
+  };
+
+  const misfit = value !== undefined && !bedroomPackageFits(value, guests);
+
+  return (
+    <div className="mt-10">
+      <h4 id={headingId} className="display-3 text-[17px]">
+        {de ? 'Zimmeraufteilung' : 'Bedroom setup'}
+      </h4>
+      <div role="radiogroup" aria-labelledby={headingId} className="mt-4 grid gap-2.5 sm:grid-cols-2">
+        {options.map((p) => {
+          const active = value === p;
+          return (
+            <button
+              key={p}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => onChange(p)}
+              className="flex min-h-[64px] flex-col justify-center px-4 py-3 text-left transition-colors"
+              style={{
+                borderRadius: 'var(--radius-md)',
+                border: `1px solid ${active ? 'hsl(var(--champagne-dark))' : 'hsl(var(--border))'}`,
+                background: active ? 'hsl(var(--champagne) / 0.14)' : 'transparent',
+              }}
+            >
+              <span className="block text-[14px] font-semibold">{BEDROOM_PACKAGE_LABEL[p][locale]}</span>
+              <span className="mt-0.5 block text-[12px]" style={{ color: 'hsl(var(--muted-foreground))' }}>
+                {describe(p)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {misfit ? (
+        <p role="alert" className="mt-3 text-[12px]" style={{ color: 'hsl(var(--destructive))' }}>
+          {de
+            ? `${BEDROOM_PACKAGE_LABEL[value].de} ist für bis zu ${BEDROOM_PACKAGE_GUEST_LIMIT[value]} Personen vorgesehen. Bitte wählen Sie eine andere Zimmeraufteilung oder passen Sie die Personenzahl an.`
+            : `${BEDROOM_PACKAGE_LABEL[value].en} is intended for up to ${BEDROOM_PACKAGE_GUEST_LIMIT[value]} guests. Please choose another bedroom setup or adjust the number of guests.`}
+        </p>
+      ) : touched && value === undefined ? (
+        <p role="alert" className="mt-3 text-[12px]" style={{ color: 'hsl(var(--destructive))' }}>
+          {de ? 'Bitte wählen Sie eine Zimmeraufteilung.' : 'Please choose a bedroom setup.'}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -1016,10 +1154,11 @@ function StepContact({
 }
 
 function StepPayment({
-  method, setMethod, unitName, arrival, departure, nights, guests, quote, quoteLoading, bookable,
+  method, setMethod, unitName, arrival, departure, nights, guests, bedroomPackage, quote, quoteLoading, bookable,
 }: {
   method: MethodId; setMethod: (m: MethodId) => void;
   unitName: string; arrival?: string; departure?: string; nights?: number; guests: number;
+  bedroomPackage?: BedroomPackage;
   quote: BookingQuote | null;
   quoteLoading: boolean;
   bookable: boolean;
@@ -1045,6 +1184,7 @@ function StepPayment({
           departure={departure}
           nights={nights}
           guests={guests}
+          bedroomPackage={bedroomPackage}
           quote={quote}
           quoteLoading={quoteLoading}
           bookable={bookable}

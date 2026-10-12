@@ -28,7 +28,7 @@
  * ══════════════════════════════════════════════════════════════════════════
  */
 
-import type { BookingQuote } from '@/lib/booking/types';
+import type { BedroomPackage, BookingQuote } from '@/lib/booking/types';
 import type { CheckoutTerms } from '@/lib/legal/booking-terms';
 import { formatDateOrDash } from '@/lib/booking/date-format';
 import { formatMoney } from '@/lib/booking/client';
@@ -47,9 +47,21 @@ export const ORDER_BUTTON_LABEL = {
   en: 'Book and pay',
 } as const;
 
-/** Whether a bookable checkout may offer its button: a quote with approved terms. */
+/** The guest-facing name of each bedroom package. Shared with the booking dialog. */
+export const BEDROOM_PACKAGE_LABEL: Record<BedroomPackage, { de: string; en: string }> = {
+  one_bedroom: { de: '1 Schlafzimmer', en: '1 Bedroom' },
+  two_bedroom: { de: '2 Schlafzimmer', en: '2 Bedrooms' },
+};
+
+/**
+ * Whether a bookable checkout may offer its button: a quote with approved
+ * terms, whose price the provider has confirmed for the chosen bedroom
+ * package. A `not_configured` package price withholds the button exactly as
+ * missing terms do. The server enforces the same (`pricing_unconfigured`);
+ * this is the courtesy, not the gate.
+ */
 export function checkoutReady(quote: BookingQuote | null): quote is BookingQuote & { terms: CheckoutTerms } {
-  return Boolean(quote && quote.terms);
+  return Boolean(quote && quote.terms && quote.bedroomPricing.status !== 'not_configured');
 }
 
 export function CheckoutSummary({
@@ -59,6 +71,7 @@ export function CheckoutSummary({
   departure,
   nights,
   guests,
+  bedroomPackage,
   quote,
   quoteLoading,
   bookable,
@@ -69,6 +82,8 @@ export function CheckoutSummary({
   departure?: string;
   nights?: number;
   guests: number;
+  /** The guest's bedroom setup, when the residence offers a choice. */
+  bedroomPackage?: BedroomPackage;
   quote: BookingQuote | null;
   quoteLoading: boolean;
   bookable: boolean;
@@ -85,6 +100,9 @@ export function CheckoutSummary({
           <Row label={de ? 'Zeitraum' : 'Dates'} value={`${formatDateOrDash(arrival)} – ${formatDateOrDash(departure)}`} />
           <Row label={de ? 'Nächte' : 'Nights'} value={nights ? String(nights) : '—'} />
           <Row label={de ? 'Personen' : 'Guests'} value={String(guests)} />
+          {bedroomPackage && (
+            <Row label={de ? 'Zimmeraufteilung' : 'Bedroom setup'} value={BEDROOM_PACKAGE_LABEL[bedroomPackage][locale]} />
+          )}
 
           {/*
             Line items, exactly as priced. Every mandatory component is listed
@@ -113,6 +131,25 @@ export function CheckoutSummary({
             />
           </div>
         </dl>
+
+        {/*
+          Whether the amounts above are the price OF the chosen bedroom setup.
+          Not yet, on any live quote: the Beds24 mapping is not configured, so
+          the guest is told plainly and the button is withheld. Fixture prices
+          (mock mode) say they are test data.
+        */}
+        {quote?.bedroomPricing.status === 'not_configured' && (
+          <p className="mt-2 text-[12px] leading-relaxed" style={muted} data-pricing="bedroom-unconfigured">
+            {de
+              ? 'Der Betrag ist der aktuelle Preis unseres Buchungssystems für diesen Zeitraum. Ein Preis für die gewählte Zimmeraufteilung ist dort noch nicht hinterlegt — eine Online-Buchung ist daher noch nicht möglich.'
+              : 'This amount is our booking system’s current price for these dates. A price for the selected bedroom setup is not set there yet, so online booking is not possible.'}
+          </p>
+        )}
+        {quote?.bedroomPricing.status === 'fixture' && (
+          <p className="mt-2 text-[12px] font-semibold leading-relaxed" style={{ color: 'hsl(var(--destructive))' }} data-pricing="fixture">
+            {de ? 'Testdaten — Beispielpreise, keine BoLaGio-Preise.' : 'Test data — example prices, not BoLaGio rates.'}
+          </p>
+        )}
 
         {terms && (
           <p className="mt-2 text-[12px] leading-relaxed" style={muted} data-legal="price-statement">

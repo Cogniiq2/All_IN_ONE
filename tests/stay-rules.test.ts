@@ -10,7 +10,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   addDays,
+  BEDROOM_PACKAGE_GUEST_LIMIT,
+  bedroomPackageFits,
   calendarFromReservations,
+  isBedroomPackage,
   isIsoDate,
   MAX_STAY_NIGHTS,
   nightsBetween,
@@ -103,6 +106,7 @@ describe('stay shape validation', () => {
     checkOut: '2026-09-23',
     adults: 2,
     children: 0,
+    bedroomPackage: 'two_bedroom' as const,
     ...over,
   });
 
@@ -148,8 +152,15 @@ describe('stay shape validation', () => {
       error: 'occupancy',
       meta: { maxGuests: 4 },
     });
-    // A unit that sleeps six accepts six. Occupancy is per unit, not global.
-    expect(validateStayShape(stay({ adults: 6 }), { maxGuests: 6 }, TODAY)).toBeNull();
+    // Occupancy is per unit, not global: a unit that sleeps six is not capped
+    // at the fallback four by its own limit…
+    expect(validateStayShape(stay({ adults: 4 }), { maxGuests: 6 }, TODAY)).toBeNull();
+    // …but the bedroom package is a second, separate cap: 2 Bedrooms is for
+    // one to four guests (see the bedroom package tests below).
+    expect(validateStayShape(stay({ adults: 6 }), { maxGuests: 6 }, TODAY)).toEqual({
+      error: 'occupancy',
+      meta: { maxGuests: 4, bedroomPackage: 'two_bedroom' },
+    });
   });
 
   it('enforces a unit minimum stay', () => {
@@ -165,6 +176,62 @@ describe('stay shape validation', () => {
   });
 });
 
+describe('bedroom packages', () => {
+  const stay = (over: Partial<Parameters<typeof validateStayShape>[0]> = {}) => ({
+    checkIn: '2026-09-20',
+    checkOut: '2026-09-23',
+    adults: 2,
+    children: 0,
+    bedroomPackage: 'one_bedroom' as const,
+    ...over,
+  });
+
+  it('knows exactly the two packages', () => {
+    expect(isBedroomPackage('one_bedroom')).toBe(true);
+    expect(isBedroomPackage('two_bedroom')).toBe(true);
+    expect(isBedroomPackage('three_bedroom')).toBe(false);
+    expect(isBedroomPackage(undefined)).toBe(false);
+    expect(isBedroomPackage(2)).toBe(false);
+    expect(BEDROOM_PACKAGE_GUEST_LIMIT).toEqual({ one_bedroom: 2, two_bedroom: 4 });
+  });
+
+  it('accepts 1 Bedroom with one or two guests', () => {
+    expect(validateStayShape(stay({ adults: 1 }), LIMITS, TODAY)).toBeNull();
+    expect(validateStayShape(stay({ adults: 2 }), LIMITS, TODAY)).toBeNull();
+    expect(bedroomPackageFits('one_bedroom', 2)).toBe(true);
+  });
+
+  it('refuses 1 Bedroom with three or four guests, children included', () => {
+    for (const party of [{ adults: 3 }, { adults: 4 }, { adults: 1, children: 2 }]) {
+      expect(validateStayShape(stay(party), LIMITS, TODAY)).toEqual({
+        error: 'occupancy',
+        meta: { maxGuests: 2, bedroomPackage: 'one_bedroom' },
+      });
+    }
+    expect(bedroomPackageFits('one_bedroom', 3)).toBe(false);
+  });
+
+  it('accepts 2 Bedrooms with one to four guests', () => {
+    for (const adults of [1, 2, 3, 4]) {
+      expect(validateStayShape(stay({ adults, bedroomPackage: 'two_bedroom' }), LIMITS, TODAY)).toBeNull();
+    }
+  });
+
+  it('keeps the unit occupancy as the outer limit', () => {
+    expect(validateStayShape(stay({ adults: 4, bedroomPackage: 'two_bedroom' }), { maxGuests: 3 }, TODAY)).toEqual({
+      error: 'occupancy',
+      meta: { maxGuests: 3 },
+    });
+  });
+
+  it('refuses a missing or unknown package instead of defaulting one', () => {
+    const missing = { ...stay(), bedroomPackage: undefined } as unknown as Parameters<typeof validateStayShape>[0];
+    const unknown = { ...stay(), bedroomPackage: 'penthouse' } as unknown as Parameters<typeof validateStayShape>[0];
+    expect(validateStayShape(missing, LIMITS, TODAY)).toEqual({ error: 'invalid_input', meta: { field: 'bedroomPackage' } });
+    expect(validateStayShape(unknown, LIMITS, TODAY)).toEqual({ error: 'invalid_input', meta: { field: 'bedroomPackage' } });
+  });
+});
+
 describe('validation against the cached calendar', () => {
   const calendar = (): InventoryDay[] =>
     calendarFromReservations('2026-09-16', '2026-09-30', [
@@ -176,6 +243,7 @@ describe('validation against the cached calendar', () => {
     checkOut,
     adults: 2,
     children: 0,
+    bedroomPackage: 'two_bedroom' as const,
   });
 
   it('accepts a stay that ends where a reservation begins', () => {

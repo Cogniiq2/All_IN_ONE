@@ -41,6 +41,7 @@ test('G02 · the same journey in English records the locale and renders English 
   await page.goto('/apartments/schulstrasse-i');
   await page.getByRole('button', { name: 'Book now' }).first().click();
   await expect(page.getByRole('heading', { name: 'How many of you are coming?' })).toBeVisible();
+  await page.getByRole('radio', { name: /^2 Bedrooms/ }).click();
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('heading', { name: 'When would you like to come?' })).toBeVisible();
   const d = new Date(); d.setUTCDate(d.getUTCDate() + 45);

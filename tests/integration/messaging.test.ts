@@ -128,7 +128,7 @@ describe('the messages endpoint', () => {
 
   it('renders English for an English-speaking guest', async () => {
     const stay = { checkIn: '2027-12-01', checkOut: '2027-12-03' };
-    const created = await h.call('POST', '/api/booking/intent', { unitSlug: 'schulstrasse-i', ...stay, adults: 2, children: 0, guest: { firstName: 'Grace', lastName: 'Hopper', email: 'grace@example.com', phone: '+1 555 0100', locale: 'en' }, attemptId: 'en-1' });
+    const created = await h.call('POST', '/api/booking/intent', { unitSlug: 'schulstrasse-i', ...stay, adults: 2, children: 0, bedroomPackage: 'two_bedroom', guest: { firstName: 'Grace', lastName: 'Hopper', email: 'grace@example.com', phone: '+1 555 0100', locale: 'en' }, attemptId: 'en-1' });
     const reference = created.body.intent.reference;
     await approveOrder(h, reference, false);
     await h.call('POST', '/api/booking/payment/capture', { reference });

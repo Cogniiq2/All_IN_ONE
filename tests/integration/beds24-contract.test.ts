@@ -23,7 +23,7 @@ beforeEach(async () => { await h.resetDb(); await h.sync(); });
 const createCalls = async () => (await h.beds24.calls()).filter((c: any) => c.method === 'POST' && c.path === '/bookings' && c.body?.[0]?.id === undefined);
 
 async function attemptHold(stay = futureStay()) {
-  return h.call('POST', '/api/booking/intent', { unitSlug: 'schulstrasse-i', ...stay, adults: 2, children: 0, guest: GUEST, attemptId: `a-${Math.random()}` });
+  return h.call('POST', '/api/booking/intent', { unitSlug: 'schulstrasse-i', ...stay, adults: 2, children: 0, bedroomPackage: 'two_bedroom', guest: GUEST, attemptId: `a-${Math.random()}` });
 }
 
 describe('holds', () => {
@@ -138,7 +138,7 @@ describe('holds', () => {
   it('inventory changes between quote and hold: the provider refuses, the lock is unwound, nothing is orphaned', async () => {
     const stay = futureStay();
     // The quote is fine…
-    const quote = await h.call('POST', '/api/booking/quote', { unitSlug: 'schulstrasse-i', ...stay, adults: 2, children: 0 });
+    const quote = await h.call('POST', '/api/booking/quote', { unitSlug: 'schulstrasse-i', ...stay, adults: 2, children: 0, bedroomPackage: 'two_bedroom' });
     expect(quote.status).toBe(200);
     // …then a Booking.com reservation lands on one of the nights.
     await h.beds24.block('731147', stay.checkIn, stay.checkOut);

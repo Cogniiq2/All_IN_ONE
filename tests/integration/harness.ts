@@ -98,6 +98,10 @@ export async function startHarness(overrides: Record<string, string> = {}): Prom
     // honoured on local/staging only, so the checkout gate opens here without
     // an owner-approved production text.
     BOOKING_TEST_TERMS: 'true',
+    // The simulator has no bedroom-package mapping, and neither does the real
+    // account yet: every quote is `not_configured`. Local-only switch that lets
+    // the hold/payment paths still run (lib/booking/config.ts).
+    BOOKING_TEST_BEDROOM_PRICING: 'true',
     // Every success heartbeat is written: the tests reset the database between
     // cases, and a per-isolate throttle would remember the previous case.
     OBSERVE_SUCCESS_INTERVAL_MS: '0',
@@ -329,7 +333,7 @@ export async function waitFor(h: Harness, reference: string, predicate: (row: Re
 /** Take a booking from nothing to a hold through the real routes. */
 export async function holdBooking(h: Harness, stay = futureStay()): Promise<{ reference: string; quote: any; intent: any }> {
   const created = await h.call('POST', '/api/booking/intent', {
-    unitSlug: 'schulstrasse-i', ...stay, adults: 2, children: 0, guest: GUEST, attemptId: `attempt-${Date.now()}-${Math.random()}`,
+    unitSlug: 'schulstrasse-i', ...stay, adults: 2, children: 0, bedroomPackage: 'two_bedroom', guest: GUEST, attemptId: `attempt-${Date.now()}-${Math.random()}`,
   });
   if (created.status !== 201) throw new Error(`intent failed: ${created.status} ${JSON.stringify(created.body)}`);
   return { reference: created.body.intent.reference, quote: created.body.quote, intent: created.body.intent };

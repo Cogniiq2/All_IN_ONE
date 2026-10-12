@@ -14,7 +14,8 @@ import 'server-only';
 import { NextResponse } from 'next/server';
 import { BookingError } from '@/lib/booking/service';
 import type { BookingLogger } from '@/lib/booking/logger';
-import type { BookingErrorCode } from '@/lib/booking/types';
+import type { BedroomPackage, BookingErrorCode } from '@/lib/booking/types';
+import { isBedroomPackage } from '@/lib/booking/stay-rules';
 import { isSupabaseConfigured } from '@/lib/supabase/server';
 import { timingSafeEqual } from '@/lib/booking/reference';
 
@@ -50,6 +51,8 @@ const STATUS_BY_CODE: Record<BookingErrorCode, number> = {
   // A 409 here would invite the browser to try again, which is the one thing
   // an uncertain provider outcome must not do.
   pending_verification: 409,
+  // No confirmed price for the chosen bedroom package: a gate, like the terms.
+  pricing_unconfigured: 403,
   rate_limited: 429,
   unexpected: 500,
 };
@@ -87,6 +90,18 @@ export async function readJson(request: Request): Promise<Record<string, unknown
     if (cause instanceof BookingError) throw cause;
     throw new BookingError('invalid_input');
   }
+}
+
+/**
+ * The bedroom package from a request body, or `invalid_input`.
+ *
+ * Required on the quote and the intent alike, and never defaulted: a missing
+ * or unknown value is refused here, before any database or provider call. The
+ * service re-validates it with the party size (`validateStayShape`).
+ */
+export function readBedroomPackage(value: unknown): BedroomPackage {
+  if (!isBedroomPackage(value)) throw new BookingError('invalid_input', { field: 'bedroomPackage' });
+  return value;
 }
 
 /**

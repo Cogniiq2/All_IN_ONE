@@ -93,6 +93,9 @@ export default async function globalSetup(): Promise<void> {
     OPERATOR_PAID_CANCELLATION_ENABLED: 'true',
     // The sandbox legal fixture (lib/legal/readiness.ts): local/staging only.
     BOOKING_TEST_TERMS: 'true',
+    // Bedroom-package pricing is unconfigured everywhere until Phase 2; this
+    // local-only switch keeps the booking journey testable (lib/booking/config.ts).
+    BOOKING_TEST_BEDROOM_PRICING: 'true',
     MESSAGING_TEST_COMPLETIONS_ALLOWED: 'true',
     MESSAGING_CONTACT_EMAIL: 'stay@example.com',
     PROVIDER_TIMEOUT_MS: '1500',

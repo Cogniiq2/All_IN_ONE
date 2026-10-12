@@ -119,6 +119,9 @@ export async function acquireHold(
       checkOut: intent.checkOut,
       adults: intent.adults,
       children: intent.children,
+      // From the quote this hold is being made for: the package is part of the
+      // intent's idempotency key, so it is the intent's own.
+      bedroomPackage: quote.bedroomPackage,
     });
   } catch (cause) {
     await unwindLock(locked, cause, logger);
@@ -165,6 +168,7 @@ export async function acquireHold(
           checkOut: intent.checkOut,
           adults: intent.adults,
           children: intent.children,
+          bedroomPackage: quote.bedroomPackage,
           guest: intent.guest!,
           totalCents: quote.totalCents,
           currency: quote.currency,

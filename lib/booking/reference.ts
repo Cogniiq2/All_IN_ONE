@@ -12,6 +12,8 @@
  *   Beds24 booking id  the provider's, stored beside it, never displayed.
  */
 
+import type { BedroomPackage } from '@/lib/booking/types';
+
 /**
  * Crockford-style alphabet: no I, L, O, U, and no digits 0 or 1.
  *
@@ -78,6 +80,11 @@ export async function bookingIdempotencyKey(input: {
   checkOut: string;
   adults: number;
   children: number;
+  /**
+   * Part of the key: the same dates in a different setup are a different
+   * attempt, and must not replay a hold made for the other one.
+   */
+  bedroomPackage: BedroomPackage;
   email: string;
   /** A client-supplied attempt id, so a deliberate retry can be distinguished. */
   attemptId?: string;
@@ -88,6 +95,7 @@ export async function bookingIdempotencyKey(input: {
     input.checkOut,
     String(input.adults),
     String(input.children),
+    input.bedroomPackage,
     input.email.trim().toLowerCase(),
     input.attemptId ?? '',
   ].join('|');

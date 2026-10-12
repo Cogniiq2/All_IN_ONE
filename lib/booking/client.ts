@@ -17,6 +17,7 @@
 
 import type {
   AcceptedTermsVersions,
+  BedroomPackage,
   AvailabilityCalendar,
   BookingErrorCode,
   BookingIntentView,
@@ -82,7 +83,14 @@ export function fetchAvailability(
 }
 
 export function fetchQuote(
-  input: { unitSlug: string; checkIn: IsoDate; checkOut: IsoDate; adults: number; children: number },
+  input: {
+    unitSlug: string;
+    checkIn: IsoDate;
+    checkOut: IsoDate;
+    adults: number;
+    children: number;
+    bedroomPackage: BedroomPackage;
+  },
   signal?: AbortSignal
 ): Promise<BookingQuote> {
   return call<BookingQuote>('/api/booking/quote', {
@@ -109,6 +117,7 @@ export function createBookingIntent(
     checkOut: IsoDate;
     adults: number;
     children: number;
+    bedroomPackage: BedroomPackage;
     guest: GuestDetails;
     attemptId: string;
     /** The versions of the terms rendered on screen when the button was pressed. */

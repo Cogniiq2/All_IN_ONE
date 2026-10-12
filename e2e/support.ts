@@ -185,6 +185,8 @@ export async function openBooking(page: Page, slug = 'schulstrasse-i'): Promise<
   await page.goto(`/apartments/${slug}`);
   await page.getByRole('button', { name: 'Jetzt buchen' }).first().click();
   await expect(page.getByRole('heading', { name: 'Wie viele Personen reisen an?' })).toBeVisible();
+  // The bedroom setup is an explicit choice on the same step; nothing is pre-selected.
+  await page.getByRole('radio', { name: /^2 Schlafzimmer/ }).click();
 }
 
 export async function next(page: Page): Promise<void> {
@@ -272,8 +274,8 @@ async function api(pathname: string, body: unknown, ip: string): Promise<{ statu
   // A guest's browser echoes the versions of the terms the quote showed it.
   // These helpers book without the dialog, so they ask for the quote first.
   if (pathname === '/api/booking/intent' && body && typeof body === 'object' && !('acceptedTerms' in body)) {
-    const b = body as { unitSlug: string; checkIn: string; checkOut: string; adults: number; children: number };
-    const quote = await api('/api/booking/quote', { unitSlug: b.unitSlug, checkIn: b.checkIn, checkOut: b.checkOut, adults: b.adults, children: b.children }, ip);
+    const b = body as { unitSlug: string; checkIn: string; checkOut: string; adults: number; children: number; bedroomPackage?: string };
+    const quote = await api('/api/booking/quote', { unitSlug: b.unitSlug, checkIn: b.checkIn, checkOut: b.checkOut, adults: b.adults, children: b.children, bedroomPackage: b.bedroomPackage }, ip);
     const terms = quote.body?.terms;
     if (terms) body = { ...(body as Record<string, unknown>), acceptedTerms: { cancellation: terms.cancellation.version, withdrawal: terms.withdrawal.version, agb: terms.agb.version, privacy: terms.privacy.version, price: terms.price.version } };
   }
@@ -286,7 +288,7 @@ async function api(pathname: string, body: unknown, ip: string): Promise<{ statu
 export async function confirmedBooking(stay = futureStay(30, 2), guest = { firstName: 'Grace', lastName: 'Hopper', email: 'grace@example.com', phone: '+1 555 0100', locale: 'de' }): Promise<string> {
   ipCounter += 1;
   const ip = `10.8.${Math.floor(ipCounter / 250) % 250}.${ipCounter % 250}`;
-  const created = await api('/api/booking/intent', { unitSlug: 'schulstrasse-i', checkIn: stay.arrival, checkOut: stay.departure, adults: 2, children: 0, guest, attemptId: randomUUID() }, ip);
+  const created = await api('/api/booking/intent', { unitSlug: 'schulstrasse-i', checkIn: stay.arrival, checkOut: stay.departure, adults: 2, children: 0, bedroomPackage: 'two_bedroom', guest, attemptId: randomUUID() }, ip);
   if (created.status !== 201) throw new Error(`intent: ${created.status} ${JSON.stringify(created.body)}`);
   const reference = created.body.intent.reference as string;
   const order = await api('/api/booking/payment/order', { reference }, ip);
@@ -301,7 +303,7 @@ export async function confirmedBooking(stay = futureStay(30, 2), guest = { first
 export async function heldBooking(stay = futureStay(70, 2)): Promise<string> {
   ipCounter += 1;
   const ip = `10.8.${Math.floor(ipCounter / 250) % 250}.${ipCounter % 250}`;
-  const created = await api('/api/booking/intent', { unitSlug: 'schulstrasse-i', checkIn: stay.arrival, checkOut: stay.departure, adults: 2, children: 0, guest: { firstName: 'Held', lastName: 'Guest', email: 'held@example.com', phone: '+49 921 000', locale: 'de' }, attemptId: randomUUID() }, ip);
+  const created = await api('/api/booking/intent', { unitSlug: 'schulstrasse-i', checkIn: stay.arrival, checkOut: stay.departure, adults: 2, children: 0, bedroomPackage: 'two_bedroom', guest: { firstName: 'Held', lastName: 'Guest', email: 'held@example.com', phone: '+49 921 000', locale: 'de' }, attemptId: randomUUID() }, ip);
   if (created.status !== 201) throw new Error(`intent: ${created.status} ${JSON.stringify(created.body)}`);
   return created.body.intent.reference as string;
 }

@@ -33,6 +33,13 @@ import 'server-only';
  *   14th   provider unavailable — Beds24 is down
  *   15th   quote succeeds, HOLD fails with a conflict. This is the real race:
  *          a Booking.com reservation landing between the quote and the hold.
+ *
+ * ── Bedroom packages: fixtures, and labelled as such ─────────────────────
+ * Both `one_bedroom` and `two_bedroom` are quoted, each marked
+ * `bedroomPricing: { status: 'fixture' }`, which the checkout renders as
+ * "test data" and the service refuses to book on production. The two
+ * packages deliberately cost the SAME here: a fixture supplement would be an
+ * invented bedroom price, and the real one will come from Beds24.
  * ══════════════════════════════════════════════════════════════════════════
  */
 
@@ -53,6 +60,7 @@ import {
   type ProviderBooking,
 } from '@/lib/integrations/provider';
 
+/** FIXTURE prices — mock mode only, never a BoLaGio rate. */
 const NIGHTLY_CENTS = 14_000;
 const CLEANING_CENTS = 4_500;
 
@@ -155,6 +163,9 @@ export const beds24MockProvider: BookingProvider = {
       nights,
       adults: request.adults,
       children: request.children,
+      bedroomPackage: request.bedroomPackage,
+      // FIXTURE. Never a package price — see the header of this file.
+      bedroomPricing: { status: 'fixture' },
       currency: 'EUR',
       totalCents: accommodation + CLEANING_CENTS,
       components: [

@@ -38,6 +38,7 @@
  */
 
 import { tempGalleries, type TempImage } from '@/lib/content/media';
+import type { BedroomPackage } from '@/lib/booking/types';
 
 export type Locale = 'de' | 'en';
 export type Localized = { de: string; en: string };
@@ -164,6 +165,13 @@ export interface Apartment extends BaseUnit {
   priceFromNote?: Localized;
   /** NEEDS CONFIRMATION — minimum stay in nights. */
   minNights?: number;
+  /**
+   * The bedroom setups a guest may choose between for a short stay, in the
+   * order they are offered. Absent means the residence offers no choice, and
+   * the booking dialog shows none. Never a price: what each setup costs comes
+   * from Beds24 (see lib/integrations/beds24/bedroom-pricing.ts).
+   */
+  bedroomPackages?: BedroomPackage[];
 }
 
 /**
@@ -208,6 +216,9 @@ export const apartments: Apartment[] = [
     // Rendered only through formatArea() as "ca. 120 m²".
     // NEEDS CONFIRMATION: the measured Wohnfläche for this specific flat.
     sizeSqm: 120,
+    // Confirmed by the owners for the booking model (Phase 1, 2026-10-12):
+    // one bedroom for up to two guests, or the full two-bedroom setup.
+    bedroomPackages: ['one_bedroom', 'two_bedroom'],
     detail: [
       {
         de: 'Das Apartment liegt in der Schulstraße, mitten in der Bayreuther Innenstadt. Es gehört unserer Familie, wird von uns selbst betreut und vor jedem Aufenthalt persönlich vorbereitet — kein Schlüsselkasten, keine Verwaltung dazwischen.',
@@ -253,6 +264,8 @@ export const apartments: Apartment[] = [
       en: 'The second of our two apartments on Schulstraße. If you are travelling as a larger group, both apartments in the same building can be enquired about together — for families and festival parties that is often better than two hotel rooms.',
     },
     sizeSqm: 120,
+    // As Schulstraße I (Phase 1 booking model, 2026-10-12).
+    bedroomPackages: ['one_bedroom', 'two_bedroom'],
     detail: [
       {
         de: 'Das zweite unserer beiden Apartments in der Schulstraße, im selben Haus wie Apartment I und ebenso von uns selbst betreut.',

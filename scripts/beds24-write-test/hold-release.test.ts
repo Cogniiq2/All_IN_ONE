@@ -180,6 +180,7 @@ describe.runIf(CONFIRMED)('Beds24 hold and release, against the live account', (
         checkOut,
         adults: 1,
         children: 0,
+        bedroomPackage: 'two_bedroom',
         guest: TEST_GUEST,
         totalCents: priceCents,
         currency: 'EUR',

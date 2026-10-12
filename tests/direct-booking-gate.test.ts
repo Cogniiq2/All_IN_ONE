@@ -67,7 +67,7 @@ async function expectDisabled(run: () => Promise<unknown>) {
 describe('with the flag unset', () => {
   it('refuses startBooking before any database or provider call', async () => {
     await expectDisabled(() =>
-      startBooking({ unitSlug: 'schulstrasse-i', checkIn: '2027-01-10', checkOut: '2027-01-12', adults: 2, children: 0, guest: GUEST }, logger)
+      startBooking({ unitSlug: 'schulstrasse-i', checkIn: '2027-01-10', checkOut: '2027-01-12', adults: 2, children: 0, bedroomPackage: 'two_bedroom', guest: GUEST }, logger)
     );
   });
 

@@ -26,7 +26,13 @@ import 'server-only';
  * ══════════════════════════════════════════════════════════════════════════
  */
 
-import { directBookingPermitted, inventoryMonths, quoteMinutes } from '@/lib/booking/config';
+import {
+  bedroomPricingTestOverride,
+  directBookingPermitted,
+  inventoryMonths,
+  quoteMinutes,
+} from '@/lib/booking/config';
+import { appEnvironment } from '@/lib/config/environment';
 import { transitionIntent } from '@/lib/booking/commands';
 import { acquireHold, HoldError } from '@/lib/booking/hold';
 import { evaluateLease } from '@/lib/booking/lease';
@@ -57,6 +63,7 @@ import { isHoldExpired, isQuoteExpired } from '@/lib/booking/state-machine';
 import { reservesInventory } from '@/lib/booking/states';
 import type {
   AvailabilityCalendar,
+  BedroomPackage,
   BookingErrorBody,
   BookingErrorCode,
   BookingIntentView,
@@ -217,6 +224,7 @@ export async function getQuote(
       checkOut: input.checkOut,
       adults: input.adults,
       children: input.children,
+      bedroomPackage: input.bedroomPackage,
     });
     logger.info('beds24.offer', {
       unitSlug: unit.slug,
@@ -224,6 +232,8 @@ export async function getQuote(
       checkOut: input.checkOut,
       amountCents: quote.totalCents,
       currency: quote.currency,
+      bedroomPackage: quote.bedroomPackage,
+      bedroomPricing: quote.bedroomPricing.status,
       durationMs: Date.now() - started,
     });
   } catch (cause) {
@@ -234,6 +244,11 @@ export async function getQuote(
       durationMs: Date.now() - started,
     });
     throw error;
+  }
+  // Local simulator runs only: see `bedroomPricingTestOverride`. The quote
+  // then SAYS it is a fixture, so the checkout labels it as test data.
+  if (quote.bedroomPricing.status === 'not_configured' && bedroomPricingTestOverride()) {
+    quote = { ...quote, bedroomPricing: { status: 'fixture' } };
   }
   return withBoLaGioTerms(quote);
 }
@@ -259,6 +274,22 @@ function withBoLaGioTerms(quote: BookingQuote): BookingQuote {
     throw new BookingError('stay_rules', { maxNights: terms.withdrawal.maxNights });
   }
   return { ...rest, terms };
+}
+
+/**
+ * May this quote's price be charged for the bedroom package it names?
+ *
+ * Only when the provider has said the price IS that package's price. Today no
+ * live quote can say so — `resolveBeds24BedroomPricing` reports the mapping as
+ * not configured — so the answer on a live deployment is always no, and
+ * `startBooking` refuses before an intent, a hold or a payment exists.
+ *
+ * Mock fixtures pass, so the flow stays testable end to end, but never on
+ * production: a fixture price is not a price anyone may be charged.
+ */
+export function bedroomPricingBookable(quote: BookingQuote): boolean {
+  if (quote.bedroomPricing.status === 'fixture') return appEnvironment() !== 'production';
+  return false;
 }
 
 /* ── Booking: intent + hold ────────────────────────────────────────────── */
@@ -321,6 +352,7 @@ export async function startBooking(
     checkOut: input.checkOut,
     adults: input.adults,
     children: input.children,
+    bedroomPackage: input.bedroomPackage,
     email: guest.email,
     attemptId: input.attemptId,
   });
@@ -331,7 +363,10 @@ export async function startBooking(
   const existing = await findIntentByIdempotencyKey(idempotencyKey);
   if (existing && existing.beds24BookingId && reservesInventory(existing.status)) {
     logger.info('intent.create', { reference: existing.reference, outcome: 'idempotent-replay' });
-    return { intent: toView(existing), quote: { ...quoteFromIntent(existing), terms } };
+    return {
+      intent: toView(existing),
+      quote: { ...quoteFromIntent(existing, input.bedroomPackage), terms },
+    };
   }
 
   const quote = await getQuote(
@@ -341,9 +376,23 @@ export async function startBooking(
       checkOut: input.checkOut,
       adults: input.adults,
       children: input.children,
+      bedroomPackage: input.bedroomPackage,
     },
     logger
   );
+
+  // No confirmed price for this bedroom package: nothing is created. Checked
+  // after the live quote (so a conflict still reads as a conflict) and before
+  // the intent, so a refusal leaves no row, no lock and no Beds24 hold.
+  if (!bedroomPricingBookable(quote)) {
+    logger.warn('intent.create', {
+      unitSlug: unit.slug,
+      bedroomPackage: quote.bedroomPackage,
+      bedroomPricing: quote.bedroomPricing.status,
+      errorCode: 'BEDROOM_PRICING_NOT_CONFIGURED',
+    });
+    throw new BookingError('pricing_unconfigured');
+  }
 
   const intent =
     existing ??
@@ -354,6 +403,7 @@ export async function startBooking(
       checkOut: input.checkOut,
       adults: input.adults,
       children: input.children,
+      bedroomPackage: input.bedroomPackage,
       currency: quote.currency,
       guest,
       idempotencyKey,
@@ -373,6 +423,7 @@ export async function startBooking(
     checkIn: input.checkIn,
     checkOut: input.checkOut,
     nights: quote.nights,
+    bedroomPackage: quote.bedroomPackage,
     amountCents: quote.totalCents,
     currency: quote.currency,
   });
@@ -619,7 +670,13 @@ export function toView(intent: IntentRecord): BookingIntentView {
   };
 }
 
-function quoteFromIntent(intent: IntentRecord): BookingQuote {
+/**
+ * The quote behind an idempotent replay. The bedroom package is the one in the
+ * request — part of the idempotency key, so it is the intent's own. Pricing is
+ * reported as not configured: the original resolution is not stored, and the
+ * replay is not a fresh offer, so it claims nothing about the package price.
+ */
+function quoteFromIntent(intent: IntentRecord, bedroomPackage: BedroomPackage): BookingQuote {
   return {
     unitSlug: intent.unitSlug,
     checkIn: intent.checkIn,
@@ -627,6 +684,8 @@ function quoteFromIntent(intent: IntentRecord): BookingQuote {
     nights: nightsBetween(intent.checkIn, intent.checkOut),
     adults: intent.adults,
     children: intent.children,
+    bedroomPackage,
+    bedroomPricing: { status: 'not_configured' },
     currency: intent.currency,
     totalCents: intent.quotedTotalCents ?? 0,
     components: intent.quoteComponents,

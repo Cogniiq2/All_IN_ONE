@@ -5,8 +5,8 @@
  * does it genuinely cost. Live Beds24, every time — never cached, never
  * derived on the client.
  *
- *   { unitSlug, checkIn, checkOut, adults, children }
- *   → BookingQuote  (totalCents, components, expiresAt)
+ *   { unitSlug, checkIn, checkOut, adults, children, bedroomPackage }
+ *   → BookingQuote  (totalCents, components, expiresAt, bedroomPricing)
  *
  * The frontend does not compute a total anywhere. It renders this one.
  */
@@ -18,6 +18,7 @@ import {
   bookingJson,
   clientKey,
   rateLimit,
+  readBedroomPackage,
   readJson,
   requireBackend,
 } from '@/lib/booking/http';
@@ -41,6 +42,7 @@ export async function POST(request: NextRequest) {
         checkOut: str(body.checkOut),
         adults: int(body.adults, 1),
         children: int(body.children, 0),
+        bedroomPackage: readBedroomPackage(body.bedroomPackage),
       },
       logger
     );

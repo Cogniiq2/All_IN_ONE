@@ -21,7 +21,7 @@ describe('the guest path', () => {
       expect(config.status).toBe(403);
       expect(config.body).toEqual({ error: 'booking_disabled' });
       const stay = futureStay();
-      const created = await h.call('POST', '/api/booking/intent', { unitSlug: 'schulstrasse-i', ...stay, adults: 2, children: 0, guest: { firstName: 'A', lastName: 'B', email: 'a@example.com', phone: '+49123456' } });
+      const created = await h.call('POST', '/api/booking/intent', { unitSlug: 'schulstrasse-i', ...stay, adults: 2, children: 0, bedroomPackage: 'two_bedroom', guest: { firstName: 'A', lastName: 'B', email: 'a@example.com', phone: '+49123456' } });
       expect(created.status).toBe(403);
       expect(h.sql('select count(*) from bolagio_booking_intents')).toBe('0');
       const calls = await h.beds24.calls();
@@ -45,14 +45,14 @@ describe('the guest path', () => {
   it('quotes a live total from the offer and refuses unavailable dates', async () => {
     await h.sync();
     const stay = futureStay(60, 2);
-    const quote = await h.call('POST', '/api/booking/quote', { unitSlug: 'schulstrasse-i', ...stay, adults: 2, children: 0 });
+    const quote = await h.call('POST', '/api/booking/quote', { unitSlug: 'schulstrasse-i', ...stay, adults: 2, children: 0, bedroomPackage: 'two_bedroom' });
     expect(quote.status).toBe(200);
     expect(quote.body.totalCents).toBe(14_000 * 2 + 4_500);
     expect(quote.body.components.map((c: any) => c.code)).toEqual(['accommodation', 'fee:endreinigung']);
 
     // Somebody else (Booking.com) takes one of the nights.
     await h.beds24.block('731147', stay.checkIn, stay.checkOut);
-    const taken = await h.call('POST', '/api/booking/quote', { unitSlug: 'schulstrasse-i', ...stay, adults: 2, children: 0 });
+    const taken = await h.call('POST', '/api/booking/quote', { unitSlug: 'schulstrasse-i', ...stay, adults: 2, children: 0, bedroomPackage: 'two_bedroom' });
     expect(taken.status).toBe(409);
     expect(taken.body.error).toBe('availability_conflict');
   });

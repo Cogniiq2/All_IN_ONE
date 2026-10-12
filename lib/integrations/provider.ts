@@ -20,7 +20,7 @@ import 'server-only';
  * ══════════════════════════════════════════════════════════════════════════
  */
 
-import type { BookingQuote, GuestDetails, InventoryDay, IsoDate } from '@/lib/booking/types';
+import type { BedroomPackage, BookingQuote, GuestDetails, InventoryDay, IsoDate } from '@/lib/booking/types';
 
 /**
  * What the provider says it has — one property and its rooms.
@@ -65,6 +65,13 @@ export interface OfferRequest {
   checkOut: IsoDate;
   adults: number;
   children: number;
+  /**
+   * The guest's bedroom setup. Carried to the adapter so the adapter — and
+   * only the adapter — decides what it means at the provider. For Beds24 that
+   * decision is `resolveBeds24BedroomPricing`, which today reports the mapping
+   * as not configured.
+   */
+  bedroomPackage: BedroomPackage;
 }
 
 export interface HoldRequest extends OfferRequest {

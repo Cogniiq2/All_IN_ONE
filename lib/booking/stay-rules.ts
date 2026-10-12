@@ -19,7 +19,7 @@
  * ══════════════════════════════════════════════════════════════════════════
  */
 
-import type { BookingErrorBody, InventoryDay, IsoDate } from '@/lib/booking/types';
+import type { BedroomPackage, BookingErrorBody, InventoryDay, IsoDate } from '@/lib/booking/types';
 
 /** Longest stay the booking flow will quote. Beyond this is a tenancy. */
 export const MAX_STAY_NIGHTS = 90;
@@ -82,11 +82,41 @@ export function propertyToday(now: Date = new Date()): IsoDate {
   }).format(now);
 }
 
+/* ── Bedroom packages ──────────────────────────────────────────────────── */
+
+/** Every bedroom package, in the order the dialog offers them. */
+export const BEDROOM_PACKAGES: readonly BedroomPackage[] = ['one_bedroom', 'two_bedroom'];
+
+/**
+ * The largest party each package is intended for.
+ *
+ *   one_bedroom   1–2 guests
+ *   two_bedroom   1–4 guests
+ *
+ * A party limit, not a price: what a package costs comes from Beds24. The
+ * unit's own occupancy still applies on top — the lower of the two wins.
+ */
+export const BEDROOM_PACKAGE_GUEST_LIMIT: Readonly<Record<BedroomPackage, number>> = {
+  one_bedroom: 2,
+  two_bedroom: 4,
+};
+
+export function isBedroomPackage(value: unknown): value is BedroomPackage {
+  return typeof value === 'string' && (BEDROOM_PACKAGES as readonly string[]).includes(value);
+}
+
+/** Whether a party of `guests` fits the package. Shared by the dialog and the server. */
+export function bedroomPackageFits(bedroomPackage: BedroomPackage, guests: number): boolean {
+  return guests <= BEDROOM_PACKAGE_GUEST_LIMIT[bedroomPackage];
+}
+
 export interface StayRequest {
   checkIn: IsoDate;
   checkOut: IsoDate;
   adults: number;
   children: number;
+  /** Required. Validated here, not trusted from the browser. */
+  bedroomPackage: BedroomPackage;
 }
 
 export interface StayLimits {
@@ -123,10 +153,24 @@ export function validateStayShape(
 
   if (!Number.isInteger(adults) || adults < 1) return { error: 'invalid_input' };
   if (!Number.isInteger(children) || children < 0) return { error: 'invalid_input' };
+  // A value outside the two packages is malformed input, never defaulted to
+  // one: guessing the setup would quote and prepare the wrong residence.
+  if (!isBedroomPackage(request.bedroomPackage)) {
+    return { error: 'invalid_input', meta: { field: 'bedroomPackage' } };
+  }
 
   const party = adults + children;
   if (party > limits.maxGuests) {
     return { error: 'occupancy', meta: { maxGuests: limits.maxGuests } };
+  }
+  if (!bedroomPackageFits(request.bedroomPackage, party)) {
+    return {
+      error: 'occupancy',
+      meta: {
+        maxGuests: BEDROOM_PACKAGE_GUEST_LIMIT[request.bedroomPackage],
+        bedroomPackage: request.bedroomPackage,
+      },
+    };
   }
 
   if (limits.minNights && nights < limits.minNights) {

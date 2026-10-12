@@ -21,6 +21,7 @@ import {
 } from '@/lib/integrations/provider';
 import { beds24Request } from '@/lib/integrations/beds24/client';
 import { mapCalendar, mapOffer } from '@/lib/integrations/beds24/mapper';
+import { resolveBeds24BedroomPricing } from '@/lib/integrations/beds24/bedroom-pricing';
 import type {
   Beds24Booking,
   Beds24BookingStatus,
@@ -102,7 +103,10 @@ export const beds24LiveProvider: BookingProvider = {
     });
 
     const expiresAt = new Date(Date.now() + quoteMinutes() * 60_000).toISOString();
-    return mapOffer(
+    // Offer selection is unchanged: `mapOffer` still decides the stay's total
+    // exactly as before. Whether that total is the price OF the requested
+    // bedroom package is a separate question with a separate, isolated answer.
+    const quote = mapOffer(
       response,
       {
         unitSlug: request.unitSlug,
@@ -114,9 +118,23 @@ export const beds24LiveProvider: BookingProvider = {
       },
       expiresAt
     );
+    const bedroomPricing = resolveBeds24BedroomPricing({
+      unit: request.unit,
+      bedroomPackage: request.bedroomPackage,
+      offers: response,
+    });
+    return {
+      ...quote,
+      bedroomPackage: request.bedroomPackage,
+      bedroomPricing: { status: bedroomPricing.status },
+    };
   },
 
   async createHold(request: HoldRequest): Promise<ProviderBooking> {
+    // `request.bedroomPackage` is deliberately NOT written to Beds24 yet. How
+    // the account represents a package (offer, rate, room) is unconfirmed, and
+    // a guessed field would be a guessed mapping — see bedroom-pricing.ts. The
+    // service refuses every live hold until that mapping exists.
     const response = await beds24Request<Beds24BookingWriteResponse>({
       path: '/bookings',
       method: 'POST',

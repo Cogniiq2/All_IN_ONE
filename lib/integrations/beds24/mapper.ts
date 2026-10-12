@@ -152,6 +152,13 @@ export function mapCalendar(
 }
 
 /**
+ * What `mapOffer` produces: a quote before the bedroom package is attached.
+ * The package and whether the price belongs to it are added by `fetchOffer`
+ * in live.ts, from `resolveBeds24BedroomPricing` — never decided here.
+ */
+export type Beds24StayQuote = Omit<BookingQuote, 'bedroomPackage' | 'bedroomPricing'>;
+
+/**
  * The authoritative total for a concrete stay.
  *
  * An offers response with no offers is an availability conflict, not an empty
@@ -169,7 +176,7 @@ export function mapOffer(
     children: number;
   },
   expiresAt: string
-): BookingQuote {
+): Beds24StayQuote {
   const offers: Beds24Offer[] = [];
   let currency = 'EUR';
 

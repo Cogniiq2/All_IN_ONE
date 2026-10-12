@@ -92,6 +92,39 @@ export interface QuoteComponent {
   mandatory: boolean;
 }
 
+/**
+ * How the residence is set up for the stay — a guest's explicit choice, kept
+ * separate from the party size.
+ *
+ *   one_bedroom   one bedroom prepared; intended for up to two guests
+ *   two_bedroom   the full two-bedroom setup; one to four guests
+ *
+ * The guest limit per package is a stay rule (`BEDROOM_PACKAGE_GUEST_LIMIT`
+ * in lib/booking/stay-rules.ts). The PRICE of a package is never decided on
+ * this side: it will come from Beds24, and until the Beds24 mapping exists
+ * every live quote says so — see `bedroomPricing` below.
+ */
+export type BedroomPackage = 'one_bedroom' | 'two_bedroom';
+
+/**
+ * Whether the quote's price is actually the price of the chosen bedroom
+ * package.
+ *
+ *   not_configured  the provider has no confirmed mapping from a package to
+ *                   its rate yet. The amounts are what Beds24 returned for the
+ *                   stay, NOT a package price, and the booking button is
+ *                   withheld. Every live quote is in this state today — see
+ *                   `resolveBeds24BedroomPricing` in
+ *                   lib/integrations/beds24/bedroom-pricing.ts.
+ *   fixture         mock mode only. The amounts are test fixtures and are
+ *                   refused on production by the service.
+ *
+ * A third state (a confirmed provider mapping) is added when Phase 2 maps the
+ * packages to what the Beds24 account actually returns. It is deliberately
+ * absent until then, so nothing can claim it.
+ */
+export type BedroomPricing = { status: 'not_configured' } | { status: 'fixture' };
+
 export interface BookingQuote {
   unitSlug: string;
   checkIn: IsoDate;
@@ -99,6 +132,10 @@ export interface BookingQuote {
   nights: number;
   adults: number;
   children: number;
+  /** The bedroom package this quote was asked for. */
+  bedroomPackage: BedroomPackage;
+  /** Whether the amounts below are the price OF that package. See `BedroomPricing`. */
+  bedroomPricing: BedroomPricing;
   currency: string;
   totalCents: number;
   components: QuoteComponent[];
@@ -249,6 +286,11 @@ export type BookingErrorCode =
    * them. A person is already looking.
    */
   | 'pending_verification'
+  /**
+   * The provider has no confirmed price for the chosen bedroom package yet.
+   * Fail closed, like `terms_unavailable`: no intent, no hold, no payment.
+   */
+  | 'pricing_unconfigured'
   /** Anything else. Deliberately opaque. */
   | 'unexpected';
 

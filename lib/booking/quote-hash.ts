@@ -21,6 +21,7 @@ export async function quoteHashOf(quote: BookingQuote): Promise<string> {
     quote.checkOut,
     String(quote.adults),
     String(quote.children),
+    quote.bedroomPackage,
     quote.currency,
     String(quote.totalCents),
     // Component codes and amounts, sorted, so a reordered components array is

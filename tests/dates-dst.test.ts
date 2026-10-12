@@ -29,8 +29,8 @@ describe('the property clock', () => {
   it('accepts a check-in on the Bayreuth day even when UTC says yesterday', () => {
     // 00:30 Bayreuth on 17 July is 22:30 UTC on the 16th. The 17th is today.
     const today = propertyToday(new Date('2026-07-16T22:30:00Z'));
-    expect(validateStayShape({ checkIn: '2026-07-17', checkOut: '2026-07-19', adults: 2, children: 0 }, { maxGuests: 4 }, today)).toBeNull();
-    expect(validateStayShape({ checkIn: '2026-07-16', checkOut: '2026-07-19', adults: 2, children: 0 }, { maxGuests: 4 }, today)).toMatchObject({ error: 'invalid_dates' });
+    expect(validateStayShape({ checkIn: '2026-07-17', checkOut: '2026-07-19', adults: 2, children: 0, bedroomPackage: 'two_bedroom' }, { maxGuests: 4 }, today)).toBeNull();
+    expect(validateStayShape({ checkIn: '2026-07-16', checkOut: '2026-07-19', adults: 2, children: 0, bedroomPackage: 'two_bedroom' }, { maxGuests: 4 }, today)).toMatchObject({ error: 'invalid_dates' });
   });
 });
 

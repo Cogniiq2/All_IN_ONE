@@ -16,6 +16,7 @@ import 'server-only';
 
 import { supabaseAdmin } from '@/lib/supabase/server';
 import type {
+  BedroomPackage,
   BookingSource,
   BookingStatus,
   GuestDetails,
@@ -338,6 +339,15 @@ export interface CreateIntentInput {
   checkOut: IsoDate;
   adults: number;
   children: number;
+  /**
+   * The guest's bedroom setup, written once with the row (migration
+   * 20261012120000). Like `terms_evidence` it is deliberately NOT in
+   * INTENT_COLUMNS: every admin screen reads intents through that list, and a
+   * column newer than the screens must not be able to break them on a
+   * database that has not been migrated yet. Only the direct-booking path —
+   * shut by DIRECT_BOOKING_ENABLED — writes it.
+   */
+  bedroomPackage: BedroomPackage;
   currency: string;
   guest: GuestDetails;
   idempotencyKey: string;
@@ -399,6 +409,7 @@ export async function createIntent(input: CreateIntentInput): Promise<IntentReco
       check_out: input.checkOut,
       adults: input.adults,
       children: input.children,
+      bedroom_package: input.bedroomPackage,
       currency: input.currency,
       guest_first_name: input.guest.firstName,
       guest_last_name: input.guest.lastName,

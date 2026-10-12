@@ -32,10 +32,10 @@ vi.mock('@/lib/booking/repository', () => ({
 }));
 vi.mock('@/lib/integrations/beds24', () => ({
   bookingProvider: () => ({
-    fetchOffer: async (r: { unitSlug: string; checkIn: string; checkOut: string }) => ({
+    fetchOffer: async (r: { unitSlug: string; checkIn: string; checkOut: string; bedroomPackage: string }) => ({
       unitSlug: r.unitSlug, checkIn: r.checkIn, checkOut: r.checkOut,
       nights: Math.round((Date.parse(r.checkOut) - Date.parse(r.checkIn)) / 86_400_000),
-      adults: 2, children: 0, currency: 'EUR', totalCents: 100, components: [], expiresAt: '2030-01-01T00:00:00Z',
+      adults: 2, children: 0, bedroomPackage: r.bedroomPackage, bedroomPricing: { status: 'not_configured' }, currency: 'EUR', totalCents: 100, components: [], expiresAt: '2030-01-01T00:00:00Z',
     }),
   }),
 }));
@@ -45,14 +45,14 @@ import { createLogger } from '@/lib/booking/logger';
 
 describe('the online stay limit carried by the withdrawal notice', () => {
   it('quotes a stay within it, with the terms attached', async () => {
-    const quote = await getQuote({ unitSlug: 'schulstrasse-i', checkIn: '2027-03-01', checkOut: '2027-03-29', adults: 2, children: 0 }, createLogger());
+    const quote = await getQuote({ unitSlug: 'schulstrasse-i', checkIn: '2027-03-01', checkOut: '2027-03-29', adults: 2, children: 0, bedroomPackage: 'two_bedroom' }, createLogger());
     expect(quote.nights).toBe(28);
     expect(quote.terms?.withdrawal.maxNights).toBe(28);
   });
 
   it('refuses a longer stay as a stay rule, naming the limit', async () => {
     await expect(
-      getQuote({ unitSlug: 'schulstrasse-i', checkIn: '2027-03-01', checkOut: '2027-03-30', adults: 2, children: 0 }, createLogger())
+      getQuote({ unitSlug: 'schulstrasse-i', checkIn: '2027-03-01', checkOut: '2027-03-30', adults: 2, children: 0, bedroomPackage: 'two_bedroom' }, createLogger())
     ).rejects.toMatchObject({ code: 'stay_rules', meta: { maxNights: 28 } });
   });
 });

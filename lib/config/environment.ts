@@ -154,6 +154,9 @@ export function validateEnvironment(source: EnvironmentSource = process.env): En
   if (isOn(source, 'OPERATOR_PAID_CANCELLATION_ENABLED')) {
     warn('PAID_CANCELLATION_ENABLED', 'OPERATOR_PAID_CANCELLATION_ENABLED=true. Administrators may authorise the cancellation of paid bookings; the Beds24 cancellation of a confirmed reservation is unvalidated on the live account.');
   }
+  if (isOn(source, 'BOOKING_TEST_BEDROOM_PRICING') && environment !== 'local') {
+    refuse('TEST_BEDROOM_PRICING_OUTSIDE_LOCAL', `BOOKING_TEST_BEDROOM_PRICING=true on APP_ENV=${environment}. It lets a stay be booked at a price Beds24 has not confirmed for the chosen bedroom setup; it exists for the local provider simulators only. Ignored here and refused.`);
+  }
   if (isOn(source, 'BOOKING_TEST_TERMS') && environment !== 'local' && environment !== 'staging') {
     refuse('TEST_TERMS_OUTSIDE_STAGING', `BOOKING_TEST_TERMS=true on APP_ENV=${environment}. The sandbox checkout terms say they are not a valid policy; a guest must never be shown them. Refused.`);
   }

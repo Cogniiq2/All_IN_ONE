@@ -103,6 +103,10 @@ const MESSAGES: Record<BookingErrorCode, Copy> = {
    * wording promises a person rather than inviting an action, and says
    * plainly that nothing is lost.
    */
+  pricing_unconfigured: {
+    de: 'Für die gewählte Zimmeraufteilung ist in unserem Buchungssystem noch kein Preis hinterlegt, daher ist eine Online-Buchung noch nicht möglich. Es wurde nichts abgebucht. Schreiben Sie uns — wir bestätigen Zeitraum und Preis persönlich.',
+    en: 'No price is set in our booking system for the selected bedroom setup yet, so online booking is not possible. Nothing has been charged. Write to us and we will confirm your dates and price personally.',
+  },
   pending_verification: {
     de: 'Wir prüfen gerade den Stand Ihrer Buchung. Bitte versuchen Sie es nicht erneut — es geht nichts verloren, und wir melden uns in Kürze bei Ihnen.',
     en: 'We are checking the status of your booking. Please do not try again — nothing is lost, and we will come back to you shortly.',
@@ -120,6 +124,7 @@ const MESSAGES: Record<BookingErrorCode, Copy> = {
 const OFFER_CONTACT = new Set<BookingErrorCode>([
   'not_bookable',
   'terms_unavailable',
+  'pricing_unconfigured',
   'booking_disabled',
   'pending_verification',
   'payment_handoff_failed',
