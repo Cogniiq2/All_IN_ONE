@@ -776,7 +776,12 @@ jobs:
             else out.push([path, v]);
             return out;
           };
-          const pick = (obj) => walk(obj, '', []).filter(([k]) => /hook|notif|callback|push|autoaction|auto_action/i.test(k));
+          // Header and secret-shaped fields are reported as PRESENT only — never
+          // their value (a custom header carries the webhook signature secret).
+          const SECRETISH = /header|secret|token|key|signature|password|auth/i;
+          const pick = (obj) => walk(obj, '', [])
+            .filter(([k]) => /hook|notif|callback|push|autoaction|auto_action/i.test(k))
+            .map(([k, v]) => [k, SECRETISH.test(k) ? (v ? '<set, value not printed>' : '<empty>') : v]);
           for (const pid of ['354659', '354658']) {
             for (const params of [{ id: pid, includeAllRooms: 'true' }, { id: pid, includeAllRooms: 'true', includeTexts: 'all' }]) {
               const r = await get('/properties', params);
