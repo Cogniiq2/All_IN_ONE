@@ -39,6 +39,7 @@ import {
   type TurnoverEventDto,
   type ReservationDto,
   type ReservationBoard,
+  type ReservationDetailDto,
 } from '@/lib/admin/dto';
 import { collectAttention, LEVEL_ORDER, OUTBOX_BACKLOG_MS, PAYMENT_EVENT_STUCK_MS } from '@/lib/admin/attention';
 import { deriveAlerts, RESERVATION_STALE_MS, SCHEDULER_INTERVAL_MS, WEBHOOK_FAILURE_LOOKBACK_MS, type AlertReport } from '@/lib/ops/alerts';
@@ -48,7 +49,7 @@ import type { DateRange } from '@/lib/finance/periods';
 import { ageMs, guestListLabel } from '@/lib/admin/format';
 import { PAGE_SIZE, statesFor, type BookingListFilter } from '@/lib/admin/filters';
 import { AdminUnconfiguredError, rowSource } from '@/lib/admin/source';
-import type { IntentRow, JobRow, OperationRow, OutboxRow, PaymentEventRow, ReservationQuery, ReservationRow, ReservationSyncHealthRow, SchedulerStatusRow, UnitRow } from '@/lib/admin/rows';
+import type { IntentRow, JobRow, OperationRow, OutboxRow, PaymentEventRow, ReservationDetailRow, ReservationQuery, ReservationRow, ReservationSyncHealthRow, SchedulerStatusRow, UnitRow } from '@/lib/admin/rows';
 import { buildCleaningBoard, OPEN_TURNOVER_STATUSES, toTurnoverDto, toTurnoverEventDto, type CleaningBoard } from '@/lib/admin/cleaning';
 import { buildAutomationsBoard, integrationSignals, type AutomationsBoard } from '@/lib/admin/automations';
 import { propertyTodayIso } from '@/lib/admin/format';
@@ -196,7 +197,35 @@ function toReservationDto(row: ReservationRow, unitNames: Map<string, string>): 
     cancelledAt: row.provider_cancelled_at,
     directReference: row.direct_reference,
     lastSyncedAt: row.last_synced_at,
+    bedroomPackage: row.bedroom_package === 'one_bedroom' || row.bedroom_package === 'two_bedroom' ? row.bedroom_package : null,
+    offerId: row.external_offer_id,
   };
+}
+
+function toReservationDetailDto(row: ReservationDetailRow, unitNames: Map<string, string>): ReservationDetailDto {
+  return {
+    ...toReservationDto(row, unitNames),
+    guestFirstName: row.guest_first_name,
+    guestLastName: row.guest_last_name,
+    guestEmail: row.guest_email,
+    guestPhone: row.guest_phone,
+    externalPropertyId: row.external_property_id,
+    externalRoomId: row.external_room_id,
+    providerCreatedAt: row.provider_created_at,
+    importedAt: row.imported_at,
+    lastSeenAt: row.last_seen_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/** One imported reservation for its detail page; `null` data when there is no such row. */
+export async function loadReservation(id: string): Promise<QueryResult<ReservationDetailDto | null>> {
+  return guard(async () => {
+    const source = await rowSource();
+    const [row, names] = await Promise.all([source.reservation(id), unitNameMap()]);
+    return row ? toReservationDetailDto(row, names) : null;
+  });
 }
 
 /**
@@ -206,11 +235,14 @@ function toReservationDto(row: ReservationRow, unitNames: Map<string, string>): 
  * make the board disagree with Beds24 the moment a guest cancels, and a
  * cancellation an operator cannot see is a cancellation they act on too late.
  */
-export async function loadReservations(query: ReservationQuery = {}): Promise<QueryResult<ReservationBoard>> {
+export async function loadReservations(query: ReservationQuery = {}, unitSlug: string | null = null): Promise<QueryResult<ReservationBoard>> {
   return guard(async () => {
     const source = await rowSource();
     const names = await unitNameMap();
-    const { rows, total } = await source.reservations({ sort: 'check_in', limit: 200, ...query });
+    // A slug that names no unit matches nothing — never "every unit".
+    const unitId = unitSlug ? (await source.units()).find((u) => u.slug === unitSlug)?.id ?? null : query.unitId;
+    if (unitSlug && !unitId) return { items: [], total: 0, counts: { active: 0, cancelled: 0, other: 0, bySource: {} } };
+    const { rows, total } = await source.reservations({ sort: 'check_in', limit: 200, ...query, unitId });
     const items = rows.map((r) => toReservationDto(r, names));
     const bySource: Record<string, number> = {};
     for (const item of items) bySource[item.source] = (bySource[item.source] ?? 0) + 1;
@@ -679,7 +711,9 @@ export async function loadCalendar(windowStart: string, windowEnd: string, today
       // Only occupying stays EXPLAIN a closed night. A cancelled reservation
       // drawn on the grid explains nothing — if its nights are still closed at
       // the channel, that is exactly what an operator needs to see.
-      const covered = nightsCovered(reservations.filter((r) => r.unitSlug === unit.slug && r.occupies));
+      // A block at the channel explains its closed nights too (it is drawn as a
+      // block); only a cancelled or requested stay does not.
+      const covered = nightsCovered(reservations.filter((r) => r.unitSlug === unit.slug && (r.occupies || (r.kind === 'reservation' && r.status === 'blocked'))));
       const syncedAt = unitClosed.reduce<string | null>((o, c) => (!o || c.synced_at < o ? c.synced_at : o), null);
       if (syncedAt && (!oldestSync || syncedAt < oldestSync)) oldestSync = syncedAt;
       for (const span of closedRanges(unitClosed.map((c) => c.date), covered)) {
@@ -1212,13 +1246,15 @@ export async function loadCleaningBoard(now: Date = new Date()): Promise<QueryRe
     const [open, closed, canonical] = await Promise.all([
       source.turnovers({ statuses: OPEN_TURNOVER_STATUSES, limit: 200 }),
       source.turnovers({ statuses: ['done', 'void'], departureFrom: since, limit: 40 }),
+      // Every stay not yet departed: the departures in the horizon AND the
+      // arrivals that follow them, which may leave after the horizon.
       source
-        .reservations({ checkOutFrom: today, checkOutTo: horizonEnd, sort: 'check_out', limit: 200 })
+        .reservations({ checkOutFrom: today, sort: 'check_out', limit: 400 })
         .catch(() => ({ rows: [] as ReservationRow[], total: 0 })),
     ]);
     const names = await unitNameMap();
-    const channelDepartures = canonical.rows.map((r) => toReservationDto(r, names));
-    return buildCleaningBoard([...open, ...closed], today, now, channelDepartures);
+    const stays = canonical.rows.map((r) => toReservationDto(r, names));
+    return buildCleaningBoard([...open, ...closed], today, now, stays, stays, horizonEnd);
   });
 }
 
@@ -1336,6 +1372,15 @@ export function reservationFreshnessSection(
       : `May be stale: ${problems.join('; ')}.`,
     facts,
   };
+}
+
+/** The overview's Beds24 card: the same section System shows. */
+export async function loadReservationFreshness(now: Date = new Date()): Promise<QueryResult<HealthSectionDto>> {
+  return guard(async () => {
+    const source = await rowSource();
+    const [sync, schedulers] = await Promise.all([reservationSyncHealthOf(source, now), source.schedulerStatus().catch(() => [] as SchedulerStatusRow[])]);
+    return reservationFreshnessSection(sync, schedulers.find((r) => r.job === 'reservation_sync') ?? null, now);
+  });
 }
 
 /** Reservation freshness for alerts and the overview; `null` when it could not be read. */

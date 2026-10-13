@@ -4,7 +4,7 @@ import { can } from '@/lib/admin/permissions';
 import { loadCleaningBoard } from '@/lib/admin/queries';
 import { formatLongDay } from '@/lib/admin/format';
 import { PageHeader, Section, ErrorNotice, Metric } from '@/components/admin/primitives';
-import { ReservationList } from '@/components/admin/reservations/reservation-rows';
+import { ChannelTurnoverList } from '@/components/admin/cleaning/channel-turnovers';
 import { RefreshControl } from '@/components/admin/shell/refresh-control';
 import { TurnoverGroup } from '@/components/admin/cleaning/turnover-list';
 
@@ -80,14 +80,11 @@ export default async function CleaningPage() {
       */}
       <Section
         title="Channel departures"
-        meta={<span>from imported reservations · no work order, no automation</span>}
+        meta={<span>from imported reservations · next arrival and what to prepare · no work order, no automation</span>}
         id="channel-departures"
       >
         <div className="mt-4">
-          <ReservationList
-            items={b.channelDepartures}
-            empty="No channel departure in the next sixty days."
-          />
+          <ChannelTurnoverList items={b.channelTurnovers} />
           <p className="bc-meta mt-3" style={{ fontSize: 12 }}>
             These come from the read-only reservation import. They do not create turnover records and trigger nothing; assign them
             the way you do today until turnovers are derived from channel stays as well.

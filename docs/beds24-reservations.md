@@ -70,7 +70,25 @@ re-read against the current reference. What that means in practice:
   malformed and skipped — it is not a stay this system can hold, and nothing is
   invented to make it fit.
 
-### The one live validation still owed
+### Verified live, 2026-10-13 (read-only check, Part A6)
+
+- `GET /bookings` with **no** `status` parameter returns confirmed bookings
+  only — **no cancelled booking at all**. The sweep therefore requests every
+  status explicitly (§7); before this, a cancellation whose webhook was lost
+  was never repaired and the stay stayed "active" on the board.
+- `status` is a **repeated** parameter (`status=confirmed&status=cancelled`).
+  A comma-joined value is refused with HTTP 400.
+- `modifiedFrom` works (returns only bookings modified since), and `pages`
+  is present with `nextPageExists`.
+- Booking.com bookings carry `apiSourceId` 19, `apiReference`, first and
+  last name, adults and children, `price` and `offerId` 0. They carry **no
+  email, no phone and no currency** (EUR is implied by the property);
+  `commission` is present but 0. A `mobile` field exists and is used when
+  `phone` is empty.
+- The import's reservation set matched Beds24 booking for booking on both
+  apartments (21 stays, ids, dates, party and price identical).
+
+### The live validation that was owed (now answered above)
 
 `docs/beds24-contract.md` §4 already describes it. Two additions for this
 feature, both read-only and safe to run at any time:
@@ -287,7 +305,7 @@ later, `provider_modified_at` is already indexed for it.
 | `BOOKING_RESERVATION_BACKFILL_MONTHS` | `12` | how far back a backfill reaches (1–60) |
 | `BOOKING_RESERVATION_WINDOW_DAYS` | `90` | width of one provider query (7–365) |
 | `RESERVATION_SYNC_SUBREQUEST_BUDGET` | `40` | outbound requests one run may spend (Beds24 + database). Keep it ≤ 45 on the Workers Free plan (limit 50). |
-| `BEDS24_RESERVATION_STATUSES` | *unset* | comma-separated statuses to request. **Leave unset** until the live validation in §2 proves the account accepts a `status` filter. Then `new,request,confirmed,cancelled,black`. |
+| `BEDS24_RESERVATION_STATUSES` | *every status* | unset = `new,request,confirmed,cancelled,black,inquiry`, sent as repeated `status` parameters (verified live, §2). Set a comma-separated list to narrow it, or `none` to send no filter — which drops every cancellation from the sweep. |
 
 Nothing new is required to run the import. The existing `BEDS24_REFRESH_TOKEN`
 and `BOOKING_SYNC_SECRET` are enough.
@@ -300,7 +318,7 @@ Same pattern as the other jobs — Supabase `pg_cron` + `pg_net`, per
 `docs/schedulers.md`. Nothing schedules itself.
 
 ```sql
-select cron.schedule('bolagio-reservation-sync', '*/20 * * * *', $$
+select cron.schedule('bolagio-reservation-sync', '7 * * * *', $$
   select net.http_post(
     url     := current_setting('app.site_url') || '/api/booking/reservations/sync',
     headers := jsonb_build_object('content-type','application/json',
@@ -310,8 +328,22 @@ select cron.schedule('bolagio-reservation-sync', '*/20 * * * *', $$
 $$);
 ```
 
-Verify with `select * from cron.job;`, then
+The live project runs it hourly at minute 7 (`cron.job`, checked 2026-10-13),
+next to `bolagio-reconcile` (every 3 minutes) and `bolagio-inventory-sync`
+(every 30 minutes). Verify with `select * from cron.job;`, then
 `select * from bolagio_scheduler_status where job = 'reservation_sync';`.
+
+**Coverage.** Every unit with an ENABLED Beds24 mapping is imported, whether
+or not it is `is_bookable` — the direct-booking switch has no bearing on
+whether Booking.com guests stay there. Each run refreshes the windows from
+seven days back to sixty ahead, then continues the rotation through the rest
+of the horizon.
+
+**Freshness, measured.** The admin raises `RESERVATIONS_STALE` when an
+upcoming active reservation has not been seen by any sync (webhook or import)
+for 24 hours, and `BEDS24_WEBHOOK_REFRESH_FAILED` while a webhook refresh is
+unrepaired; System and the overview show last import, last webhook, the stale
+count and failed refreshes.
 
 The job is also reachable from n8n or any scheduler that can send a POST with
 the shared secret header; it needs no browser and no session. It records a

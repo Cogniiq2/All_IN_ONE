@@ -39,7 +39,13 @@ export default async function PropertiesPage() {
       ) : (
         <div className="grid gap-4">
           {units.data.map((u) => {
-            const stays = calendar.ok ? calendar.data.reservations.filter((r) => r.unitSlug === u.slug && isBookingState(r.status) && isPaidSide(r.status)) : [];
+            // Direct bookings count once paid; channel reservations (Booking.com,
+            // Airbnb) by their own rule — a booked, not cancelled, stay. Before,
+            // the direct-booking test alone hid every channel guest here.
+            const stays = calendar.ok
+              ? calendar.data.reservations.filter((r) => r.unitSlug === u.slug && (r.kind === 'reservation' ? r.occupies : isBookingState(r.status) && isPaidSide(r.status)))
+              : [];
+            const stayHref = (r: (typeof stays)[number]) => r.href ?? `/admin/reservations?q=${encodeURIComponent(r.reference)}&when=all`;
             const current = stays.find((r) => relationOn(r, today) === 'in_house' || relationOn(r, today) === 'arrival');
             const next = stays.filter((r) => r.checkIn > today).sort((a, b) => a.checkIn.localeCompare(b.checkIn))[0];
             const issues = attention.ok ? attention.data.items.filter((i) => i.unitSlug === u.slug) : [];
@@ -82,7 +88,7 @@ export default async function PropertiesPage() {
                       rows={[
                         ['Status', preparing ? 'In preparation' : current ? (relationOn(current, today) === 'arrival' ? 'Arrival today' : 'Occupied') : 'Available tonight'],
                         current ? ['Guest', `${current.guestLabel ?? current.reference} until ${formatIsoDate(current.checkOut)}`] : null,
-                        ['Next stay', next ? <Link key="n" href={`/admin/bookings/${next.reference}`}>{formatIsoDate(next.checkIn, 'long')} — {next.guestLabel ?? next.reference}</Link> : preparing ? <Dash /> : 'None in 60 days'],
+                        ['Next stay', next ? <Link key="n" href={stayHref(next)}>{formatIsoDate(next.checkIn, 'long')} — {next.guestLabel ?? next.reference}</Link> : preparing ? <Dash /> : 'None in 60 days'],
                       ]}
                     />
                   </div>

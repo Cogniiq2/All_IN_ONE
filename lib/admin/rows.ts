@@ -139,6 +139,19 @@ export interface ReservationRow {
   imported_at: string;
   last_synced_at: string;
   last_seen_at: string;
+  /** one_bedroom | two_bedroom, from Beds24 offer 1/2; null when unknown (channel bookings). Null before migration 20261012. */
+  bedroom_package: string | null;
+  /** Beds24's offerId as imported (0 on channel bookings). Null before migration 20261012. */
+  external_offer_id: number | null;
+}
+
+/** One reservation with what only its detail page shows: contact details and record timestamps. */
+export interface ReservationDetailRow extends ReservationRow {
+  guest_email: string | null;
+  guest_phone: string | null;
+  provider_created_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ReservationQuery {
@@ -151,6 +164,8 @@ export interface ReservationQuery {
   unitId?: string | null;
   sources?: readonly string[] | null;
   statusClasses?: readonly string[] | null;
+  /** Guest name, OTA reference or Beds24 booking id. */
+  search?: string | null;
   sort?: 'check_in' | 'check_out' | 'last_synced_at';
   dir?: 'asc' | 'desc';
   offset?: number;
@@ -369,6 +384,8 @@ export interface RowSource {
    * behind a permission rather than in a list.
    */
   reservations(query: ReservationQuery): Promise<{ rows: ReservationRow[]; total: number }>;
+  /** One reservation by its row id, with contact details; null when there is none. */
+  reservation(id: string): Promise<ReservationDetailRow | null>;
   operations(query: { intentId?: string; outcomes?: readonly string[]; limit?: number }): Promise<OperationRow[]>;
   paymentEvents(query: {
     reference?: string;

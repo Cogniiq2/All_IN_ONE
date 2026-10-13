@@ -26,6 +26,7 @@ import type {
   OutboxRow,
   PaymentEventRow,
   QueueRow,
+  ReservationDetailRow,
   ReservationQuery,
   ReservationRow,
   RowSource,
@@ -50,6 +51,50 @@ const RESERVATION_COLUMNS =
   ' direct_intent_id, imported_at, last_synced_at, last_seen_at,' +
   ' bolagio_units(slug), bolagio_booking_intents(reference)';
 
+/** The bedroom-package columns (migration 20261012). Selected when the database has them. */
+const RESERVATION_OFFER_COLUMNS = ', bedroom_package, external_offer_id';
+
+/**
+ * The detail page's extra columns. Contact details are read for ONE
+ * reservation at a time, never for a list — the same rule the direct-booking
+ * detail page follows.
+ */
+const RESERVATION_DETAIL_COLUMNS = ', guest_email, guest_phone, provider_created_at, created_at, updated_at';
+
+/** Learned on first read: false once the database has answered "no such column". */
+let reservationOfferColumns: boolean | undefined;
+
+function isMissingColumn(error: { code?: string } | null): boolean {
+  return error?.code === '42703' || error?.code === 'PGRST204';
+}
+
+/**
+ * Run a reservation select with the bedroom-package columns when the
+ * database has them, and without them (reading null) when it does not — a
+ * deployment ahead of its migration must still show its reservations.
+ */
+async function withOfferColumns<T>(
+  run: (columns: string) => PromiseLike<{ data: T | null; error: { code?: string; message?: string } | null; count?: number | null }>
+): Promise<{ data: T | null; count: number | null }> {
+  if (reservationOfferColumns !== false) {
+    const first = await run(RESERVATION_COLUMNS + RESERVATION_OFFER_COLUMNS);
+    if (!first.error) {
+      reservationOfferColumns = true;
+      return { data: first.data, count: first.count ?? null };
+    }
+    if (!isMissingColumn(first.error)) throw first.error;
+    reservationOfferColumns = false;
+  }
+  const second = await run(RESERVATION_COLUMNS);
+  if (second.error) throw second.error;
+  return { data: second.data, count: second.count ?? null };
+}
+
+/** Reservation search: letters in any script (Müller), digits and the separators ids use. */
+function safeReservationSearch(text: string): string {
+  return text.replace(/[^\p{L}\p{N}@._\- ]/gu, '').trim().slice(0, 80);
+}
+
 type RawReservation = Omit<ReservationRow, 'unit_slug' | 'direct_reference'> & {
   bolagio_units?: { slug: string } | { slug: string }[] | null;
   bolagio_booking_intents?: { reference: string } | { reference: string }[] | null;
@@ -59,7 +104,13 @@ function toReservationRow(raw: RawReservation): ReservationRow {
   const unit = Array.isArray(raw.bolagio_units) ? raw.bolagio_units[0] : raw.bolagio_units;
   const intent = Array.isArray(raw.bolagio_booking_intents) ? raw.bolagio_booking_intents[0] : raw.bolagio_booking_intents;
   const { bolagio_units: _u, bolagio_booking_intents: _i, ...rest } = raw;
-  return { ...rest, unit_slug: unit?.slug ?? '', direct_reference: intent?.reference ?? null };
+  return {
+    ...rest,
+    bedroom_package: rest.bedroom_package ?? null,
+    external_offer_id: rest.external_offer_id ?? null,
+    unit_slug: unit?.slug ?? '',
+    direct_reference: intent?.reference ?? null,
+  };
 }
 
 const INTENT_COLUMNS =
@@ -172,9 +223,15 @@ export function supabaseRowSource(): RowSource {
     },
 
     async reservations(query: ReservationQuery) {
-      let q = supabaseAdmin().from('bolagio_reservations').select(RESERVATION_COLUMNS, { count: 'exact' });
+      const { data, count } = await withOfferColumns<RawReservation[]>((columns) => {
+      let q = supabaseAdmin().from('bolagio_reservations').select(columns, { count: 'exact' });
 
       if (query.unitId) q = q.eq('unit_id', query.unitId);
+      const search = query.search ? safeReservationSearch(query.search) : '';
+      if (search) {
+        const like = `%${search}%`;
+        q = q.or(`guest_last_name.ilike.${like},guest_first_name.ilike.${like},channel_reference.ilike.${like},external_booking_id.eq.${search}`);
+      }
       if (query.sources && query.sources.length > 0) q = q.in('source', query.sources as string[]);
       if (query.statusClasses && query.statusClasses.length > 0) q = q.in('status_class', query.statusClasses as string[]);
       if (query.checkInFrom) q = q.gte('check_in', query.checkInFrom);
@@ -190,11 +247,30 @@ export function supabaseRowSource(): RowSource {
       q = q.order(sort, { ascending: query.dir !== 'desc', nullsFirst: false });
       const limit = Math.min(400, Math.max(1, query.limit ?? 200));
       const offset = Math.max(0, query.offset ?? 0);
-      q = q.range(offset, offset + limit - 1);
+      return q.range(offset, offset + limit - 1) as unknown as PromiseLike<{ data: RawReservation[] | null; error: { code?: string } | null; count: number | null }>;
+      });
+      return { rows: (data ?? []).map(toReservationRow), total: count ?? 0 };
+    },
 
-      const { data, error, count } = await q;
-      if (error) throw error;
-      return { rows: ((data ?? []) as unknown as RawReservation[]).map(toReservationRow), total: count ?? 0 };
+    async reservation(id) {
+      if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+      const { data } = await withOfferColumns<Array<RawReservation & Partial<ReservationDetailRow>>>((columns) =>
+        supabaseAdmin()
+          .from('bolagio_reservations')
+          .select(columns + RESERVATION_DETAIL_COLUMNS)
+          .eq('id', id)
+          .limit(1) as unknown as PromiseLike<{ data: Array<RawReservation & Partial<ReservationDetailRow>> | null; error: { code?: string } | null }>
+      );
+      const raw = data?.[0];
+      if (!raw) return null;
+      return {
+        ...toReservationRow(raw),
+        guest_email: raw.guest_email ?? null,
+        guest_phone: raw.guest_phone ?? null,
+        provider_created_at: raw.provider_created_at ?? null,
+        created_at: raw.created_at ?? raw.imported_at,
+        updated_at: raw.updated_at ?? raw.last_synced_at,
+      };
     },
 
     async operations(query) {

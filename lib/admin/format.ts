@@ -161,3 +161,13 @@ export function maskPhone(phone: string | null | undefined): string | null {
   if (digits.length <= 4) return '•••';
   return `${digits.slice(0, 3)} ••• ${digits.slice(-2)}`;
 }
+
+/**
+ * A unit's name where space is tight (calendar lanes, tabs):
+ * "Design - Apartment I · Premium Penthouse mit Dachterrasse" → "Apartment I".
+ * The full name stays the source and is shown wherever there is room.
+ */
+export function compactUnitName(name: string): string {
+  const head = name.split(' · ')[0].trim();
+  return head.replace(/^Design\s*-\s*/i, '') || name;
+}

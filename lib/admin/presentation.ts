@@ -235,6 +235,17 @@ export function reservationClassPresentation(statusClass: string): StatePresenta
   return RESERVATION_CLASS[statusClass] ?? UNKNOWN;
 }
 
+/**
+ * The bedroom setup a reservation was booked with, as housekeeping reads it.
+ * Null when Beds24 does not say — every Booking.com and Airbnb reservation,
+ * whose offer id is 0: unknown is shown as unknown, never guessed.
+ */
+export function bedroomPackageLabel(pkg: string | null): string | null {
+  if (pkg === 'one_bedroom') return '1 Bedroom';
+  if (pkg === 'two_bedroom') return '2 Bedrooms';
+  return null;
+}
+
 /** Whether a reservation class occupies the unit. The one rule occupancy depends on. */
 export function reservationOccupies(statusClass: string): boolean {
   return statusClass === 'active';

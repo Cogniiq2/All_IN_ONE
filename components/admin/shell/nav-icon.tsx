@@ -46,6 +46,14 @@ export function Icon({ name, className }: { name: NavIcon; className?: string })
           <path d="M8.5 9h7M8.5 12.5h5" />
         </svg>
       );
+    case 'reservations':
+      return (
+        <svg {...common}>
+          <path d="M3.5 18.5v-9M20.5 18.5v-5.5a2 2 0 0 0-2-2h-8v5" />
+          <path d="M3.5 16h17" />
+          <circle cx="7" cy="12.5" r="1.6" />
+        </svg>
+      );
     case 'operations':
       return (
         <svg {...common}>

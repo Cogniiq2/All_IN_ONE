@@ -1774,6 +1774,14 @@
   font-weight: 500;
 }
 
+/* Blocked at the channel — an owner stay or maintenance. No guest and no
+   cancellation: the nights are closed on purpose. Solid, neutral, quiet. */
+.bc-bar[data-kind='channel_blocked'] {
+  background: hsl(var(--bc-neutral-soft));
+  color: hsl(var(--bc-text-2));
+  border-color: hsl(var(--bc-neutral) / 0.55);
+}
+
 /* Cancelled at the channel. Kept on the grid — an operator has to see that
    the nights came back — but visibly spent: quiet, struck through, no weight. */
 .bc-bar[data-kind='channel_cancelled'] {

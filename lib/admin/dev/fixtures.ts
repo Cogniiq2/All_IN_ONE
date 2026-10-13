@@ -117,6 +117,7 @@ const RESERVATIONS: ReservationRow[] = [
     guest_first_name: 'Erika', guest_last_name: 'Mustermann', guest_country: 'DE', currency: 'EUR',
     total_amount_cents: 162000, booked_at: at(-20, 11), provider_modified_at: at(-20, 11), provider_cancelled_at: null,
     direct_intent_id: null, direct_reference: null, imported_at: at(-1, 6), last_synced_at: at(0, 6), last_seen_at: at(0, 6),
+    bedroom_package: null, external_offer_id: 0,
   },
   {
     id: 'r-2', unit_id: 'u-s2', unit_slug: 'schulstrasse-ii', provider: 'beds24', external_booking_id: '90000002',
@@ -126,6 +127,7 @@ const RESERVATIONS: ReservationRow[] = [
     guest_first_name: 'Max', guest_last_name: 'Mustermann', guest_country: 'AT', currency: 'EUR',
     total_amount_cents: 148500, booked_at: at(-9, 15), provider_modified_at: at(-9, 15), provider_cancelled_at: null,
     direct_intent_id: null, direct_reference: null, imported_at: at(-1, 6), last_synced_at: at(0, 6), last_seen_at: at(0, 6),
+    bedroom_package: null, external_offer_id: 0,
   },
   {
     id: 'r-3', unit_id: 'u-s1', unit_slug: 'schulstrasse-i', provider: 'beds24', external_booking_id: '90000003',
@@ -135,6 +137,7 @@ const RESERVATIONS: ReservationRow[] = [
     guest_first_name: 'Anna', guest_last_name: 'Beispiel', guest_country: 'DE', currency: 'EUR',
     total_amount_cents: 97200, booked_at: at(-30, 9), provider_modified_at: at(-2, 9), provider_cancelled_at: at(-2, 9),
     direct_intent_id: null, direct_reference: null, imported_at: at(-1, 6), last_synced_at: at(0, 6), last_seen_at: at(0, 6),
+    bedroom_package: null, external_offer_id: 0,
   },
   {
     id: 'r-4', unit_id: 'u-s2', unit_slug: 'schulstrasse-ii', provider: 'beds24', external_booking_id: '90000004',
@@ -144,6 +147,7 @@ const RESERVATIONS: ReservationRow[] = [
     guest_first_name: null, guest_last_name: null, guest_country: null, currency: null,
     total_amount_cents: null, booked_at: at(-4, 8), provider_modified_at: at(-4, 8), provider_cancelled_at: null,
     direct_intent_id: null, direct_reference: null, imported_at: at(-1, 6), last_synced_at: at(0, 6), last_seen_at: at(0, 6),
+    bedroom_package: null, external_offer_id: null,
   },
   {
     id: 'r-5', unit_id: 'u-s1', unit_slug: 'schulstrasse-i', provider: 'beds24', external_booking_id: '90000005',
@@ -153,6 +157,7 @@ const RESERVATIONS: ReservationRow[] = [
     guest_first_name: 'Jamie', guest_last_name: 'Doe', guest_country: null, currency: 'EUR',
     total_amount_cents: null, booked_at: at(-1, 17), provider_modified_at: at(-1, 17), provider_cancelled_at: null,
     direct_intent_id: null, direct_reference: null, imported_at: at(-1, 18), last_synced_at: at(0, 6), last_seen_at: at(0, 6),
+    bedroom_package: 'two_bedroom', external_offer_id: 2,
   },
 ];
 
@@ -409,6 +414,11 @@ export function fixtureRowSource(): RowSource {
         if (query.checkOutFrom && row.check_out < query.checkOutFrom) return false;
         if (query.checkOutTo && row.check_out >= query.checkOutTo) return false;
         if (query.overlaps && !(row.check_in < query.overlaps.to && row.check_out > query.overlaps.from)) return false;
+        if (query.search) {
+          const q = query.search.toLowerCase();
+          const hay = [row.guest_first_name, row.guest_last_name, row.channel_reference].map((v) => (v ?? '').toLowerCase());
+          if (!hay.some((v) => v.includes(q)) && row.external_booking_id !== query.search) return false;
+        }
         return true;
       });
       const sort = query.sort ?? 'check_in';
@@ -417,6 +427,12 @@ export function fixtureRowSource(): RowSource {
       const offset = query.offset ?? 0;
       const limit = query.limit ?? 200;
       return { rows: rows.slice(offset, offset + limit).map((r) => ({ ...r })), total: rows.length };
+    },
+
+    async reservation(id) {
+      const row = RESERVATIONS.find((r) => r.id === id);
+      // Fixture guests have no contact details; the detail page shows that absence.
+      return row ? { ...row, guest_email: null, guest_phone: null, provider_created_at: row.booked_at, created_at: row.imported_at, updated_at: row.last_synced_at } : null;
     },
 
     async intentByReference(reference) {

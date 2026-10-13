@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { loadCalendar } from '@/lib/admin/queries';
 import { addDays, startOfWeek } from '@/lib/admin/calendar';
-import { formatIsoDate, formatRelative, propertyTodayIso } from '@/lib/admin/format';
+import { compactUnitName, formatIsoDate, formatRelative, propertyTodayIso } from '@/lib/admin/format';
 import { isIsoDate } from '@/lib/booking/stay-rules';
 import { PageHeader, ErrorNotice, Notice } from '@/components/admin/primitives';
 import { RefreshControl } from '@/components/admin/shell/refresh-control';
@@ -69,7 +69,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Rec
         </div>
         <Segmented options={DENSITIES.map((d) => ({ key: String(d), label: d === 14 ? '2 weeks' : d === 31 ? 'Month' : '2 months', href: href({ days: d }) }))} value={String(density)} />
         {units.length > 1 && (
-          <Segmented options={[{ key: '', label: 'All', href: href({ unit: null }) }, ...units.map((u) => ({ key: u.slug, label: u.displayName, href: href({ unit: u.slug }) }))]} value={unit ?? ''} />
+          <Segmented options={[{ key: '', label: 'All', href: href({ unit: null }) }, ...units.map((u) => ({ key: u.slug, label: compactUnitName(u.displayName), href: href({ unit: u.slug }) }))]} value={unit ?? ''} />
         )}
       </div>
 

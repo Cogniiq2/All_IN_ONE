@@ -1,6 +1,7 @@
+import Link from 'next/link';
 import type { ReservationDto } from '@/lib/admin/dto';
 import { formatIsoDate, formatMoney, formatStay, pluralNights } from '@/lib/admin/format';
-import { reservationClassPresentation, sourcePresentation } from '@/lib/admin/presentation';
+import { bedroomPackageLabel, reservationClassPresentation, sourcePresentation } from '@/lib/admin/presentation';
 import { Badge, Dash, EmptyState, When } from '@/components/admin/primitives';
 
 /**
@@ -9,8 +10,9 @@ import { Badge, Dash, EmptyState, When } from '@/components/admin/primitives';
  * by hand in Beds24, or from a channel the provider did not identify.
  *
  * ── Why these are not booking rows ───────────────────────────────────────
- * A row here has no BoLaGio reference, no payment state and no detail page,
- * because the reservation was never made through this website. What it has is
+ * A row here has no BoLaGio reference and no payment state, because the
+ * reservation was never made through this website; its detail page is
+ * /admin/reservations/[id]. What it has is
  * a provider booking id, a channel, and a status the channel manager owns.
  * Showing it in the booking table would mean printing an empty payment column
  * beside every Booking.com stay and inviting the reading that something is
@@ -22,10 +24,18 @@ import { Badge, Dash, EmptyState, When } from '@/components/admin/primitives';
  * the finance subledger does not read this table.
  *
  * ── Personal data ────────────────────────────────────────────────────────
- * A name, a country and the stay. No email, no phone: the row source does not
- * select them.
+ * A name, a country and the stay. No email, no phone: the list query does not
+ * select them. They are read for one reservation at a time, on its detail page.
  * ══════════════════════════════════════════════════════════════════════════
  */
+
+export const reservationHref = (r: ReservationDto) => `/admin/reservations/${r.id}`;
+
+/** "2 + 1" — adults and children apart, as housekeeping needs them; the total when that is all Beds24 gave. */
+function partyLabel(r: ReservationDto): string | null {
+  if (r.adults !== null || r.children !== null) return `${r.adults ?? 0} + ${r.children ?? 0}`;
+  return r.guests === null ? null : String(r.guests);
+}
 
 function guestCount(r: ReservationDto): string | null {
   if (r.guests === null) return null;
@@ -59,11 +69,11 @@ export function ReservationTable({ items }: { items: ReservationDto[] }) {
             <th scope="col">Booking</th>
             <th scope="col">Guest</th>
             <th scope="col">Property</th>
-            <th scope="col">Arrival</th>
-            <th scope="col">Departure</th>
+            <th scope="col">Stay</th>
             <th scope="col" className="num">
               Nights
             </th>
+            <th scope="col" title="Adults + children">Guests</th>
             <th scope="col">Channel</th>
             <th scope="col">Status</th>
             <th scope="col" className="num">
@@ -76,17 +86,22 @@ export function ReservationTable({ items }: { items: ReservationDto[] }) {
           {items.map((r) => {
             const state = reservationClassPresentation(r.statusClass);
             return (
-              <tr key={`${r.provider}-${r.externalBookingId}`} data-cancelled={r.statusClass === 'cancelled' ? 'true' : undefined}>
-                <td>
-                  <span className="bc-ref">{r.channelReference ?? r.externalBookingId}</span>
+              <tr key={`${r.provider}-${r.externalBookingId}`} data-href={reservationHref(r)} data-cancelled={r.statusClass === 'cancelled' ? 'true' : undefined}>
+                <td className="bc-cover">
+                  <Link href={reservationHref(r)} className="bc-ref">
+                    {r.channelReference ?? r.externalBookingId}
+                  </Link>
                   {r.directReference && <span className="bc-meta block">BoLaGio {r.directReference}</span>}
                 </td>
-                <td className="truncate">{r.guestLabel ?? <Dash />}</td>
-                <td className="truncate">{r.unitName}</td>
-                <td>{formatIsoDate(r.checkIn)}</td>
-                <td>{formatIsoDate(r.checkOut)}</td>
+                <td className="truncate" style={{ maxWidth: 160 }}>{r.guestLabel ?? <Dash />}</td>
+                <td className="truncate" style={{ maxWidth: 200 }} title={r.unitName}>{r.unitName}</td>
+                <td style={{ whiteSpace: 'nowrap' }}>{formatStay(r.checkIn, r.checkOut)}</td>
                 <td className="num">{r.nights}</td>
-                <td className="truncate">{channelLabel(r)}</td>
+                <td>
+                  {partyLabel(r) ?? <Dash />}
+                  {bedroomPackageLabel(r.bedroomPackage) && <span className="bc-meta block">{bedroomPackageLabel(r.bedroomPackage)}</span>}
+                </td>
+                <td className="truncate" style={{ maxWidth: 170 }} title={channelLabel(r)}>{channelLabel(r)}</td>
                 <td>
                   <Badge p={state} title={`Channel manager status: ${r.providerStatus}`} />
                 </td>
@@ -111,7 +126,7 @@ export function ReservationCards({ items }: { items: ReservationDto[] }) {
         const state = reservationClassPresentation(r.statusClass);
         const guests = guestCount(r);
         return (
-          <div key={`${r.provider}-${r.externalBookingId}`} className="bc-row-link" style={{ cursor: 'default' }}>
+          <Link key={`${r.provider}-${r.externalBookingId}`} href={reservationHref(r)} className="bc-row-link">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="truncate" style={{ fontWeight: 500 }}>
@@ -120,6 +135,7 @@ export function ReservationCards({ items }: { items: ReservationDto[] }) {
                 <div className="bc-meta truncate">
                   {r.unitName} · {formatStay(r.checkIn, r.checkOut)} · {pluralNights(r.nights)}
                   {guests ? ` · ${guests}` : ''}
+                  {bedroomPackageLabel(r.bedroomPackage) ? ` · ${bedroomPackageLabel(r.bedroomPackage)}` : ''}
                 </div>
                 <div className="bc-meta truncate">
                   {channelLabel(r)}
@@ -128,7 +144,7 @@ export function ReservationCards({ items }: { items: ReservationDto[] }) {
               </div>
               <Badge p={state} title={`Channel manager status: ${r.providerStatus}`} />
             </div>
-          </div>
+          </Link>
         );
       })}
     </div>

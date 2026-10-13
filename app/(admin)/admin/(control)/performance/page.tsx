@@ -107,7 +107,7 @@ export default async function PerformancePage({ searchParams }: { searchParams: 
               <div className="bc-ledger">
                 {result.data.byChannel.length === 0 && <p className="bc-meta">No occupied nights in this range.</p>}
                 {result.data.byChannel.map((c) => (
-                  <Link key={c.source} href={`/admin/bookings?source=${c.source}`} className="bc-ledger-row link-quiet">
+                  <Link key={c.source} href={`/admin/reservations?source=${c.source}&when=all`} className="bc-ledger-row link-quiet">
                     <span>{CHANNEL_LABEL[c.source] ?? c.source} <span className="bc-meta">· {c.stays} stays · {c.nights} nights · <Pct ratio={c.share} digits={0} /></span></span>
                     <Money cents={c.grossCents} />
                   </Link>

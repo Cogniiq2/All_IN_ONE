@@ -1,10 +1,10 @@
 import Link from 'next/link';
 import type { CalendarDto, CalendarReservationDto } from '@/lib/admin/dto';
 import { datesIn, isWeekend, place, windowOf } from '@/lib/admin/calendar';
-import { formatIsoDate, formatRelative, formatStay, pluralNights, weekdayShort } from '@/lib/admin/format';
+import { compactUnitName, formatIsoDate, formatRelative, formatStay, pluralNights, weekdayShort } from '@/lib/admin/format';
 import { bookingStatePresentation, paymentStatePresentation, reservationClassPresentation, sourcePresentation } from '@/lib/admin/presentation';
 
-type BarKind = 'confirmed' | 'paid_unfinalized' | 'held' | 'caution' | 'critical' | 'unknown' | 'channel_stay' | 'channel_cancelled';
+type BarKind = 'confirmed' | 'paid_unfinalized' | 'held' | 'caution' | 'critical' | 'unknown' | 'channel_stay' | 'channel_blocked' | 'channel_cancelled';
 
 /**
  * The visual vocabulary of a stay on the grid, derived from the canonical
@@ -20,7 +20,13 @@ export function barKind(r: Pick<CalendarReservationDto, 'status' | 'kind' | 'occ
    * rather than borrowing `confirmed`, and a cancelled one is visibly spent
    * rather than quietly absent.
    */
-  if (r.kind === 'reservation') return r.occupies ? 'channel_stay' : 'channel_cancelled';
+  if (r.kind === 'reservation') {
+    if (r.occupies) return 'channel_stay';
+    // An owner block or maintenance is not a guest and not cancelled: the
+    // nights are genuinely unavailable. Drawn as its own solid, neutral bar.
+    if (r.status === 'blocked') return 'channel_blocked';
+    return 'channel_cancelled';
+  }
   const p = bookingStatePresentation(r.status);
   if (r.status === 'confirmed') return 'confirmed';
   if (r.status === 'paid_unfinalized' || r.status === 'finalization_failed') return 'paid_unfinalized';
@@ -92,7 +98,7 @@ function UnitLane({
   return (
     <>
       <div className="bc-cal-unit">
-        <strong>{unit.displayName}</strong>
+        <strong title={unit.displayName}>{compactUnitName(unit.displayName)}</strong>
         <span>{inactive ? 'In preparation' : unit.isBookable ? 'Bookable' : 'Not bookable'}</span>
       </div>
       <div className="bc-cal-lane" data-inactive={inactive ? 'true' : undefined}>
@@ -220,6 +226,10 @@ export function CalendarLegend() {
       <span>
         <i style={{ background: 'hsl(var(--bc-accent-wash))', borderColor: 'hsl(var(--bc-accent) / 0.5)' }} />
         Channel reservation
+      </span>
+      <span>
+        <i style={{ background: 'hsl(var(--bc-neutral-soft))', borderColor: 'hsl(var(--bc-neutral) / 0.55)' }} />
+        Blocked at channel (owner, maintenance)
       </span>
       <span>
         <i style={{ background: 'hsl(var(--bc-surface-2))', borderColor: 'hsl(var(--bc-line-strong))', borderStyle: 'dashed', opacity: 0.62 }} />

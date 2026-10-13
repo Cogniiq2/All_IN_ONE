@@ -72,6 +72,8 @@ function reservation(over: Partial<ReservationDto> = {}): ReservationDto {
     cancelledAt: null,
     directReference: null,
     lastSyncedAt: '2026-09-21T06:00:00.000Z',
+    bedroomPackage: null,
+    offerId: 0,
     ...over,
   };
 }

@@ -337,6 +337,25 @@ export interface ReservationDto {
   /** The BoLaGio reference, when this reservation is one of our own direct bookings. */
   directReference: string | null;
   lastSyncedAt: string;
+  /** From Beds24's offer (1 → one_bedroom, 2 → two_bedroom). Null when Beds24 does not say — every channel booking. */
+  bedroomPackage: 'one_bedroom' | 'two_bedroom' | null;
+  /** Beds24's offerId as imported; 0 on channel bookings. */
+  offerId: number | null;
+}
+
+/** One reservation, everything the import holds about it. Contact details only here. */
+export interface ReservationDetailDto extends ReservationDto {
+  guestFirstName: string | null;
+  guestLastName: string | null;
+  guestEmail: string | null;
+  guestPhone: string | null;
+  externalPropertyId: string | null;
+  externalRoomId: string | null;
+  providerCreatedAt: string | null;
+  importedAt: string;
+  lastSeenAt: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ReservationBoard {

@@ -18,10 +18,13 @@ to Beds24 or PayPal from a browser.
 | `/admin/login` | Sign-in. The only unauthenticated screen. |
 | `/admin` | Today: attention first, arrivals/departures/in-house, residence status, key figures, upcoming, health. |
 | `/admin/calendar` | Multi-property reservation calendar (read-only). `?days=14\|31\|62`, `?start=YYYY-MM-DD`, `?unit=slug`. |
-| `/admin/bookings` | Booking index with URL-backed search, filters, sort and pagination. |
+| `/admin/reservations` | Every Beds24 reservation (Booking.com, Airbnb, direct, manual), history included: search by guest / OTA reference / Beds24 id, filters for property, channel, status, stay dates, upcoming / past. |
+| `/admin/reservations/[id]` | One imported reservation: stay, party, bedroom setup, guest contact (as the channel supplied it), gross value, channel ids, Beds24 offer, timestamps, freshness. Read-only. |
+| `/admin/bookings` | Direct-booking index with URL-backed search, filters, sort and pagination; upcoming channel reservations below. |
+| `/admin/performance` | Occupancy, ADR, RevPAR, average stay and gross booking value by channel, unit and month, from the reservation import. |
 | `/admin/bookings/[reference]` | One booking: facts, lifecycle, payment, channel state, reconciliation, cancellation, guest messages, technical detail. |
 | `/admin/operations` | The attention inbox, ordered by cost of ignoring. |
-| `/admin/cleaning` | The turnover board: overdue, today, upcoming, recently closed. Status and assignee changes. |
+| `/admin/cleaning` | The turnover board: overdue, today, upcoming, recently closed (direct bookings), plus channel departures paired with the next arrival — same-day changeovers, party and bedroom setup to prepare. Status and assignee changes. |
 | `/admin/automations` | Guest-message delivery ledger, automation outbox, last-heard-from signals per provider. Requeue controls. |
 | `/admin/properties` | Unit registry, mapping ids, cache freshness, today's state. Read-only. |
 | `/admin/payments` | Local payment records beside their bookings; recent webhook events. |
@@ -283,13 +286,14 @@ The System page reports only what can be measured from BoLaGio's own data:
 | Payments | Config posture (mode, credentials, webhook id) | Settlement — proven by verified inbox events, not by config |
 | Payment inbox / outbox / reconciliation | Queue counts and ages | — |
 | Schedulers | Last run per job from the heartbeat, age, overdue | A job that never ran (reported as not instrumented) |
+| Beds24 reservations | Last import run, last webhook received, upcoming reservations unseen for 24 h, unrepaired webhook refreshes (also on the overview) | Beds24 itself — the comparison is with what the syncs last saw |
 | Configuration | Environment declaration and contradiction findings | — |
 | Alerts | The CRITICAL / HIGH / MEDIUM list, same as `/api/internal/health` | Provider reachability |
 
 Reserved event names (`guest.prearrival_ready`, `guest.checkin_ready`,
 `cleaning.required`, `review.requested`) are not emitted and are not shown
-as if they were. Cleaning, access codes, messaging, invoices, refunds and
-date changes are not built.
+as if they were. Access codes, invoices and date changes are not built;
+channel stays get no cleaning work order (planning view only).
 
 ---
 

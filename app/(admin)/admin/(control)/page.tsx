@@ -1,7 +1,10 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { adminPosture } from '@/lib/admin/config';
-import { loadCalendar, loadSystemHealth, loadToday, loadUpcoming } from '@/lib/admin/queries';
+import { loadCalendar, loadPerformance, loadReservationFreshness, loadSystemHealth, loadToday, loadUpcoming } from '@/lib/admin/queries';
+import { monthRange, periodLabel } from '@/lib/finance/periods';
+import { Money, Pct } from '@/components/admin/finance/primitives';
+import { HealthSectionCard } from '@/components/admin/health-section-card';
 import { cachedAttention } from '@/lib/admin/request-cache';
 import { countByLevel } from '@/lib/admin/attention';
 import { addDays, occupancyRatio, relationOn, windowOf } from '@/lib/admin/calendar';
@@ -24,12 +27,14 @@ export default async function OverviewPage() {
   const today = propertyTodayIso();
   const posture = adminPosture();
   const horizon = windowOf(today, 7);
-  const [attention, board, upcoming, calendar, health] = await Promise.all([
+  const [attention, board, upcoming, calendar, health, month, sync] = await Promise.all([
     cachedAttention(),
     loadToday(today),
     loadUpcoming(today, 8),
     loadCalendar(addDays(today, -1), addDays(today, 31), today),
     loadSystemHealth(),
+    loadPerformance(monthRange(today.slice(0, 7))),
+    loadReservationFreshness(),
   ]);
   const loadedAt = board.loadedAt;
 
@@ -135,6 +140,50 @@ export default async function OverviewPage() {
           <Metric label="Booked ahead" value={upcomingCount ?? ''} unavailable={upcomingCount === null} note="Next 31 days" />
         </div>
       </Section>
+
+      {/* ── This month, and whether the board is current ─────────── */}
+      <div className="grid gap-x-10 lg:grid-cols-[minmax(0,7fr)_minmax(280px,5fr)]">
+        <Section
+          title={`This month · ${periodLabel(today.slice(0, 7))}`}
+          meta={<Link href="/admin/performance">Performance →</Link>}
+          id="month"
+        >
+          {!month.ok ? (
+            <div className="mt-4">
+              <ErrorNotice title="This month could not be loaded." tone="caution">{month.error}</ErrorNotice>
+            </div>
+          ) : (
+            <>
+              <div className="bc-metrics mt-4" style={{ ['--cols' as string]: 3 }}>
+                <Metric label="Booking value" value={<Money cents={month.data.stayGrossCents} />} note="gross per night stayed, every channel" />
+                <Metric label="Occupancy" value={<Pct ratio={month.data.occupancy.value} digits={0} />} note={`${month.data.occupiedNights} of ${month.data.availableNights} room nights`} unavailable={month.data.occupancy.value === null} />
+                <Metric label="ADR" value={<Money cents={month.data.adr.value === null ? null : Math.round(month.data.adr.value)} />} note="gross, per occupied night" unavailable={month.data.adr.value === null} />
+              </div>
+              {month.data.byChannel.length > 0 && (
+                <p className="bc-meta mt-3" style={{ fontSize: 12.5 }}>
+                  Channel split:{' '}
+                  {month.data.byChannel
+                    .filter((c) => c.nights > 0)
+                    .map((c) => `${sourcePresentation(c.source).label} ${c.share === null ? `${c.nights} nights` : percent(c.share)}`)
+                    .join(' · ') || 'no nights yet'}
+                </p>
+              )}
+              <p className="bc-meta mt-2" style={{ fontSize: 12 }}>
+                Gross booking value as Beds24 reports it — not payout, not net of commission. Received money is in Finance.
+              </p>
+            </>
+          )}
+        </Section>
+        <Section title="Beds24 sync" meta={<Link href="/admin/system">System →</Link>} id="sync">
+          <div className="mt-4">
+            {sync.ok ? (
+              <HealthSectionCard section={{ ...sync.data, title: 'Reservations' }} />
+            ) : (
+              <ErrorNotice title="Sync state could not be read." tone="caution">{sync.error}</ErrorNotice>
+            )}
+          </div>
+        </Section>
+      </div>
 
       {/* ── Today ────────────────────────────────────────────────── */}
       <Section

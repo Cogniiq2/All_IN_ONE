@@ -87,6 +87,12 @@ export interface CleaningBoard {
    * follow-up; see docs/beds24-reservations.md §Cleaning.
    */
   channelDepartures: ReservationDto[];
+  /**
+   * Each channel departure with the stay that follows it in the same
+   * apartment: the arrival the room must be ready for, how much time there
+   * is, and what to prepare. Planning only, like `channelDepartures`.
+   */
+  channelTurnovers: ChannelTurnover[];
   /** Open turnovers whose window has closed, oldest first. */
   overdue: TurnoverDto[];
   /** Open turnovers departing today, same-day changeovers first. */
@@ -107,11 +113,42 @@ function byUrgency(a: TurnoverDto, b: TurnoverDto): number {
   return ra - rb || Number(b.sameDay) - Number(a.sameDay) || a.windowStart.localeCompare(b.windowStart) || a.unitName.localeCompare(b.unitName);
 }
 
+export interface ChannelTurnover {
+  departure: ReservationDto;
+  /** The next occupying stay in the same apartment, from any channel; null when none is booked yet. */
+  next: ReservationDto | null;
+  /** The next guests arrive the day these leave. */
+  sameDay: boolean;
+  /** Free nights between departure and the next arrival; null when nothing follows. */
+  gapNights: number | null;
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Pair every departure with the stay that follows it. Pure: only stays that
+ * occupy the unit count, on either side. What the arriving guests need —
+ * party size and, when Beds24 knows it, the bedroom setup — travels with
+ * `next`; a channel booking's setup is unknown and stays unknown.
+ */
+export function channelTurnoversOf(departures: ReservationDto[], stays: ReservationDto[]): ChannelTurnover[] {
+  const occupying = stays.filter((s) => s.occupies).sort((a, b) => a.checkIn.localeCompare(b.checkIn));
+  return departures.map((departure) => {
+    const next = occupying.find((s) => s.unitSlug === departure.unitSlug && s.id !== departure.id && s.checkIn >= departure.checkOut) ?? null;
+    const gapNights = next ? Math.round((Date.parse(`${next.checkIn}T00:00:00Z`) - Date.parse(`${departure.checkOut}T00:00:00Z`)) / DAY_MS) : null;
+    return { departure, next, sameDay: gapNights === 0, gapNights };
+  });
+}
+
 export function buildCleaningBoard(
   rows: TurnoverRow[],
   today: string,
   now: Date,
-  channelDepartures: ReservationDto[] = []
+  channelDepartures: ReservationDto[] = [],
+  /** Every upcoming channel stay, departing in the horizon or later — the "next arrival" side. Defaults to the departures. */
+  channelStays: ReservationDto[] = channelDepartures,
+  /** Departures on or after this date are outside the planning horizon. */
+  horizonEnd: string | null = null
 ): CleaningBoard {
   const all = rows.map((r) => toTurnoverDto(r, today, now));
   const open = all.filter((t) => isOpen(t.status));
@@ -126,9 +163,8 @@ export function buildCleaningBoard(
     today,
     // Only stays that actually occupy the unit leave a room to clean, and only
     // departures from today onwards are still work. Soonest first.
-    channelDepartures: channelDepartures
-      .filter((r) => r.occupies && r.checkOut >= today)
-      .sort((a, b) => a.checkOut.localeCompare(b.checkOut) || a.unitName.localeCompare(b.unitName)),
+    channelDepartures: departuresIn(channelDepartures, today, horizonEnd),
+    channelTurnovers: channelTurnoversOf(departuresIn(channelDepartures, today, horizonEnd), channelStays),
     overdue,
     dueToday,
     upcoming,
@@ -140,4 +176,10 @@ export function buildCleaningBoard(
       unassigned: open.filter((t) => t.status === 'required' && !t.assignedTo).length,
     },
   };
+}
+
+function departuresIn(stays: ReservationDto[], today: string, horizonEnd: string | null): ReservationDto[] {
+  return stays
+    .filter((r) => r.occupies && r.checkOut >= today && (!horizonEnd || r.checkOut < horizonEnd))
+    .sort((a, b) => a.checkOut.localeCompare(b.checkOut) || a.unitName.localeCompare(b.unitName));
 }

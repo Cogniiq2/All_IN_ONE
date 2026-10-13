@@ -4,7 +4,8 @@ import { currentOperator } from '@/lib/admin/auth';
 import { can } from '@/lib/admin/permissions';
 import { loadAlerts, loadAudit, loadQueues, loadRecentJobs, loadRecentOperations, loadRecentOutbox, loadSystemHealth } from '@/lib/admin/queries';
 import { codeTitle } from '@/lib/admin/presentation';
-import { PageHeader, Section, HealthBadge, ErrorNotice, JobBadge, OperationBadge, When, Notice } from '@/components/admin/primitives';
+import { HealthSectionCard } from '@/components/admin/health-section-card';
+import { PageHeader, Section, ErrorNotice, JobBadge, OperationBadge, When, Notice } from '@/components/admin/primitives';
 import { RefreshControl } from '@/components/admin/shell/refresh-control';
 import { RunPassButton } from '@/components/admin/system/run-pass-button';
 import { loadFinanceHealth } from '@/lib/finance/queries';
@@ -80,31 +81,7 @@ export default async function SystemPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           {[...health.data, { key: 'finance', title: 'Finance', status: finance.status, summary: finance.summary, facts: finance.facts }].map((s) => (
-            <article key={s.key} className="bc-panel" style={{ padding: '16px 18px' }} aria-labelledby={`sys-${s.key}`}>
-              <div className="flex items-start justify-between gap-3">
-                <h2 id={`sys-${s.key}`} className="bc-h2">
-                  {s.title}
-                </h2>
-                <HealthBadge status={s.status} />
-              </div>
-              <p className="bc-prose mt-2" style={{ fontSize: 13 }}>
-                {s.summary}
-              </p>
-              {s.facts.length > 0 && (
-                <dl className="mt-4 grid gap-x-6 gap-y-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', fontSize: 12.5 }}>
-                  {s.facts.map((f) => (
-                    <div key={f.label}>
-                      <dt className="bc-label" style={{ letterSpacing: '0.1em' }}>
-                        {f.label}
-                      </dt>
-                      <dd className="mt-1 bc-num" style={{ color: f.tone ? `hsl(var(--bc-${f.tone === 'muted' ? 'text-3' : f.tone}))` : undefined, fontWeight: f.tone === 'critical' || f.tone === 'caution' ? 600 : 500 }}>
-                        {f.value}
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              )}
-            </article>
+            <HealthSectionCard key={s.key} section={s} />
           ))}
         </div>
       )}

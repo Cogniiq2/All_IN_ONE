@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { listBookings, loadReservations } from '@/lib/admin/queries';
 import { cachedUnits } from '@/lib/admin/request-cache';
 import { filterToParams, hasActiveFilter, parseBookingFilter, type BookingSort } from '@/lib/admin/filters';
@@ -79,7 +80,8 @@ export default async function BookingsPage({ searchParams }: { searchParams: Rec
         title="Channel reservations"
         meta={
           <span>
-            Imported read-only from the channel manager · cancellations are kept and marked, never removed
+            Imported read-only from the channel manager · cancellations kept, never removed ·{' '}
+            <Link href="/admin/reservations">Search all reservations →</Link>
           </span>
         }
         id="channel"
