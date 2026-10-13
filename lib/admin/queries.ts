@@ -41,14 +41,14 @@ import {
   type ReservationBoard,
 } from '@/lib/admin/dto';
 import { collectAttention, LEVEL_ORDER, OUTBOX_BACKLOG_MS, PAYMENT_EVENT_STUCK_MS } from '@/lib/admin/attention';
-import { deriveAlerts, SCHEDULER_INTERVAL_MS, type AlertReport } from '@/lib/ops/alerts';
+import { deriveAlerts, RESERVATION_STALE_MS, SCHEDULER_INTERVAL_MS, WEBHOOK_FAILURE_LOOKBACK_MS, type AlertReport } from '@/lib/ops/alerts';
 import { closedRanges, nightsCovered } from '@/lib/admin/calendar';
 import { buildPerformance, type PerformanceReport } from '@/lib/admin/performance';
 import type { DateRange } from '@/lib/finance/periods';
 import { ageMs, guestListLabel } from '@/lib/admin/format';
 import { PAGE_SIZE, statesFor, type BookingListFilter } from '@/lib/admin/filters';
 import { AdminUnconfiguredError, rowSource } from '@/lib/admin/source';
-import type { IntentRow, JobRow, OperationRow, OutboxRow, PaymentEventRow, ReservationQuery, ReservationRow, SchedulerStatusRow, UnitRow } from '@/lib/admin/rows';
+import type { IntentRow, JobRow, OperationRow, OutboxRow, PaymentEventRow, ReservationQuery, ReservationRow, ReservationSyncHealthRow, SchedulerStatusRow, UnitRow } from '@/lib/admin/rows';
 import { buildCleaningBoard, OPEN_TURNOVER_STATUSES, toTurnoverDto, toTurnoverEventDto, type CleaningBoard } from '@/lib/admin/cleaning';
 import { buildAutomationsBoard, integrationSignals, type AutomationsBoard } from '@/lib/admin/automations';
 import { propertyTodayIso } from '@/lib/admin/format';
@@ -836,13 +836,14 @@ export async function loadSystemHealth(now: Date = new Date()): Promise<QueryRes
       throw cause;
     }
 
-    const [reachable, queues, meta, units, schedulers, health] = await Promise.all([
+    const [reachable, queues, meta, units, schedulers, health, reservationSync] = await Promise.all([
       source.ping().catch(() => false),
       source.queues().catch(() => null),
       source.inventoryMeta().catch(() => null),
       source.units().catch(() => null),
       source.schedulerStatus().catch(() => null),
       source.integrationHealth().catch(() => null),
+      reservationSyncHealthOf(source, now),
     ]);
     const signals = health ? integrationSignals(health) : null;
 
@@ -855,7 +856,8 @@ export async function loadSystemHealth(now: Date = new Date()): Promise<QueryRes
       let status: HealthSectionDto['status'] = 'healthy';
       let overdue = 0;
       let never = 0;
-      for (const job of ['reconcile', 'inventory_sync', 'operations', 'reservation_sync'] as const) {
+      const jobs = ['reconcile', 'inventory_sync', 'operations', 'reservation_sync'] as const;
+      for (const job of jobs) {
         const last = schedulers?.find((r) => r.job === job);
         if (!last) {
           never += 1;
@@ -874,7 +876,7 @@ export async function loadSystemHealth(now: Date = new Date()): Promise<QueryRes
       if (schedulers === null) {
         status = 'unavailable';
         summary = 'The heartbeat table could not be read. The production-hardening migration may not be applied.';
-      } else if (never === 3) {
+      } else if (never === jobs.length) {
         status = 'not_instrumented';
         summary = 'No scheduled run has been recorded. Either no schedule is configured yet, or nothing has fired since the heartbeat was introduced.';
       } else if (overdue > 0) {
@@ -888,6 +890,8 @@ export async function loadSystemHealth(now: Date = new Date()): Promise<QueryRes
       }
       sections.push({ key: 'schedulers', title: 'Schedulers', status, summary, facts });
     }
+
+    sections.push(reservationFreshnessSection(reservationSync, schedulers?.find((r) => r.job === 'reservation_sync') ?? null, now));
 
     sections.push(
       reachable
@@ -1289,6 +1293,64 @@ async function completionAlertInputs(source: Awaited<ReturnType<typeof rowSource
   };
 }
 
+/**
+ * "Is the board current with Beds24?" — the import run, the webhook path and
+ * the per-reservation age, in one section. Shared by System and the overview.
+ */
+export function reservationFreshnessSection(
+  sync: ReservationSyncHealthRow | null,
+  lastRun: SchedulerStatusRow | null,
+  now: Date
+): HealthSectionDto {
+  const ago = (iso: string) => {
+    const minutes = Math.round(ageMs(iso, now) / 60_000);
+    return minutes < 90 ? `${minutes} min ago` : minutes < 48 * 60 ? `${Math.round(minutes / 60)} h ago` : `${Math.round(minutes / 1440)} days ago`;
+  };
+  if (!sync) {
+    return { key: 'reservations', title: 'Beds24 reservations', status: 'unavailable', summary: 'Reservation freshness could not be read.', facts: [] };
+  }
+  const runLate = !lastRun || ageMs(lastRun.finished_at, now) > SCHEDULER_INTERVAL_MS.reservation_sync;
+  const facts: HealthSectionDto['facts'] = [
+    {
+      label: 'Last import',
+      value: lastRun ? `${lastRun.ok ? 'ok' : 'failed'} · ${ago(lastRun.finished_at)}` : 'never run',
+      tone: runLate ? 'critical' : lastRun?.ok ? 'positive' : 'caution',
+    },
+    { label: 'Last webhook', value: sync.lastWebhookAt ? ago(sync.lastWebhookAt) : 'none received', tone: sync.lastWebhookAt ? 'muted' : 'caution' },
+    { label: 'Not refreshed 24 h', value: String(sync.staleActive), tone: sync.staleActive > 0 ? 'caution' : 'positive' },
+    { label: 'Failed webhook refreshes', value: String(sync.failedWebhooks), tone: sync.failedWebhooks > 0 ? 'caution' : 'positive' },
+  ];
+  if (sync.oldestSeen) facts.push({ label: 'Oldest upcoming seen', value: ago(sync.oldestSeen), tone: 'muted' });
+  const problems = [
+    runLate ? (lastRun ? 'the scheduled import is overdue' : 'the scheduled import has never recorded a run') : null,
+    lastRun && !runLate && !lastRun.ok ? 'the last import run failed' : null,
+    sync.staleActive > 0 ? `${sync.staleActive} upcoming reservation${sync.staleActive === 1 ? ' has' : 's have'} not been refreshed for over 24 h` : null,
+    sync.failedWebhooks > 0 ? `${sync.failedWebhooks} webhook refresh${sync.failedWebhooks === 1 ? '' : 'es'} failed (retried automatically)` : null,
+  ].filter((p): p is string => p !== null);
+  return {
+    key: 'reservations',
+    title: 'Beds24 reservations',
+    status: problems.length === 0 ? 'healthy' : 'attention',
+    summary: problems.length === 0
+      ? 'Current with Beds24: imports on schedule, every upcoming reservation refreshed within a day, no failed webhook refreshes.'
+      : `May be stale: ${problems.join('; ')}.`,
+    facts,
+  };
+}
+
+/** Reservation freshness for alerts and the overview; `null` when it could not be read. */
+async function reservationSyncHealthOf(source: Awaited<ReturnType<typeof rowSource>>, now: Date): Promise<ReservationSyncHealthRow | null> {
+  try {
+    return await source.reservationSyncHealth({
+      today: propertyTodayIso(now),
+      staleBefore: new Date(now.getTime() - RESERVATION_STALE_MS).toISOString(),
+      failedSince: new Date(now.getTime() - WEBHOOK_FAILURE_LOOKBACK_MS).toISOString(),
+    });
+  } catch {
+    return null;
+  }
+}
+
 /* ── Alerts ────────────────────────────────────────────────────────────── */
 
 /**
@@ -1299,7 +1361,7 @@ export async function loadAlerts(now: Date = new Date()): Promise<QueryResult<Al
   const posture = adminPosture();
   return guard(async () => {
     const source = await rowSource();
-    const [reachable, queues, schedulers, meta, units, attention, completion] = await Promise.all([
+    const [reachable, queues, schedulers, meta, units, attention, completion, reservationSync] = await Promise.all([
       source.ping().catch(() => false),
       source.queues().catch(() => null),
       source.schedulerStatus().catch(() => [] as SchedulerStatusRow[]),
@@ -1307,6 +1369,7 @@ export async function loadAlerts(now: Date = new Date()): Promise<QueryResult<Al
       source.units().catch(() => []),
       loadAttention(now),
       completionAlertInputs(source, now),
+      reservationSyncHealthOf(source, now),
     ]);
     const { loadFinanceAttention } = await import('@/lib/finance/attention');
     const finance = await loadFinanceAttention(now);
@@ -1319,6 +1382,7 @@ export async function loadAlerts(now: Date = new Date()): Promise<QueryResult<Al
       attention: attention.ok ? attention.data.items : [],
       configFindings: posture.configFindings,
       inventory: meta.map((m) => ({ unitSlug: units.find((u) => u.id === m.unit_id)?.slug ?? m.unit_id, oldestSync: m.oldest_sync })),
+      reservationSync,
       ...completion,
     });
   });

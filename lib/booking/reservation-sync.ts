@@ -32,7 +32,13 @@ import 'server-only';
 
 import { createLogger, type BookingLogger } from '@/lib/booking/logger';
 import { inventoryMonths, reservationBackfillMonths, reservationStatusFilter, reservationWindowDays } from '@/lib/booking/config';
-import { listBookableUnits, type BookableUnit } from '@/lib/booking/repository';
+import {
+  listMappedUnits,
+  listFailedReservationRefreshes,
+  markIntegrationEvent,
+  RESERVATION_REFRESH_FAILED,
+  type BookableUnit,
+} from '@/lib/booking/repository';
 import {
   findIntentIdForProviderBooking,
   reservationOfferColumnsAvailable,
@@ -178,7 +184,7 @@ export async function syncReservations(
   let spent = 0;
   const left = () => budget - RESERVED_REQUESTS - spent;
 
-  const all = await listBookableUnits();
+  const all = await listMappedUnits();
   spent += 1;
   const units = (options.unitSlug ? all.filter((u) => u.slug === options.unitSlug) : all).filter((u) => u.providerRef);
 
@@ -466,7 +472,7 @@ export async function refreshReservation(
     return 'not_found_at_provider';
   }
 
-  const units = await listBookableUnits();
+  const units = await listMappedUnits();
   const unit = units.find(
     (u) =>
       u.providerRef &&
@@ -479,6 +485,40 @@ export async function refreshReservation(
   }
 
   return store(reservation, unit, logger);
+}
+
+/** How far back a failed webhook refresh is still retried; older ones are the sweep's. */
+export const REFRESH_RETRY_WINDOW_MS = 48 * 60 * 60_000;
+
+/**
+ * Retry Beds24 webhook deliveries whose reservation refresh failed.
+ *
+ * Run by the reconcile pass (every few minutes), a few at a time so it stays
+ * inside the invocation's subrequest budget. Safe to repeat by construction:
+ * a retry is the same GET-then-upsert the webhook performs, keyed on the
+ * Beds24 booking id, so it can update a reservation but never duplicate one.
+ * A delivery that succeeds is marked `processed`; one that fails again stays
+ * `failed` (and rotates to the back), and is counted by the admin alert until
+ * it is repaired or the scheduled import covers it.
+ */
+export async function retryFailedReservationRefreshes(
+  logger: BookingLogger = createLogger(),
+  { limit = 2, now = new Date() }: { limit?: number; now?: Date } = {}
+): Promise<{ retried: number; repaired: number }> {
+  const events = await listFailedReservationRefreshes(new Date(now.getTime() - REFRESH_RETRY_WINDOW_MS).toISOString(), limit);
+  let repaired = 0;
+  for (const event of events) {
+    try {
+      const outcome = await refreshReservation(event.externalId, logger);
+      await markIntegrationEvent(event.id, 'processed');
+      repaired += 1;
+      logger.info('reservation.sync', { externalId: event.externalId, outcome, retry: 'webhook_refresh' });
+    } catch (cause) {
+      logger.error('reservation.sync', cause, { externalId: event.externalId, outcome: 'refresh_retry_failed' });
+      await markIntegrationEvent(event.id, 'failed', RESERVATION_REFRESH_FAILED).catch(() => {});
+    }
+  }
+  return { retried: events.length, repaired };
 }
 
 /* ── Windows ───────────────────────────────────────────────────────────── */

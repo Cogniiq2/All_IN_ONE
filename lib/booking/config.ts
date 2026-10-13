@@ -304,32 +304,34 @@ export function reservationWindowDays(): number {
   return intEnv('BOOKING_RESERVATION_WINDOW_DAYS', 90, 7, 365);
 }
 
+/** Every Beds24 booking status. Each one accepted by `GET /bookings` on this account (2026-10-13). */
+export const BEDS24_ALL_BOOKING_STATUSES: readonly string[] = ['new', 'request', 'confirmed', 'cancelled', 'black', 'inquiry'];
+
 /**
- * Which provider statuses the import asks for, or nothing.
+ * Which provider statuses the import asks for.
  *
- * ── Why this is unset by default ─────────────────────────────────────────
- * Whether `GET /bookings` accepts a `status` filter on THIS account is not
- * established (docs/beds24-contract.md §1 lists the booking read as UNKNOWN,
- * and the environment this repository is developed in cannot reach the Beds24
- * documentation). An unrecognised query parameter is usually ignored, but a
- * REJECTED one would fail the whole import — so nothing is sent unless an
- * operator, having verified the account's behaviour, sets it.
+ * ── Verified live, 2026-10-13 (beds24-readonly-check.yml, Part A6) ────────
+ *   no status parameter        → confirmed bookings only; NO cancelled ones
+ *   status=a&status=b (repeat) → HTTP 200, every listed status (20 on Apt I:
+ *                                13 confirmed + 7 cancelled)
+ *   status=a,b (comma-joined)  → HTTP 400 "not a valid option"
  *
- * Unset therefore means "whatever the provider returns by default". Because
- * the import never deletes and never infers a cancellation from absence, that
- * default is safe: the worst case is that a cancellation is learned from the
- * webhook (which re-reads the booking by id) rather than from the sweep.
+ * So the default is EVERY status, sent repeated. Without it the scheduled
+ * import could never repair a cancellation the webhook missed: the stay
+ * would read "active" on the board indefinitely.
  *
- * Set to e.g. `new,request,confirmed,cancelled,black` once verified.
+ * `BEDS24_RESERVATION_STATUSES` may narrow it (comma-separated here; it is
+ * still sent repeated). `none` sends no filter — Beds24's own default.
  */
 export function reservationStatusFilter(): string[] | undefined {
   const raw = env('BEDS24_RESERVATION_STATUSES');
-  if (!raw) return undefined;
+  if (!raw) return [...BEDS24_ALL_BOOKING_STATUSES];
+  if (raw.trim().toLowerCase() === 'none') return undefined;
   const values = raw
     .split(',')
     .map((v) => v.trim().toLowerCase())
     .filter((v) => /^[a-z]{2,20}$/.test(v));
-  return values.length > 0 ? values : undefined;
+  return values.length > 0 ? values : [...BEDS24_ALL_BOOKING_STATUSES];
 }
 
 /**

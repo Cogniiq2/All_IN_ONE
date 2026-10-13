@@ -200,7 +200,7 @@ vi.mock('@/lib/booking/repository', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/booking/repository')>();
   return {
     ...actual,
-    listBookableUnits: async () => db.units as unknown as Awaited<ReturnType<typeof actual.listBookableUnits>>,
+    listMappedUnits: async () => db.units as unknown as Awaited<ReturnType<typeof actual.listMappedUnits>>,
   };
 });
 
@@ -649,12 +649,23 @@ describe('reading from the provider', () => {
     expect(result.reservations.map((r) => r.externalBookingId)).toEqual(['90000001']);
   });
 
-  it('sends a status filter only when one is configured', async () => {
+  it('sends statuses as REPEATED parameters — Beds24 refuses a comma-joined list (HTTP 400, live 2026-10-13)', async () => {
     await readReservations({ externalPropertyId: '354659', externalRoomId: '731147', arrivalFrom: '2026-09-01', arrivalTo: '2026-09-30' });
     expect(h.calls[0].query.status).toBeUndefined();
     h.calls.length = 0;
     await readReservations({ externalPropertyId: '354659', externalRoomId: '731147', arrivalFrom: '2026-09-01', arrivalTo: '2026-09-30', statuses: ['confirmed', 'cancelled'] });
-    expect(h.calls[0].query.status).toBe('confirmed,cancelled');
+    expect(h.calls[0].query.status).toEqual(['confirmed', 'cancelled']);
+  });
+
+  it('asks for every status by default, so the sweep sees cancellations (an unfiltered read returns none)', async () => {
+    const { reservationStatusFilter, BEDS24_ALL_BOOKING_STATUSES } = await import('@/lib/booking/config');
+    expect(reservationStatusFilter()).toEqual([...BEDS24_ALL_BOOKING_STATUSES]);
+    expect(BEDS24_ALL_BOOKING_STATUSES).toContain('cancelled');
+    vi.stubEnv('BEDS24_RESERVATION_STATUSES', 'confirmed, cancelled');
+    expect(reservationStatusFilter()).toEqual(['confirmed', 'cancelled']);
+    vi.stubEnv('BEDS24_RESERVATION_STATUSES', 'none');
+    expect(reservationStatusFilter()).toBeUndefined();
+    vi.unstubAllEnvs();
   });
 });
 

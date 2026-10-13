@@ -389,6 +389,20 @@ export interface RowSource {
   messageDeliveries(query: { reference?: string; statuses?: readonly string[]; limit?: number }): Promise<MessageDeliveryRow[]>;
   /** Last observation per (provider, signal). Empty rows mean "never observed", never "healthy". */
   integrationHealth(): Promise<IntegrationHealthRow[]>;
+  /** How fresh the imported Beds24 reservations are, and what the webhook path left unrepaired. */
+  reservationSyncHealth(query: { today: string; staleBefore: string; failedSince: string }): Promise<ReservationSyncHealthRow>;
+}
+
+/** Freshness of `bolagio_reservations` against Beds24. Counts and timestamps only. */
+export interface ReservationSyncHealthRow {
+  /** Active reservations not yet departed that no sync (webhook or import) has seen since `staleBefore`. */
+  staleActive: number;
+  /** The oldest `last_seen_at` among active reservations not yet departed. */
+  oldestSeen: string | null;
+  /** Beds24 deliveries whose reservation refresh failed and has not been repaired since `failedSince`. */
+  failedWebhooks: number;
+  /** The most recent Beds24 webhook delivery received (authenticated, parsed). */
+  lastWebhookAt: string | null;
 }
 
 /** The statuses `bolagio_ops_attention` lists, mirrored for the list filter. */

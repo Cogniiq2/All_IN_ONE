@@ -27,7 +27,12 @@ import { ProviderError } from '@/lib/integrations/provider';
 export interface Beds24RequestInit {
   path: string;
   method?: 'GET' | 'POST';
-  query?: Record<string, string | number | undefined>;
+  /**
+   * An array value is sent as a REPEATED parameter (`status=a&status=b`):
+   * the form Beds24 accepts for multi-valued filters. A comma-joined value is
+   * refused with HTTP 400 (verified live, 2026-10-13).
+   */
+  query?: Record<string, string | number | readonly string[] | undefined>;
   body?: unknown;
   /** Set on write calls so a retried request cannot create a second booking. */
   idempotencyKey?: string;
@@ -59,7 +64,9 @@ async function attempt<T>(init: Beds24RequestInit, isRetry: boolean): Promise<T>
 
   const url = new URL(`${baseUrl}${init.path}`);
   for (const [key, value] of Object.entries(init.query ?? {})) {
-    if (value !== undefined) url.searchParams.set(key, String(value));
+    if (value === undefined) continue;
+    if (Array.isArray(value)) for (const v of value) url.searchParams.append(key, String(v));
+    else url.searchParams.set(key, String(value));
   }
 
   const headers: Record<string, string> = {

@@ -503,6 +503,12 @@ export function fixtureRowSource(): RowSource {
     async integrationHealth() {
       return INTEGRATION_HEALTH.map((r) => ({ ...r }));
     },
+    async reservationSyncHealth() {
+      // Synthetic: every upcoming reservation seen within the hour, one
+      // webhook forty minutes ago, nothing left unrepaired.
+      const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
+      return { staleActive: 0, oldestSeen: minutesAgo(55), failedWebhooks: 0, lastWebhookAt: minutesAgo(40) };
+    },
     async schedulerStatus() {
       // Synthetic heartbeats: a healthy reconcile a minute ago, an inventory
       // sync that last ran within its interval, and an operations pass.

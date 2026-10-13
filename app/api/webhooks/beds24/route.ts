@@ -76,8 +76,9 @@ import {
   invalidateInventory,
   markIntegrationEvent,
   recordIntegrationEvent,
+  RESERVATION_REFRESH_FAILED,
 } from '@/lib/booking/repository';
-import { queueReconciliation } from '@/lib/booking/commands';
+import { observeIntegration, queueReconciliation } from '@/lib/booking/commands';
 import { syncInventory } from '@/lib/booking/service';
 import { refreshReservation } from '@/lib/booking/reservation-sync';
 import { mayHoldExternalBooking } from '@/lib/booking/states';
@@ -155,9 +156,16 @@ export async function POST(request: NextRequest) {
     }
     eventId = stored.id;
 
-    await process(payload, action, externalId, logger);
-    await markIntegrationEvent(eventId, 'processed');
-    logger.info('webhook.beds24', { eventType: action, externalId, outcome: 'processed' });
+    // "Last webhook received" for the admin: an authenticated, parsed,
+    // first-time delivery. Throttled like every other signal.
+    observeIntegration('beds24', 'webhook_received', action);
+
+    const { refreshFailed } = await process(payload, action, externalId, logger);
+    // A refresh that threw is NOT processed: the reservation may now be stale.
+    // Marked failed, it is visible to the admin and retried by the reconcile
+    // pass (retryFailedReservationRefreshes) instead of being forgotten.
+    await markIntegrationEvent(eventId, refreshFailed ? 'failed' : 'processed', refreshFailed ? RESERVATION_REFRESH_FAILED : undefined);
+    logger.info('webhook.beds24', { eventType: action, externalId, outcome: refreshFailed ? 'refresh_failed' : 'processed' });
   } catch (cause) {
     logger.error('webhook.beds24', cause);
     if (eventId) await markIntegrationEvent(eventId, 'failed', 'processing_error').catch(() => {});
@@ -171,7 +179,8 @@ async function process(
   action: string,
   externalId: string,
   logger: ReturnType<typeof createLogger>
-): Promise<void> {
+): Promise<{ refreshFailed: boolean }> {
+  let refreshFailed = false;
   const booking = payload.booking ?? {};
   const propertyId = String(payload.propertyId ?? booking.propertyId ?? '');
   const roomId = String(payload.roomId ?? booking.roomId ?? '');
@@ -212,6 +221,7 @@ async function process(
       const outcome = await refreshReservation(externalId, logger);
       logger.info('webhook.beds24', { externalId, eventType: action, outcome });
     } catch (cause) {
+      refreshFailed = true;
       logger.error('webhook.beds24', cause, { externalId, eventType: action, outcome: 'reservation_refresh_failed' });
     }
   }
@@ -243,6 +253,7 @@ async function process(
       });
     }
   }
+  return { refreshFailed };
 }
 
 async function slugForUnit(unitId: string): Promise<string | undefined> {

@@ -20,7 +20,7 @@
  */
 
 import type { AttentionItem, IntegrationSignalDto, QueueCountDto } from '@/lib/admin/dto';
-import type { SchedulerStatusRow } from '@/lib/admin/rows';
+import type { ReservationSyncHealthRow, SchedulerStatusRow } from '@/lib/admin/rows';
 import type { EnvironmentFinding } from '@/lib/config/environment';
 
 export type AlertLevel = 'CRITICAL' | 'HIGH' | 'MEDIUM';
@@ -55,6 +55,11 @@ export interface AlertInput {
   deliveries?: { stuck: number; retrying: number; waiting: number; oldestWaiting: string | null } | null;
   turnovers?: { overdue: number; unassignedSoon: number } | null;
   refunds?: { required: number; pending: number; unknown: number; failed: number; references: string[] } | null;
+  /**
+   * Freshness of the imported Beds24 reservations. `null` when it could not be
+   * read (reported as not instrumented), `undefined` on a caller without it.
+   */
+  reservationSync?: ReservationSyncHealthRow | null;
   /** Integration signals; `null` when the health table could not be read. */
   integrations?: IntegrationSignalDto[] | null;
   /** Finance exceptions (lib/finance/attention.ts); `null` when finance could not be read, `undefined` on a caller that has no finance. */
@@ -80,6 +85,16 @@ export const SCHEDULER_INTERVAL_MS: Readonly<Record<SchedulerStatusRow['job'], n
 };
 
 export const INVENTORY_STALE_MS = 6 * 60 * 60_000;
+/**
+ * An upcoming reservation no sync has seen for this long may no longer match
+ * Beds24. Every scheduled import refreshes the near-term windows and rotates
+ * through the rest in well under a day, and a webhook refreshes a changed
+ * booking within seconds — so a day without being seen means both paths
+ * missed it.
+ */
+export const RESERVATION_STALE_MS = 24 * 60 * 60_000;
+/** Failed webhook refreshes are counted for this long; older ones are the sweep's. */
+export const WEBHOOK_FAILURE_LOOKBACK_MS = 7 * 24 * 60 * 60_000;
 export const WEBHOOK_BACKLOG_MS = 15 * 60_000;
 export const OUTBOX_LAG_MS = 30 * 60_000;
 export const RELEASE_FAILED_CRITICAL_MS = 60 * 60_000;
@@ -266,6 +281,30 @@ export function deriveAlerts(input: AlertInput): AlertReport {
       detail: `The cached calendar for ${staleUnits.length} unit${staleUnits.length === 1 ? '' : 's'} is older than six hours. Quotes still ask the channel manager live; browsing may show stale nights.`,
       count: staleUnits.length,
     });
+  }
+
+  if (input.reservationSync === null) {
+    notInstrumented.push('reservation freshness (not readable)');
+  } else if (input.reservationSync) {
+    const r = input.reservationSync;
+    if (r.staleActive > 0) {
+      alerts.push({
+        level: 'MEDIUM',
+        code: 'RESERVATIONS_STALE',
+        title: 'Reservations not refreshed from Beds24',
+        detail: `${r.staleActive} upcoming reservation${r.staleActive === 1 ? ' has' : 's have'} not been confirmed by any Beds24 sync for over 24 hours${r.oldestSeen ? ` (oldest last seen ${r.oldestSeen.slice(0, 10)})` : ''}. A change made at Beds24 since then may not be shown. Check the reservation import.`,
+        count: r.staleActive,
+      });
+    }
+    if (r.failedWebhooks > 0) {
+      alerts.push({
+        level: 'MEDIUM',
+        code: 'BEDS24_WEBHOOK_REFRESH_FAILED',
+        title: 'Beds24 webhook refresh failed',
+        detail: `${r.failedWebhooks} Beds24 notification${r.failedWebhooks === 1 ? '' : 's'} could not be applied when received. They are retried automatically every few minutes, and the scheduled import covers them too.`,
+        count: r.failedWebhooks,
+      });
+    }
   }
 
   for (const job of ['reconcile', 'inventory_sync', 'operations', 'reservation_sync'] as const) {

@@ -33,6 +33,7 @@ import { bookingErrorResponse, bookingJson, requireBackend, verifySharedSecret }
 import { recordSchedulerRun } from '@/lib/booking/commands';
 import { runOperationsPass } from '@/lib/booking/operations';
 import { runReconciliation } from '@/lib/booking/reconciliation';
+import { retryFailedReservationRefreshes } from '@/lib/booking/reservation-sync';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -93,7 +94,19 @@ export async function POST(request: NextRequest) {
       await recordSchedulerRun({ job: 'operations', startedAt: opsStarted, ok: false, error: describe(cause), worker: logger.correlationId });
     }
 
-    return bookingJson({ ...report, operations }, logger);
+    /*
+     * Beds24 webhook deliveries whose reservation refresh failed, retried a
+     * couple at a time (idempotent GET-then-upsert). A failure here never
+     * fails the reconciliation answer; the delivery simply stays `failed`.
+     */
+    let webhookRetry: { retried: number; repaired: number } | null = null;
+    try {
+      webhookRetry = await retryFailedReservationRefreshes(logger);
+    } catch (cause) {
+      logger.error('reservation.sync', cause, { outcome: 'webhook_retry_pass_failed' });
+    }
+
+    return bookingJson({ ...report, operations, webhookRetry }, logger);
   } catch (cause) {
     return bookingErrorResponse(cause, logger);
   }

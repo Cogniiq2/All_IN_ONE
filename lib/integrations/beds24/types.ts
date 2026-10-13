@@ -271,6 +271,8 @@ export interface Beds24Booking {
   lastName?: string;
   email?: string;
   phone?: string;
+  /** A second number Beds24 keeps beside `phone` (field present on live bookings, 2026-10-13). */
+  mobile?: string;
   /** ISO-3166 alpha-2 in every form seen; anything else is dropped. */
   country?: string;
   /** Occupancy, in the two spellings V2 uses across endpoints. */

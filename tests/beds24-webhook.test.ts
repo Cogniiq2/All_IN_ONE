@@ -69,6 +69,8 @@ const h = vi.hoisted(() => ({
   logs: [] as string[],
   /** Injects a mid-processing failure, to prove the route still acknowledges. */
   failInventory: false,
+  /** Makes the provider read fail, as an outage would. */
+  failRead: false,
 }));
 
 vi.mock('@/lib/integrations/beds24/client', () => ({
@@ -79,6 +81,7 @@ vi.mock('@/lib/integrations/beds24/client', () => ({
       query: init.query ?? {},
       hasBody: init.body !== undefined,
     });
+    if (h.failRead) throw new Error('Beds24 responded 500');
     const id = String(init.query?.id ?? '');
     return { data: h.booking && String(h.booking.id) === id ? [h.booking] : [] };
   },
@@ -100,7 +103,9 @@ vi.mock('@/lib/booking/repository', () => ({
     h.inventory.push(`${unitId}:${from}:${to}`);
   },
   findIntentByProviderBookingId: async () => null,
-  listBookableUnits: async () => [
+  RESERVATION_REFRESH_FAILED: 'reservation_refresh_failed',
+  listFailedReservationRefreshes: async () => [],
+  listMappedUnits: async () => [
     {
       id: 'unit-1',
       slug: 'schulstrasse-i',
@@ -175,6 +180,7 @@ beforeEach(() => {
   h.calls.length = 0;
   h.events.length = 0;
   h.marks.length = 0;
+  h.failRead = false;
   h.stored.length = 0;
   h.inventory.length = 0;
   h.syncs.length = 0;
@@ -377,6 +383,14 @@ describe('the response and the logs', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ received: true });
     expect(response.headers.get('cache-control')).toContain('no-store');
+  });
+
+  it('marks a delivery whose reservation refresh failed as FAILED — not processed — so it is visible and retried', async () => {
+    h.failRead = true;
+    const response = await POST(delivery(signalFor('modified')));
+    expect(response.status).toBe(200);
+    expect(h.marks).toEqual([{ status: 'failed' }]);
+    expect(h.stored).toHaveLength(0);
   });
 
   it('still answers 200 when processing fails, so Beds24 does not retry forever', async () => {

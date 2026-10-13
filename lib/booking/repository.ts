@@ -86,6 +86,27 @@ export async function listBookableUnits(): Promise<BookableUnit[]> {
   return ((data ?? []) as unknown as UnitRow[]).map(toBookableUnit);
 }
 
+/**
+ * Every unit with an ENABLED channel-manager mapping, bookable online or not.
+ *
+ * The reservation import reads these. `is_bookable` is the direct-booking
+ * switch and says nothing about whether Booking.com or Airbnb guests stay in
+ * the unit: gating the import on it would make the documented safe state
+ * (`is_bookable = false` until direct booking opens) silently stop every
+ * channel reservation from reaching the admin.
+ */
+export async function listMappedUnits(): Promise<BookableUnit[]> {
+  const { data, error } = await supabaseAdmin()
+    .from('bolagio_units')
+    .select(
+      'id, slug, display_name, max_guests, min_nights, currency, is_bookable, timezone, check_in_time, check_out_time,' +
+        ' bolagio_unit_integrations(provider, external_property_id, external_room_id, enabled)'
+    );
+
+  if (error) throw error;
+  return ((data ?? []) as unknown as UnitRow[]).map(toBookableUnit).filter((u) => u.providerRef);
+}
+
 interface UnitRow {
   id: string;
   slug: string;
@@ -658,6 +679,36 @@ export async function recordIntegrationEvent(input: {
     throw error;
   }
   return { id: data.id as string, duplicate: false };
+}
+
+/**
+ * The `error` a Beds24 delivery is marked `failed` with when its reservation
+ * refresh threw (the provider or the database could not be reached). Such a
+ * delivery is retried by the reconcile pass; see
+ * `retryFailedReservationRefreshes`.
+ */
+export const RESERVATION_REFRESH_FAILED = 'reservation_refresh_failed';
+
+/**
+ * Beds24 deliveries whose reservation refresh failed, least recently tried
+ * first — so one booking that keeps failing cannot starve the others.
+ */
+export async function listFailedReservationRefreshes(
+  sinceIso: string,
+  limit: number
+): Promise<Array<{ id: string; externalId: string }>> {
+  const { data, error } = await supabaseAdmin()
+    .from('bolagio_integration_events')
+    .select('id, external_id')
+    .eq('provider', 'beds24')
+    .eq('status', 'failed')
+    .eq('error', RESERVATION_REFRESH_FAILED)
+    .not('external_id', 'is', null)
+    .gte('received_at', sinceIso)
+    .order('processed_at', { ascending: true, nullsFirst: true })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []).map((r) => ({ id: String(r.id), externalId: String(r.external_id) }));
 }
 
 export async function markIntegrationEvent(

@@ -137,6 +137,10 @@ export function createBeds24Sim() {
 
   function bookingView(b, { omitReference = false, statusOverride = null } = {}) {
     const view = { id: b.id, roomId: b.roomId, propertyId: b.propertyId, status: statusOverride ?? b.status, arrival: b.arrival, departure: b.departure, numAdult: b.numAdult, numChild: b.numChild, price: b.price, referer: b.referer, reference: b.reference, notes: b.notes, offerId: b.offerId ?? 0, infoItems: b.infoItems ?? [] };
+    // Channel and guest fields, when the booking has them (live field names).
+    for (const k of ['apiSourceId', 'apiReference', 'firstName', 'lastName', 'email', 'phone', 'mobile', 'country', 'bookingTime', 'modifiedTime', 'cancelTime']) {
+      if (b[k] !== undefined) view[k] = b[k];
+    }
     if (omitReference) delete view.reference;
     return view;
   }
@@ -199,11 +203,19 @@ export function createBeds24Sim() {
       const mode = state.modes.search;
       if (failure(mode, req, res)) return;
       if (mode === 'not_found') return json(res, 200, { success: true, data: [] });
+      // As the live account (2026-10-13): `status` is a REPEATED parameter; a
+      // comma-joined value is refused; with no status at all, cancelled
+      // bookings are left out.
+      const statuses = q.getAll('status');
+      if (statuses.some((v) => v.includes(','))) {
+        return json(res, 400, { success: false, code: 400, error: `'${statuses.join(',')}' is not a valid option for the status parameter` });
+      }
       const rows = Array.from(state.bookings.values()).filter((b) =>
         (!q.get('roomId') || String(b.roomId) === q.get('roomId')) &&
         (!q.get('propertyId') || String(b.propertyId) === q.get('propertyId')) &&
         (!q.get('arrivalFrom') || b.arrival >= q.get('arrivalFrom')) &&
-        (!q.get('arrivalTo') || b.arrival <= q.get('arrivalTo')));
+        (!q.get('arrivalTo') || b.arrival <= q.get('arrivalTo')) &&
+        (statuses.length > 0 ? statuses.includes(b.status) : b.status !== 'cancelled'));
       return json(res, 200, { success: true, data: rows.map((b) => bookingView(b, { omitReference: mode === 'reference_absent' })) });
     }
 
@@ -281,6 +293,14 @@ export function createBeds24Sim() {
       case '/__sim/unblock':
         state.blocks = state.blocks.filter((b) => !(String(b.roomId) === String(parsed.roomId) && b.from === parsed.from && b.to === parsed.to));
         return json(res, 200, { ok: true, blocks: state.blocks });
+      case '/__sim/edit': {
+        // A change made AT Beds24 (an OTA modification, an operator edit, a
+        // cancellation) — no webhook is sent; the test decides whether to.
+        const b = state.bookings.get(String(parsed.id));
+        if (!b) return json(res, 404, { error: 'unknown booking' });
+        for (const [k, v] of Object.entries(parsed)) if (k !== 'id') b[k] = v;
+        return json(res, 200, { ok: true, booking: b });
+      }
       case '/__sim/state':
         return json(res, 200, { modes: state.modes, config: { ...state.config, token: undefined }, bookings: Array.from(state.bookings.values()), blocks: state.blocks });
       case '/__sim/calls':

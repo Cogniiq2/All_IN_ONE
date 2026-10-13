@@ -414,7 +414,7 @@ export function mapReservation(booking: Beds24Booking): ProviderReservation | Ma
     guestFirstName: text(booking.firstName, 120),
     guestLastName: text(booking.lastName, 120),
     guestEmail: text(booking.email, 254),
-    guestPhone: text(booking.phone, 60),
+    guestPhone: text(booking.phone, 60) ?? text(booking.mobile, 60),
     guestCountry: country(booking.country),
     currency: currency(booking.currency),
     // Beds24 prices in MAJOR units — the hold writes `price: cents / 100`, so
@@ -457,9 +457,9 @@ export interface ReservationWindow {
   /** Inclusive arrival-date upper bound. */
   arrivalTo: string;
   /**
-   * Provider status values to ask for, when the account is known to accept
-   * the filter. Left undefined by default — see `reservationStatusFilter()`
-   * in lib/booking/config.ts for why, and how to switch it on.
+   * Provider status values to ask for, sent as repeated `status` parameters.
+   * See `reservationStatusFilter()` in lib/booking/config.ts: by default every
+   * Beds24 status, because an unfiltered read omits cancelled bookings.
    */
   statuses?: readonly string[];
   /**
@@ -506,7 +506,10 @@ export async function readReservations(window: ReservationWindow): Promise<Reser
         // would only enlarge the snapshot. Never requested.
         includeInvoiceItems: 'false',
         page,
-        ...(window.statuses && window.statuses.length > 0 ? { status: window.statuses.join(',') } : {}),
+        // Repeated `status=` parameters. Without any, Beds24 returns no
+        // cancelled booking at all, so the sweep could never learn of a
+        // cancellation the webhook missed (verified live, 2026-10-13).
+        ...(window.statuses && window.statuses.length > 0 ? { status: window.statuses } : {}),
       },
     });
     requests += 1;

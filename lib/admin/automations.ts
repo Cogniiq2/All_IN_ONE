@@ -45,6 +45,7 @@ export function toDeliveryDto(row: MessageDeliveryRow): MessageDeliveryDto {
 export const EXPECTED_SIGNALS: ReadonlyArray<{ provider: 'beds24' | 'paypal' | 'n8n'; signal: string; label: string }> = [
   { provider: 'beds24', signal: 'last_success', label: 'Beds24 · last successful call' },
   { provider: 'beds24', signal: 'last_failure', label: 'Beds24 · last failed call' },
+  { provider: 'beds24', signal: 'webhook_received', label: 'Beds24 · last webhook received' },
   { provider: 'paypal', signal: 'last_success', label: 'PayPal · last successful call' },
   { provider: 'paypal', signal: 'last_failure', label: 'PayPal · last failed call' },
   { provider: 'paypal', signal: 'last_verified_webhook', label: 'PayPal · last verified webhook' },

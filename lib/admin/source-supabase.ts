@@ -374,6 +374,25 @@ export function supabaseRowSource(): RowSource {
       return (data ?? []) as unknown as IntegrationHealthRow[];
     },
 
+    async reservationSyncHealth({ today, staleBefore, failedSince }) {
+      const db = supabaseAdmin();
+      const upcomingActive = () => db.from('bolagio_reservations').select('last_seen_at', { count: 'exact' }).eq('status_class', 'active').gte('check_out', today);
+      const [stale, oldest, failed, last] = await Promise.all([
+        upcomingActive().lt('last_seen_at', staleBefore).limit(1),
+        upcomingActive().order('last_seen_at', { ascending: true }).limit(1),
+        db.from('bolagio_integration_events').select('id', { head: true, count: 'exact' })
+          .eq('provider', 'beds24').eq('status', 'failed').gte('received_at', failedSince),
+        db.from('bolagio_integration_events').select('received_at').eq('provider', 'beds24').order('received_at', { ascending: false }).limit(1),
+      ]);
+      for (const r of [stale, oldest, failed, last]) if (r.error) throw r.error;
+      return {
+        staleActive: stale.count ?? 0,
+        oldestSeen: (oldest.data?.[0]?.last_seen_at as string | undefined) ?? null,
+        failedWebhooks: failed.count ?? 0,
+        lastWebhookAt: (last.data?.[0]?.received_at as string | undefined) ?? null,
+      };
+    },
+
     async audit(limit) {
       const { data, error } = await supabaseAdmin()
         .from('bolagio_admin_audit_log')

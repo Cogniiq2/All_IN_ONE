@@ -24,5 +24,6 @@ export function simControl(baseUrl) {
     // Beds24
     block: (roomId, from, to) => call('/__sim/block', { roomId, from, to }),
     unblock: (roomId, from, to) => call('/__sim/unblock', { roomId, from, to }),
+    edit: (id, fields) => call('/__sim/edit', { id, ...fields }),
   };
 }
