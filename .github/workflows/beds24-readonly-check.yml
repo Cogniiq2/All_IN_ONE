@@ -796,6 +796,28 @@ jobs:
           NODE_EOF
           node "$RUNNER_TEMP/webhook-config.mjs"
 
+      # ── PART A8 — WHICH DEPLOYMENT SERVES THE PRODUCTION DOMAIN ─────────
+      # Public HTTP reads only, no credential in scope: response headers and
+      # the redirect chain of bolagio-residences.de, and whether what answers
+      # carries the current code (the /admin/reservations route and the new
+      # apartment title).
+      - name: "Part A8 — production domain probe (public, read-only)"
+        if: always()
+        continue-on-error: true
+        run: |
+          for u in http://bolagio-residences.de/ https://bolagio-residences.de/ https://www.bolagio-residences.de/ https://bolagio-residences.de/apartments/schulstrasse-i https://bolagio-residences.de/admin/reservations; do
+            echo "── $u"
+            curl -sS -o /dev/null -D - --max-time 20 "$u" | grep -iE '^(HTTP/|location:|server:|cf-ray:|x-powered-by:|via:|x-opennext|x-nextjs)' || true
+            curl -sSL -o "$RUNNER_TEMP/page.html" -w 'final=%{url_effective} status=%{http_code} hops=%{num_redirects}\n' --max-time 30 "$u" || true
+            grep -o '<title>[^<]*' "$RUNNER_TEMP/page.html" | head -1 || true
+          done
+          for h in bolagio-staging bolagio-preview bolagio; do
+            u="https://$h.popovic-lazar0603.workers.dev/apartments/schulstrasse-i"
+            echo "── $u"
+            curl -sSL -o "$RUNNER_TEMP/page.html" -w 'status=%{http_code}\n' --max-time 30 "$u" || true
+            grep -o '<title>[^<]*' "$RUNNER_TEMP/page.html" | head -1 || true
+          done
+
       # ── PART B ─────────────────────────────────────────────────────────
       # No credential from here on. Feature-branch code executes only in
       # these steps, and only after the token has gone out of scope.
