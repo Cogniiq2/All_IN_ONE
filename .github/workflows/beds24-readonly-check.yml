@@ -727,6 +727,20 @@ jobs:
             console.log(`  by status: ${JSON.stringify(byStatus)}`);
             const cancelled = await listAll({ propertyId, roomId, arrivalFrom: '2025-10-01', arrivalTo: '2028-12-31', status: 'cancelled' });
             console.log(`  status=cancelled filter → ${cancelled.length} booking(s): ${cancelled.map((b) => b.id).join(', ')}`);
+            for (const [how, qs] of [
+              ['comma list', `status=${encodeURIComponent('new,request,confirmed,cancelled,black,inquiry')}`],
+              ['repeated params', ['new', 'request', 'confirmed', 'cancelled', 'black', 'inquiry'].map((v) => `status=${v}`).join('&')],
+              ['status=confirmed only', 'status=confirmed'],
+              ['status=new only', 'status=new'],
+              ['status=request only', 'status=request'],
+              ['status=black only', 'status=black'],
+            ]) {
+              const r = await fetch(`${BASE}/bookings?propertyId=${propertyId}&roomId=${roomId}&arrivalFrom=2025-10-01&arrivalTo=2028-12-31&${qs}`, { headers: { accept: 'application/json', token } });
+              const body = await r.json().catch(() => null);
+              const rows = body?.data ?? [];
+              const st = rows.reduce((m, b) => ((m[b.status] = (m[b.status] ?? 0) + 1), m), {});
+              console.log(`  ${how} → HTTP ${r.status}, ${rows.length} booking(s) ${JSON.stringify(st)} nextPage=${body?.pages?.nextPageExists}${r.status !== 200 ? ' ' + JSON.stringify(body).slice(0, 200) : ''}`);
+            }
             const modified = await listAll({ propertyId, roomId, modifiedFrom: '2026-10-01T00:00:00Z' });
             console.log(`  modifiedFrom=2026-10-01 → ${modified.length} booking(s): ${modified.map((b) => `${b.id}:${b.status}`).join(', ')}`);
           }
