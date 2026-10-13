@@ -2,7 +2,7 @@
  * ══════════════════════════════════════════════════════════════════════════
  * THE FIRST WRITE TO BEDS24.
  *
- * One night, on Schulstraße I, ninety-odd days out, held for a few seconds
+ * One night, on Apartment I, sixty-odd days out, held for a few seconds
  * and then released. It answers one question that nothing read-only can:
  *
  *     does creating a booking through our adapter actually close the night,
@@ -47,6 +47,7 @@ import type { Beds24BookingsResponse } from '@/lib/integrations/beds24/types';
 import type { InventoryDay } from '@/lib/booking/types';
 import type { ProviderUnitRef } from '@/lib/integrations/provider';
 import { addDays } from '@/lib/booking/stay-rules';
+import { beds24ConfirmedStatus } from '@/lib/booking/config';
 
 /* ── The guard ──────────────────────────────────────────────────────────── */
 
@@ -65,10 +66,11 @@ describe('write-test guard', () => {
 /* ── Subject ────────────────────────────────────────────────────────────── */
 
 /**
- * Schulstraße I. Confirmed against the live account on 2026-09-17 by
- * enumerating it, not by assumption.
+ * Apartment I — the penthouse with the Dachterrasse (Beds24 354659 /
+ * 731147). Confirmed against the live account by enumerating it, not by
+ * assumption, and its physical identity confirmed by the owners 2026-10-13.
  *
- * Schulstraße II is deliberately NOT exercised. One unit is enough to answer
+ * Apartment II is deliberately NOT written to. One unit is enough to answer
  * the question, and a second doubles the blast radius for no extra
  * information.
  */
@@ -140,6 +142,108 @@ async function inventorySnapshot(): Promise<string> {
 
 let inventoryBefore: string;
 
+/** Distinguishes this run's hold idempotency key from every earlier run's. */
+const RUN_ID = process.env.GITHUB_RUN_ID ?? String(Date.now());
+
+/**
+ * Bookings of both apartments arriving in the month before the night up to
+ * just after it, as a comparable string — the test booking excluded. Taken
+ * before the write and after the cleanup: no other booking may differ.
+ */
+async function bookingsSnapshot(): Promise<string> {
+  const rows: string[] = [];
+  for (const unit of [UNIT, OTHER_UNIT]) {
+    const found = await beds24LiveProvider.findBookings({
+      unit,
+      arrivalFrom: addDays(checkIn, -30),
+      arrivalTo: addDays(checkOut, 3),
+    });
+    for (const b of found) {
+      if (b.externalBookingId === createdBookingId) continue;
+      rows.push(`${unit.externalRoomId}:${b.externalBookingId}:${b.status}:${b.checkIn}:${b.checkOut}`);
+    }
+  }
+  return rows.sort().join(',');
+}
+
+/** The booking as Beds24 stores it, with infoItems (the adapter's read leaves them out). */
+async function readBack(id: string) {
+  const response = await beds24Request<Beds24BookingsResponse>({
+    path: '/bookings',
+    query: { id, includeInfoItems: 'true', includeInvoiceItems: 'false' },
+  });
+  return response.data?.[0];
+}
+
+interface Exchange {
+  httpStatus: number;
+  body: unknown;
+}
+
+/**
+ * Run an adapter call and record every POST /bookings exchange underneath it
+ * — the HTTP status and the parsed response body, whatever the adapter then
+ * makes of them (the client keeps only the status of a non-2xx answer). The
+ * request is not touched and its headers, which carry the token, are never
+ * recorded.
+ */
+async function recordBookingWrites<T>(call: () => Promise<T>): Promise<{ result?: T; error?: unknown; exchanges: Exchange[] }> {
+  const exchanges: Exchange[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const response = await realFetch(input, init);
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if ((init?.method ?? 'GET') === 'POST' && new URL(url).pathname.endsWith('/bookings')) {
+      const text = await response.clone().text();
+      let body: unknown = text;
+      try { body = JSON.parse(text); } catch { /* keep the text */ }
+      exchanges.push({ httpStatus: response.status, body });
+    }
+    return response;
+  }) as typeof fetch;
+  try {
+    return { result: await call(), exchanges };
+  } catch (error) {
+    return { error, exchanges };
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+}
+
+/**
+ * Beds24's answer, safely: HTTP status, success flag, top-level keys,
+ * errors / warnings / info in full (truncated), and only the KEYS of a
+ * returned booking plus its id and status — never guest values.
+ */
+function printExchanges(label: string, exchanges: Exchange[]) {
+  if (exchanges.length === 0) console.log(`  [6] ${label}: no POST /bookings exchange was made`);
+  const keys = (v: unknown) => (v && typeof v === 'object' ? Object.keys(v as object).sort() : v === undefined ? undefined : typeof v);
+  exchanges.forEach((x, i) => {
+    const items = Array.isArray(x.body) ? x.body : [x.body];
+    console.log(`  [6] ${label}#${i + 1}: HTTP ${x.httpStatus}, body is ${Array.isArray(x.body) ? `an array of ${items.length}` : typeof x.body}`);
+    items.forEach((item: unknown, j: number) => {
+      if (!item || typeof item !== 'object') {
+        console.log(`      item ${j}: ${JSON.stringify(item).slice(0, 400)}`);
+        return;
+      }
+      const it = item as Record<string, unknown>;
+      console.log(`      item ${j}: success=${String(it.success)} keys=${JSON.stringify(keys(it))}`);
+      for (const k of ['new', 'modified']) {
+        const b = it[k] as Record<string, unknown> | undefined;
+        if (b !== undefined) console.log(`      ${k}: keys=${JSON.stringify(keys(b))} id=${String(b?.id)} status=${String(b?.status)}`);
+      }
+      for (const k of ['errors', 'warnings', 'info', 'error', 'message']) {
+        if (it[k] !== undefined) console.log(`      ${k}: ${JSON.stringify(it[k]).slice(0, 800)}`);
+      }
+    });
+  });
+}
+
+function errorText(cause: unknown): string {
+  if (cause instanceof Error) return `${cause.name}${'code' in cause ? `(${String((cause as { code: unknown }).code)})` : ''}: ${cause.message}`;
+  return String(cause);
+}
+
 async function readNight(date: string): Promise<InventoryDay | undefined> {
   const days = await beds24LiveProvider.fetchAvailability({
     unit: UNIT,
@@ -176,7 +280,7 @@ describe.runIf(CONFIRMED)('Beds24 hold, confirm and release, against the live ac
     );
   });
 
-  it('holds the night with Offer 2 and the bedroom marker, confirms it, verifies both block, then cancels it and verifies it is free', async () => {
+  it('quote → new → confirmed → cancelled on Apartment I / Offer 2, recording Beds24\'s raw answer to the confirm', async () => {
     // ── Phase 1: the night must be free RIGHT NOW ──────────────────────
     // Re-read immediately before writing rather than trusting the search
     // above. This is also what makes a repeat run safe: a hold left behind
@@ -202,141 +306,160 @@ describe.runIf(CONFIRMED)('Beds24 hold, confirm and release, against the live ac
       bedroomPackage: 'two_bedroom',
     });
     expect(quote.bedroomPricing).toEqual({ status: 'configured', offerId: 2 });
-    console.log(`  Live quote: Offer 2, ${quote.totalCents / 100} ${quote.currency}`);
+    console.log(`  [1] Live quote: Offer 2, ${quote.totalCents / 100} ${quote.currency}`);
     const priceCents = quote.totalCents;
 
-    // Item 9's baseline: both apartments, a week around the night.
+    // Baselines for "nothing else moved": inventory and bookings of BOTH
+    // apartments around the night.
     inventoryBefore = await inventorySnapshot();
+    const bookingsBefore = await bookingsSnapshot();
+
+    // Every failure from here on is RECORDED, not thrown, so that the
+    // cancellation and the post-cleanup checks always run; they are all
+    // asserted together at the very end.
+    const findings: string[] = [];
+    const fail = (message: string) => {
+      findings.push(message);
+      console.log(`  ✗ ${message}`);
+    };
 
     try {
-      // ── Phase 2: create the hold ─────────────────────────────────────
-      console.log(`\n  Creating hold on ${checkIn}…`);
-      const booking = await beds24LiveProvider.createHold({
-        unit: UNIT,
-        unitSlug: UNIT_SLUG,
-        reference: TEST_REFERENCE,
-        checkIn,
-        checkOut,
-        adults: 1,
-        children: 0,
-        bedroomPackage: 'two_bedroom',
-        // Offer 2 = "2 Schlafzimmer" (verified 2026-10-12).
-        providerOfferId: 2,
-        guest: TEST_GUEST,
-        totalCents: priceCents,
-        currency: 'EUR',
-        // Deterministic: the same date always produces the same key, so if
-        // Beds24 honours the idempotency header a retry is a no-op rather
-        // than a second booking.
-        idempotencyKey: `bolagio-write-test:${UNIT_SLUG}:${checkIn}`,
-        holdExpiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
-      });
+      // ── Phase 2: create the hold (status `new`) ──────────────────────
+      console.log(`\n  [2] Creating hold on ${checkIn}…`);
+      const created = await recordBookingWrites(() =>
+        beds24LiveProvider.createHold({
+          unit: UNIT,
+          unitSlug: UNIT_SLUG,
+          reference: TEST_REFERENCE,
+          checkIn,
+          checkOut,
+          adults: 1,
+          children: 0,
+          bedroomPackage: 'two_bedroom',
+          // Offer 2 = "2 Schlafzimmer" (verified 2026-10-12).
+          providerOfferId: 2,
+          guest: TEST_GUEST,
+          totalCents: priceCents,
+          currency: 'EUR',
+          // Unique per run: an earlier run may have used this very night
+          // (and then cancelled it), and a replayed idempotency key must not
+          // be able to hand back that old booking instead of a new one.
+          idempotencyKey: `bolagio-write-test:${UNIT_SLUG}:${checkIn}:${RUN_ID}`,
+          holdExpiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+        })
+      );
+      printExchanges('create', created.exchanges);
+      if (created.error || !created.result) throw created.error ?? new Error('createHold returned nothing');
 
-      createdBookingId = booking.externalBookingId;
-      // Printed immediately, before any assertion can throw. If everything
-      // after this dies, this line is the manual cleanup instruction.
+      createdBookingId = created.result.externalBookingId;
+      // Printed immediately. If everything after this dies, this line is the
+      // manual cleanup instruction.
       console.log(`  ✓ Hold created. Beds24 booking id: ${createdBookingId}`);
       console.log(`    If this run dies from here on, cancel that booking in Beds24.`);
 
-      expect(createdBookingId, 'Beds24 returned no booking id').toBeTruthy();
+      // ── Phase 3: read back — did Beds24 STORE what we sent? ──────────
+      const stored = await readBack(createdBookingId);
+      const marker = (stored?.infoItems ?? []).find((i) => i.code === BEDROOM_INFO_CODE);
+      console.log(`  [3] Read back: status=${stored?.status} offerId=${stored?.offerId} price=${stored?.price}`);
+      console.log(`  [3] Read back: infoItems ${BEDROOM_INFO_CODE}=${JSON.stringify(marker?.text ?? null)}`);
+      console.log(`  [3] Read back: notes contain marker=${String(stored?.notes ?? '').includes('Bedroom setup: 2 Schlafzimmer')}`);
+      if (stored?.status !== 'new') fail(`hold read back as status ${String(stored?.status)}, expected new`);
+      if (Number(stored?.offerId) !== 2) fail(`offerId did not persist (read ${String(stored?.offerId)})`);
+      if (marker?.text !== 'Bedroom setup: 2 Schlafzimmer') fail('the BOLAGIO_BEDROOMS infoItem did not persist');
+      if (Math.round(Number(stored?.price) * 100) !== priceCents) fail(`price did not persist (read ${String(stored?.price)})`);
 
-      // ── Phase 3: did it actually block the night? ────────────────────
-      // The whole point. A hold that does not close the night means the
-      // overbooking protection does nothing, whatever the code says.
+      // ── Phase 4: does `new` block the night? ─────────────────────────
       const during = await readNight(checkIn);
-      console.log(`  After hold: available=${during?.available} canCheckIn=${during?.canCheckIn}`);
-      expect(
-        during?.available,
-        `The hold did NOT block ${checkIn}. The booking status used for holds does not ` +
-          'close inventory for this property — see BOOKING RULES → BOOKING STATUS in Beds24. ' +
-          'The hold is still being released by this test.'
-      ).toBe(false);
+      console.log(`  [4] While new: available=${during?.available} canCheckIn=${during?.canCheckIn}`);
+      if (during?.available !== false) fail(`status new did NOT block ${checkIn}`);
 
-      // ── Phase 3b: did Beds24 STORE the offer and the bedroom marker? ──
-      // Read back with infoItems (the adapter's own read leaves them out).
-      // Soft assertions: every finding is reported, and the booking is
-      // still promoted and released whatever this phase finds.
-      const stored = await beds24Request<Beds24BookingsResponse>({
-        path: '/bookings',
-        query: { id: createdBookingId!, includeInfoItems: 'true', includeInvoiceItems: 'false' },
-      });
-      const record = stored.data?.[0];
-      const marker = (record?.infoItems ?? []).find((i) => i.code === BEDROOM_INFO_CODE);
-      console.log(`  Read back: offerId=${record?.offerId} status=${record?.status} price=${record?.price}`);
-      console.log(`  Read back: infoItems ${BEDROOM_INFO_CODE}=${JSON.stringify(marker?.text ?? null)}`);
-      console.log(`  Read back: notes contain marker=${String(record?.notes ?? '').includes('Bedroom setup: 2 Schlafzimmer')}`);
-      expect.soft(Number(record?.offerId), 'offerId did not persist on the Beds24 booking').toBe(2);
-      expect.soft(marker?.text, 'the bedroom-setup infoItem did not persist').toBe('Bedroom setup: 2 Schlafzimmer');
-      expect.soft(String(record?.notes ?? ''), 'the notes marker did not persist').toContain('Bedroom setup: 2 Schlafzimmer');
-      expect.soft(Math.round(Number(record?.price) * 100), 'the verified total did not persist').toBe(priceCents);
+      // ── Phase 5–10: the confirm, exactly as the finalizer sends it ────
+      // `beds24LiveProvider.confirmBooking` IS the production path
+      // (lib/booking/finalization.ts). The HTTP exchange underneath it is
+      // recorded so Beds24's own answer is visible whatever the adapter
+      // makes of it: status code, success flag, errors/warnings/info, and
+      // the KEYS of any returned booking.
+      const target = beds24ConfirmedStatus();
+      console.log(
+        `\n  [5] Promoting ${createdBookingId}: new → ${target} ` +
+          `(BEDS24_CONFIRMED_STATUS ${process.env.BEDS24_CONFIRMED_STATUS ? 'set' : 'unset — default'})`
+      );
+      const confirm = await recordBookingWrites(() => beds24LiveProvider.confirmBooking(createdBookingId!));
+      printExchanges('confirm', confirm.exchanges);
+      console.log(
+        `  [10] Adapter: ${confirm.error ? `threw ${errorText(confirm.error)}` : `returned status=${confirm.result?.status} id=${confirm.result?.externalBookingId}`}`
+      );
 
-      // ── Phase 3c: promote to the CONFIRMED status, exactly as the
-      // finalizer does after payment — does that status block too? ──
-      console.log(`\n  Promoting ${createdBookingId} to the confirmed status…`);
-      // Run 38301108120: Beds24 refused this promotion as the adapter sends
-      // it. The exact write is repeated raw first and Beds24's answer printed
-      // — success flag, errors/warnings/info and the KEYS of the returned
-      // booking, never values — so the cause is visible, not inferred.
-      const raw = await beds24Request<unknown>({
-        path: '/bookings',
-        method: 'POST',
-        idempotencyKey: `confirm:${createdBookingId}`,
-        body: [{ id: Number(createdBookingId), status: 'confirmed' }],
-      });
-      const first = (Array.isArray(raw) ? raw[0] : raw) as Record<string, unknown> | undefined;
-      const shape = (v: unknown) => (v && typeof v === 'object' ? Object.keys(v as object).sort() : v);
-      console.log(`  Raw confirm answer: success=${String(first?.success)} keys=${JSON.stringify(shape(first))}`);
-      console.log(`    new=${JSON.stringify(shape(first?.new))} modified=${JSON.stringify(shape(first?.modified))}`);
-      for (const k of ['errors', 'warnings', 'info']) {
-        if (first?.[k]) console.log(`    ${k}: ${JSON.stringify(first[k]).slice(0, 600)}`);
+      // Immediately: what does Beds24 now hold?
+      const afterConfirm = await readBack(createdBookingId);
+      const markerAfter = (afterConfirm?.infoItems ?? []).find((i) => i.code === BEDROOM_INFO_CODE);
+      console.log(
+        `  [7] Read back after confirm: status=${afterConfirm?.status} offerId=${afterConfirm?.offerId} ` +
+          `price=${afterConfirm?.price} marker=${JSON.stringify(markerAfter?.text ?? null)}`
+      );
+
+      // ── Classification: rejected, misread, or wrong value ───────────
+      const accepted = afterConfirm?.status === target;
+      const adapterAccepted = !confirm.error && confirm.result?.status === target;
+      const verdict = accepted
+        ? adapterAccepted
+          ? 'ACCEPTED by Beds24, and the adapter read the answer correctly'
+          : 'ACCEPTED by Beds24, but the adapter MISREAD the answer'
+        : confirm.error
+          ? 'REJECTED by Beds24 (status unchanged), and the adapter reported a rejection'
+          : 'NOT APPLIED by Beds24, but the adapter reported SUCCESS';
+      console.log(`  [8] Verdict: ${verdict}`);
+      if (!accepted) fail(`Beds24 did not apply status ${target} (reads ${String(afterConfirm?.status)})`);
+      if (accepted !== adapterAccepted) fail('the adapter\'s interpretation of the confirm answer does not match what Beds24 stored');
+      if (accepted && Number(afterConfirm?.offerId) !== 2) fail('offerId changed on confirm');
+      if (accepted && Math.round(Number(afterConfirm?.price) * 100) !== priceCents) fail('price changed on confirm');
+
+      // ── Phase 9: does `confirmed` block the night? ───────────────────
+      if (accepted) {
+        const whileConfirmed = await readNight(checkIn);
+        console.log(`  [9] While ${target}: available=${whileConfirmed?.available} canCheckIn=${whileConfirmed?.canCheckIn}`);
+        if (whileConfirmed?.available !== false) fail(`status ${target} did NOT block ${checkIn}`);
+      } else {
+        console.log(`  [9] Not tested — the booking never reached ${target}.`);
       }
-      const confirmedBooking = await beds24LiveProvider.confirmBooking(createdBookingId!);
-      const readConfirmed = await beds24LiveProvider.getBooking(createdBookingId!);
-      console.log(`  After confirm: status=${readConfirmed?.status ?? confirmedBooking.status} offerId=${readConfirmed?.offerId}`);
-      expect.soft(readConfirmed?.status, 'the booking did not land in the confirmed status').toBe('confirmed');
-      const whileConfirmed = await readNight(checkIn);
-      console.log(`  While confirmed: available=${whileConfirmed?.available} canCheckIn=${whileConfirmed?.canCheckIn}`);
-      expect(
-        whileConfirmed?.available,
-        `A CONFIRMED booking did NOT block ${checkIn}. Paid bookings would not protect ` +
-          'inventory — check BOOKING RULES → BOOKING STATUS in Beds24. The booking is still being cancelled.'
-      ).toBe(false);
+    } catch (cause) {
+      fail(`aborted: ${errorText(cause)}`);
     } finally {
-      // ── Phase 4: release, always ─────────────────────────────────────
-      // In `finally` so a failed assertion in phase 3 still gives the night
-      // back. Leaving a night closed on Booking.com and Airbnb because a test
-      // threw would be a real cost to the business.
+      // ── Phase 11: cancel, always ─────────────────────────────────────
+      // In `finally` so nothing above can leave the night closed on
+      // Booking.com and Airbnb.
       if (createdBookingId) {
-        console.log(`\n  Cancelling test booking ${createdBookingId}…`);
-        await beds24LiveProvider.releaseHold(createdBookingId, 'write_test_cleanup');
-        console.log('  ✓ Release call completed.');
+        console.log(`\n  [11] Cancelling test booking ${createdBookingId}…`);
+        try {
+          await beds24LiveProvider.releaseHold(createdBookingId, 'write_test_cleanup');
+          console.log('  ✓ Release call completed.');
+        } catch (cause) {
+          fail(`the cancellation call failed: ${errorText(cause)} — CANCEL ${createdBookingId} BY HAND`);
+        }
       }
     }
 
-    // ── Phase 5: is the night genuinely back? ──────────────────────────
-    // Reached only if phase 3 passed. If the release silently failed, this
-    // is what catches it — and it fails loudly, because a night left closed
-    // is inventory nobody can sell.
+    // ── Phase 12: is everything genuinely back? (always runs) ──────────
+    if (createdBookingId) {
+      const final = await readBack(createdBookingId);
+      console.log(`  [12] Final booking status: ${final?.status}`);
+      if (final?.status !== 'cancelled') fail(`test booking reads ${String(final?.status)}, not cancelled — CANCEL ${createdBookingId} BY HAND`);
+    }
     const after = await readNight(checkIn);
-    console.log(`  After release: available=${after?.available} canCheckIn=${after?.canCheckIn}`);
-    expect(
-      after?.available,
-      `${checkIn} is STILL BLOCKED after the release. Cancel Beds24 booking ` +
-        `${createdBookingId} by hand immediately.`
-    ).toBe(true);
-    expect(after?.canCheckIn).toBe(baseline?.canCheckIn);
+    console.log(`  [12] After cancel: available=${after?.available} canCheckIn=${after?.canCheckIn}`);
+    if (after?.available !== true) fail(`${checkIn} is STILL BLOCKED after the cancellation`);
+    if (after?.canCheckIn !== baseline?.canCheckIn) fail('canCheckIn differs from the baseline');
 
-    // Nothing else moved: both apartments, the week around the night,
-    // exactly as before the write.
     const inventoryAfter = await inventorySnapshot();
-    console.log(`  Inventory around the night, both apartments, unchanged: ${inventoryAfter === inventoryBefore}`);
-    expect(inventoryAfter, 'inventory around the test night differs from before the write').toBe(inventoryBefore);
+    console.log(`  [12] Inventory around the night, both apartments, unchanged: ${inventoryAfter === inventoryBefore}`);
+    if (inventoryAfter !== inventoryBefore) fail('inventory around the test night differs from before the write');
 
-    const final = await beds24LiveProvider.getBooking(createdBookingId!);
-    console.log(`  Final booking status: ${final?.status}`);
-    expect(final?.status, 'the test booking is not cancelled').toBe('cancelled');
+    const bookingsAfter = await bookingsSnapshot();
+    console.log(`  [12] Other bookings around the night, both apartments, unchanged: ${bookingsAfter === bookingsBefore}`);
+    if (bookingsAfter !== bookingsBefore) fail('another booking around the test night changed during the run');
 
-    console.log(`\n  ✓ Hold and confirmed status both blocked the night; the cancellation gave it back.`);
+    console.log(findings.length === 0 ? '\n  ✓ quote → new → confirmed → cancelled proven.' : `\n  ${findings.length} finding(s).`);
+    expect(findings).toEqual([]);
   });
 
   afterAll(() => {

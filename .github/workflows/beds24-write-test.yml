@@ -1,7 +1,7 @@
 # ══════════════════════════════════════════════════════════════════════════
 # ⚠ THE ONLY WORKFLOW IN THIS REPOSITORY THAT WRITES TO BEDS24.
 #
-# It creates ONE temporary hold on ONE night of Schulstraße I, checks that
+# It creates ONE temporary hold on ONE night of Apartment I (354659/731147), checks that
 # the night is closed, releases the hold, and checks that the night is open
 # again. Then it stops. Nothing else.
 #
@@ -24,7 +24,7 @@
 #
 # ── What it does NOT touch ───────────────────────────────────────────────
 # Stripe, PayPal, n8n, payments, invoices, Supabase, booking intents, the
-# guest-facing flow, Schulstraße II, and any reservation it did not create
+# guest-facing flow, Apartment II, and any reservation it did not create
 # itself. The only booking it can cancel is the one Beds24 just handed it
 # an id for.
 #
@@ -114,7 +114,7 @@ jobs:
           {
             echo "## ⚠ Beds24 write test — hold and release"
             echo ""
-            echo "Unit under test: \`schulstrasse-i\` — Beds24 property \`354659\`, room \`731147\`"
+            echo "Unit under test: Apartment I \`schulstrasse-i\` — Beds24 property \`354659\`, room \`731147\`"
             echo ""
             if [ "$WRITE_OUTCOME" = "success" ]; then
               echo "### ✅ Passed"
