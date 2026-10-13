@@ -675,6 +675,66 @@ jobs:
           NODE_EOF
           node "$RUNNER_TEMP/identity-audit-2.mjs"
 
+      # ── PART A6 — RESERVATION COMPARISON SOURCE (read-only) ───────────
+      # Every Beds24 booking on both mapped rooms, for comparison with
+      # bolagio_reservations. Prints ids, status, dates, channel id, offer,
+      # price, currency and timestamps, plus only the PRESENCE of guest
+      # fields (never their values). Also answers three contract questions
+      # the sweep depends on: does GET /bookings return cancelled bookings
+      # without a status filter; does the status filter work; does
+      # modifiedFrom work. GET only.
+      - name: "Part A6 — reservation comparison source (read-only)"
+        if: always()
+        continue-on-error: true
+        env:
+          BEDS24_REFRESH_TOKEN: ${{ secrets.BEDS24_REFRESH_TOKEN }}
+        run: |
+          set -euo pipefail
+          cat <<'NODE_EOF' > "$RUNNER_TEMP/reservation-compare.mjs"
+          const BASE = 'https://beds24.com/api/v2';
+          const ROOMS = [['apartment-i', '354659', '731147'], ['apartment-ii', '354658', '731146']];
+          const auth = await fetch(`${BASE}/authentication/token`, { headers: { accept: 'application/json', refreshToken: process.env.BEDS24_REFRESH_TOKEN?.trim() ?? '' } });
+          const token = (await auth.json().catch(() => null))?.token;
+          if (!token) { console.log(`✗ auth failed HTTP ${auth.status}`); process.exit(1); }
+          const get = async (path, params) => {
+            const r = await fetch(`${BASE}${path}?${new URLSearchParams(params)}`, { headers: { accept: 'application/json', token } });
+            return { status: r.status, body: await r.json().catch(() => null) };
+          };
+          const listAll = async (params) => {
+            const out = []; const seen = new Set();
+            for (let page = 1; page <= 20; page++) {
+              const r = await get('/bookings', { ...params, page: String(page) });
+              const rows = r.body?.data ?? [];
+              if (r.status !== 200) { console.log(`  HTTP ${r.status} ${JSON.stringify(r.body).slice(0, 200)}`); break; }
+              let fresh = 0;
+              for (const b of rows) if (!seen.has(b.id)) { seen.add(b.id); out.push(b); fresh++; }
+              if (!fresh || r.body?.pages?.nextPageExists === false) break;
+            }
+            return out;
+          };
+          const has = (v) => (v !== undefined && v !== null && String(v).trim() !== '' ? 'y' : '-');
+          const keys = new Set();
+          for (const [label, propertyId, roomId] of ROOMS) {
+            const all = await listAll({ propertyId, roomId, arrivalFrom: '2025-10-01', arrivalTo: '2028-12-31', includeInvoiceItems: 'false' });
+            all.sort((a, b) => String(a.arrival).localeCompare(String(b.arrival)) || a.id - b.id);
+            console.log(`\n${label} (${propertyId}/${roomId}) — ${all.length} booking(s), no status filter:`);
+            console.log('  id | status | arrival→departure | apiSourceId | offerId | price | currency | adults+children | name,email,phone,apiRef | bookingTime | modifiedTime');
+            for (const b of all) {
+              Object.keys(b).forEach((k) => keys.add(k));
+              console.log(`  ${b.id} | ${b.status} | ${b.arrival}→${b.departure} | ${b.apiSourceId ?? '-'} | ${b.offerId ?? '-'} | ${b.price ?? '-'} | ${b.currency ?? '-'} | ${b.numAdult ?? '?'}+${b.numChild ?? '?'} | ${has(b.lastName)}${has(b.email)}${has(b.phone)}${has(b.apiReference)} | ${b.bookingTime ?? '-'} | ${b.modifiedTime ?? '-'}`);
+            }
+            const byStatus = all.reduce((m, b) => ((m[b.status] = (m[b.status] ?? 0) + 1), m), {});
+            console.log(`  by status: ${JSON.stringify(byStatus)}`);
+            const cancelled = await listAll({ propertyId, roomId, arrivalFrom: '2025-10-01', arrivalTo: '2028-12-31', status: 'cancelled' });
+            console.log(`  status=cancelled filter → ${cancelled.length} booking(s): ${cancelled.map((b) => b.id).join(', ')}`);
+            const modified = await listAll({ propertyId, roomId, modifiedFrom: '2026-10-01T00:00:00Z' });
+            console.log(`  modifiedFrom=2026-10-01 → ${modified.length} booking(s): ${modified.map((b) => `${b.id}:${b.status}`).join(', ')}`);
+          }
+          console.log(`\nFields present on booking objects: ${[...keys].sort().join(', ')}`);
+          console.log('\nGET only. Nothing was created or modified.');
+          NODE_EOF
+          node "$RUNNER_TEMP/reservation-compare.mjs"
+
       # ── PART B ─────────────────────────────────────────────────────────
       # No credential from here on. Feature-branch code executes only in
       # these steps, and only after the token has gone out of scope.
