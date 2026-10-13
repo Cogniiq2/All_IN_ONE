@@ -225,7 +225,7 @@ export const beds24LiveProvider: BookingProvider = {
       idempotencyKey: `confirm:${externalBookingId}`,
       body: [{ id: Number(externalBookingId) || externalBookingId, status: confirmedStatus() }],
     });
-    return readWriteResponse(response, 'confirm');
+    return readModifyResponse(response, externalBookingId);
   },
 
   async releaseHold(externalBookingId: string, reason: string): Promise<void> {
@@ -284,9 +284,43 @@ function previousDay(date: string): string {
  * treating it as a success would mean recording a hold that does not exist and
  * selling the night twice.
  */
+/**
+ * Read Beds24's answer to a MODIFY of an existing booking.
+ *
+ * Unlike a create, Beds24 echoes only the fields that changed: the live
+ * confirm of booking 94599996 (write-test run 38356575930, 2026-10-13)
+ * answered HTTP 201 `[{ success: true, modified: { status: "confirmed" } }]`
+ * — no `id` — and had applied the change. So the booking is identified by
+ * the id we addressed, and acceptance needs an explicit `success: true` plus
+ * a `modified` object; an id that IS echoed must be ours. The status is
+ * Beds24's claim only: the finalizer reads the booking back and verifies it.
+ */
+function readModifyResponse(response: Beds24BookingWriteResponse, externalBookingId: string): ProviderBooking {
+  const first = Array.isArray(response) ? response[0] : undefined;
+  const modified = first?.modified;
+  const echoedId = modified?.id;
+  const echoesAnotherBooking = echoedId !== undefined && echoedId !== null && String(echoedId) !== String(externalBookingId);
+
+  if (first?.success !== true || !modified || typeof modified !== 'object' || echoesAnotherBooking) {
+    throw new ProviderError('rejected', 'Beds24 rejected the confirm');
+  }
+
+  return {
+    externalBookingId: String(externalBookingId),
+    snapshot: modified,
+    status: modified.status ? String(modified.status) : undefined,
+    externalPropertyId: modified.propertyId !== undefined ? String(modified.propertyId) : undefined,
+    externalRoomId: modified.roomId !== undefined ? String(modified.roomId) : undefined,
+    checkIn: modified.arrival,
+    checkOut: modified.departure,
+    reference: modified.reference,
+    offerId: readOfferId(modified.offerId),
+  };
+}
+
 function readWriteResponse(
   response: Beds24BookingWriteResponse,
-  operation: 'hold' | 'confirm'
+  operation: 'hold'
 ): ProviderBooking {
   const first = Array.isArray(response) ? response[0] : undefined;
   const booking = first?.new ?? first?.modified;
@@ -296,10 +330,7 @@ function readWriteResponse(
     // Beds24's own error text is deliberately not carried into the message: it
     // can echo request parameters, and nothing a provider writes may reach a
     // guest-facing screen.
-    throw new ProviderError(
-      operation === 'hold' ? 'availability_conflict' : 'rejected',
-      `Beds24 rejected the ${operation}`
-    );
+    throw new ProviderError('availability_conflict', `Beds24 rejected the ${operation}`);
   }
 
   return {

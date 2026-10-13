@@ -235,7 +235,9 @@ export function createBeds24Sim() {
       if (mode === 'failure') return json(res, 200, [{ success: false, errors: [{ field: 'status', message: 'not accepted' }] }]);
       b.status = mode === 'status_mismatch' ? 'request' : item.status;
       if (mode === 'response_lost') return req.socket.destroy();
-      return json(res, 200, [{ success: true, modified: bookingView(b) }]);
+      // As the live API answers a modify (run 38356575930): 201, and only the
+      // changed fields — no id.
+      return json(res, 201, [{ success: true, modified: { status: b.status } }]);
     }
 
     return json(res, 404, { success: false, error: 'unknown endpoint' });

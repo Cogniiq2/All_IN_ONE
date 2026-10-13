@@ -269,6 +269,43 @@ describe('live adapter', () => {
   });
 });
 
+/**
+ * The confirm (`new` → `confirmed`), against the answer Beds24 ACTUALLY gave
+ * in write-test run 38356575930 (booking 94599996, 2026-10-13): HTTP 201,
+ * `success: true`, and a `modified` object carrying ONLY the changed field —
+ * no `id`. Beds24 had applied the change (read back: `confirmed`); the
+ * adapter called it a rejection because it looked for `modified.id`.
+ */
+describe('live adapter — confirm', () => {
+  const LIVE_CONFIRM_ANSWER = [{ success: true, modified: { status: 'confirmed' } }];
+
+  it('accepts the recorded live answer: success, modified without an id', async () => {
+    beds24Request.mockResolvedValue(LIVE_CONFIRM_ANSWER);
+    const confirmed = await beds24LiveProvider.confirmBooking('94599996');
+    expect(confirmed.externalBookingId).toBe('94599996');
+    expect(confirmed.status).toBe('confirmed');
+    const call = beds24Request.mock.calls[0][0] as { method: string; path: string; body: unknown };
+    expect(call).toMatchObject({ method: 'POST', path: '/bookings', body: [{ id: 94599996, status: 'confirmed' }] });
+  });
+
+  it('still accepts a modified answer that does carry the id', async () => {
+    beds24Request.mockResolvedValue([{ success: true, modified: { id: 94599996, status: 'confirmed' } }]);
+    await expect(beds24LiveProvider.confirmBooking('94599996')).resolves.toMatchObject({ externalBookingId: '94599996', status: 'confirmed' });
+  });
+
+  it.each<[string, unknown]>([
+    ['success: false', [{ success: false, errors: [{ field: 'status', message: 'not accepted' }] }]],
+    ['no success flag', [{ modified: { status: 'confirmed' } }]],
+    ['success without a modified object', [{ success: true }]],
+    ['an empty array', []],
+    ['not an array', { success: true, modified: { status: 'confirmed' } }],
+    ['a modified id for a different booking', [{ success: true, modified: { id: 1, status: 'confirmed' } }]],
+  ])('still rejects %s', async (_label, answer) => {
+    beds24Request.mockResolvedValue(answer);
+    await expect(beds24LiveProvider.confirmBooking('94599996')).rejects.toMatchObject({ code: 'rejected' });
+  });
+});
+
 /* ── Mock fixtures ─────────────────────────────────────────────────────── */
 
 describe('mock fixtures', () => {
