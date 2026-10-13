@@ -132,7 +132,7 @@ const SECTION_LABELS: Record<string, Localized> = {
   '02-kueche': { de: 'Küche', en: 'Kitchen' },
   '03-schlafzimmer-1': { de: 'Schlafzimmer 1', en: 'Bedroom 1' },
   '04-schlafzimmer-2': { de: 'Schlafzimmer 2', en: 'Bedroom 2' },
-  '05-balkon': { de: 'Balkon', en: 'Balcony' },
+  '05-terrasse': { de: 'Terrasse', en: 'Terrace' },
   '05-dachterrasse': { de: 'Dachterrasse', en: 'Roof terrace' },
   '06-badezimmer': { de: 'Badezimmer', en: 'Bathroom' },
   '07-vorraum-aufzug': { de: 'Eingangsbereich & Aufzug', en: 'Entrance & lift' },
@@ -226,15 +226,17 @@ export function hasVerifiedMedia(slug: string): boolean {
  * land.
  */
 const COVER_OF_PROPERTY: Record<string, string> = {
-  // The living room square-on: the sofa centred under the artwork, both tall
-  // period windows in frame, afternoon light across the floor. The one frame
-  // that says "period building, done properly" before a word is read, and it
-  // survives the card's crop because its subject is dead centre.
-  'schulstrasse-i': '01-wohnzimmer/IMG_4678',
-  // The living area under the roof, looking through to the dining end. It
-  // shows what actually distinguishes this flat — the exposed timber and the
-  // open split level — where a tighter frame would just show a sofa.
-  'schulstrasse-ii': '01-wohnzimmer/IMG_4698',
+  // Apartment I — the penthouse. The living area under the roof, looking
+  // through to the dining end. It shows what actually distinguishes this
+  // flat — the exposed timber and the open split level — where a tighter
+  // frame would just show a sofa.
+  'schulstrasse-i': '01-wohnzimmer/IMG_4698',
+  // Apartment II. The living room square-on: the sofa centred under the
+  // artwork, both tall period windows in frame, afternoon light across the
+  // floor. The one frame that says "period building, done properly" before a
+  // word is read, and it survives the card's crop because its subject is dead
+  // centre.
+  'schulstrasse-ii': '01-wohnzimmer/IMG_4678',
   // The full shopfront at dusk, lit from inside, with the street running past.
   // The other two exteriors are a single window and a steeper angle; this is
   // the only one that shows the whole frontage, and the only landscape frame,

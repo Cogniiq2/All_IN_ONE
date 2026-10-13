@@ -37,8 +37,8 @@
 
 insert into bolagio_units (slug, display_name, max_guests, min_nights, currency, is_bookable, timezone, check_in_time, check_out_time)
 values
-  ('schulstrasse-i',    'Schulstraße I',    null, null, 'EUR', false, 'Europe/Berlin', '14:00', '11:00'),
-  ('schulstrasse-ii',   'Schulstraße II',   null, null, 'EUR', false, 'Europe/Berlin', '14:00', '11:00'),
+  ('schulstrasse-i',    'Design - Apartment I · Premium Penthouse mit Dachterrasse',    null, null, 'EUR', false, 'Europe/Berlin', '14:00', '11:00'),
+  ('schulstrasse-ii',   'Design - Apartment II · Premium Wohnung mit Terrasse',   null, null, 'EUR', false, 'Europe/Berlin', '14:00', '11:00'),
   -- The three Opernstraße flats are in renovation. They carry
   -- status 'in-preparation' in the content file, which already keeps them out
   -- of the booking flow; they are listed here so their mapping can be prepared

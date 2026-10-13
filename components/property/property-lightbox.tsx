@@ -48,7 +48,7 @@ const ZOOM_STEPS = [1, 1.75, 2.75, 4] as const;
 export interface LightboxSource {
   images: RawPropertyImage[];
   sectionOf: GallerySection[];
-  /** "Wohnzimmer – Apartment Schulstraße I", built by the caller. */
+  /** "Wohnzimmer – Design - Apartment I · …", built by the caller. */
   altFor: (index: number) => string;
 }
 

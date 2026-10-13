@@ -41,8 +41,8 @@ const ts = (offset: number, hour = 10) => new Date(`${d(offset)}T${String(hour).
 const thisYear = Number(today.slice(0, 4));
 
 export const FIXTURE_UNITS = [
-  { id: 'u-s1', slug: 'schulstrasse-i', display_name: 'Schulstraße I', is_bookable: true },
-  { id: 'u-s2', slug: 'schulstrasse-ii', display_name: 'Schulstraße II', is_bookable: true },
+  { id: 'u-s1', slug: 'schulstrasse-i', display_name: 'Design - Apartment I · Premium Penthouse mit Dachterrasse', is_bookable: true },
+  { id: 'u-s2', slug: 'schulstrasse-ii', display_name: 'Design - Apartment II · Premium Wohnung mit Terrasse', is_bookable: true },
   { id: 'u-o1', slug: 'opernstrasse-i', display_name: 'Opernstraße I', is_bookable: false },
   { id: 'u-o2', slug: 'opernstrasse-ii', display_name: 'Opernstraße II', is_bookable: false },
   { id: 'u-o3', slug: 'opernstrasse-iii', display_name: 'Opernstraße III', is_bookable: false },
@@ -238,26 +238,26 @@ for (const s of STAYS) {
   doc({ document_type: 'paypal_statement', original_filename: `paypal-activity-${monthKey(d(-1))}.csv`, mime_type: 'text/csv', document_date: d(-1), counterparty_id: CP.paypal.id, source: 'import' }, { type: 'transaction', id: t.id });
 }
 
-/* Cleaning: monthly invoices per unit; last month's Schulstraße II invoice is MISSING its document; one is unpaid and due. */
+/* Cleaning: monthly invoices per unit; last month's Apartment II invoice is MISSING its document; one is unpaid and due. */
 const TURNOVER_COSTS: TurnoverCostRow[] = [];
 {
   const prev = monthKey(d(-35));
-  const c1 = post({ kind: 'expense', booked_on: d(-32), service_from: `${prev}-01`, service_to: d(-32), invoice_date: d(-30), due_on: d(-16), description: `Turnover cleaning ${prev} · Schulstraße I (4 turnovers)`, counterparty_id: CP.clean.id, counterparty_label: CP.clean.name, supplier_invoice_no: `RE-${thisYear}-0412`, unit_id: 'u-s1', source_type: 'manual', source_system: 'manual', source_reference: 'exp:clean-prev-s1', document_state: 'complete', posted_by: 'ops@example.com' }, [
+  const c1 = post({ kind: 'expense', booked_on: d(-32), service_from: `${prev}-01`, service_to: d(-32), invoice_date: d(-30), due_on: d(-16), description: `Turnover cleaning ${prev} · Apartment I (4 turnovers)`, counterparty_id: CP.clean.id, counterparty_label: CP.clean.name, supplier_invoice_no: `RE-${thisYear}-0412`, unit_id: 'u-s1', source_type: 'manual', source_system: 'manual', source_reference: 'exp:clean-prev-s1', document_state: 'complete', posted_by: 'ops@example.com' }, [
     { category: 'cleaning', taxCode: 'DE_STANDARD', net: 34_000, description: '4 × Endreinigung à € 85,00', quantity: 4, classification: 'auto_verified' },
   ]);
   const c1p = pay({ direction: 'out', source: 'bank', provider_reference: 'SPK-2026-09-0044', amount_cents: c1.gross_cents, occurred_at: ts(-18), counterparty_label: CP.clean.name, reference_text: `RE-${thisYear}-0412`, kind: 'disbursement' });
   match(c1, c1p, 'matched', 'R4 reference-text', 'high', `Bank reference names RE-${thisYear}-0412 and equals the gross.`);
   doc({ document_type: 'supplier_invoice', original_filename: `sauber-co-RE-${thisYear}-0412.pdf`, document_date: d(-30), counterparty_id: CP.clean.id }, { type: 'transaction', id: c1.id });
 
-  const c2 = post({ kind: 'expense', booked_on: d(-32), service_from: `${prev}-01`, service_to: d(-32), invoice_date: d(-30), due_on: d(-16), description: `Turnover cleaning ${prev} · Schulstraße II (3 turnovers)`, counterparty_id: CP.clean.id, counterparty_label: CP.clean.name, supplier_invoice_no: `RE-${thisYear}-0413`, unit_id: 'u-s2', source_type: 'manual', source_system: 'manual', source_reference: 'exp:clean-prev-s2', document_state: 'missing', posted_by: 'ops@example.com' }, [
+  const c2 = post({ kind: 'expense', booked_on: d(-32), service_from: `${prev}-01`, service_to: d(-32), invoice_date: d(-30), due_on: d(-16), description: `Turnover cleaning ${prev} · Apartment II (3 turnovers)`, counterparty_id: CP.clean.id, counterparty_label: CP.clean.name, supplier_invoice_no: `RE-${thisYear}-0413`, unit_id: 'u-s2', source_type: 'manual', source_system: 'manual', source_reference: 'exp:clean-prev-s2', document_state: 'missing', posted_by: 'ops@example.com' }, [
     { category: 'cleaning', taxCode: 'DE_STANDARD', net: 25_500, description: '3 × Endreinigung à € 85,00', quantity: 3, classification: 'auto_verified' },
   ]);
   const c2p = pay({ direction: 'out', source: 'bank', provider_reference: 'SPK-2026-09-0045', amount_cents: c2.gross_cents, occurred_at: ts(-18), counterparty_label: CP.clean.name, reference_text: `RE-${thisYear}-0413`, kind: 'disbursement' });
   match(c2, c2p, 'matched', 'R4 reference-text', 'high', `Bank reference names RE-${thisYear}-0413 and equals the gross.`);
 
   const c3 = post({ kind: 'expense', booked_on: d(-3), service_from: `${monthKey(d(-3))}-01`, service_to: d(-3), invoice_date: d(-2), due_on: d(12), description: `Turnover cleaning ${monthKey(d(-3))} · both units (5 turnovers)`, counterparty_id: CP.clean.id, counterparty_label: CP.clean.name, supplier_invoice_no: `RE-${thisYear}-0455`, source_type: 'manual', source_system: 'manual', source_reference: 'exp:clean-cur', document_state: 'complete', posted_by: 'ops@example.com' }, [
-    { category: 'cleaning', taxCode: 'DE_STANDARD', net: 25_500, description: '3 × Endreinigung Schulstraße I', quantity: 3, unitId: 'u-s1', classification: 'auto_verified' },
-    { category: 'cleaning', taxCode: 'DE_STANDARD', net: 17_000, description: '2 × Endreinigung Schulstraße II', quantity: 2, unitId: 'u-s2', classification: 'auto_verified' },
+    { category: 'cleaning', taxCode: 'DE_STANDARD', net: 25_500, description: '3 × Endreinigung Apartment I', quantity: 3, unitId: 'u-s1', classification: 'auto_verified' },
+    { category: 'cleaning', taxCode: 'DE_STANDARD', net: 17_000, description: '2 × Endreinigung Apartment II', quantity: 2, unitId: 'u-s2', classification: 'auto_verified' },
   ]);
   doc({ document_type: 'supplier_invoice', original_filename: `sauber-co-RE-${thisYear}-0455.pdf`, document_date: d(-2), counterparty_id: CP.clean.id }, { type: 'transaction', id: c3.id });
   const cleanLines = LINES.filter((l) => l.transaction_id === c3.id);
@@ -273,8 +273,8 @@ const TURNOVER_COSTS: TurnoverCostRow[] = [];
 /* Laundry, allocated by occupied nights. */
 {
   const t = post({ kind: 'expense', booked_on: d(-12), invoice_date: d(-12), due_on: d(2), description: 'Linen service · September', counterparty_id: CP.laundry.id, counterparty_label: CP.laundry.name, supplier_invoice_no: '2026-1188', source_type: 'manual', source_system: 'manual', source_reference: 'exp:laundry-sep', document_state: 'complete', posted_by: 'ops@example.com' }, [
-    { category: 'laundry', taxCode: 'DE_STANDARD', net: 11_200, description: 'Linen · Schulstraße I (allocated 56 % by occupied nights)', unitId: 'u-s1', allocation: 'occupied_nights', classification: 'auto_verified' },
-    { category: 'laundry', taxCode: 'DE_STANDARD', net: 8_800, description: 'Linen · Schulstraße II (allocated 44 % by occupied nights)', unitId: 'u-s2', allocation: 'occupied_nights', classification: 'auto_verified' },
+    { category: 'laundry', taxCode: 'DE_STANDARD', net: 11_200, description: 'Linen · Apartment I (allocated 56 % by occupied nights)', unitId: 'u-s1', allocation: 'occupied_nights', classification: 'auto_verified' },
+    { category: 'laundry', taxCode: 'DE_STANDARD', net: 8_800, description: 'Linen · Apartment II (allocated 44 % by occupied nights)', unitId: 'u-s2', allocation: 'occupied_nights', classification: 'auto_verified' },
   ]);
   doc({ document_type: 'supplier_invoice', original_filename: 'waescherei-2026-1188.pdf', document_date: d(-12), counterparty_id: CP.laundry.id }, { type: 'transaction', id: t.id });
 }
@@ -296,8 +296,8 @@ const TURNOVER_COSTS: TurnoverCostRow[] = [];
 /* IKEA: one invoice split over two units + admin; two lines asset candidates. */
 {
   const t = post({ kind: 'expense', booked_on: d(-24), invoice_date: d(-24), due_on: d(-24), description: 'IKEA Nürnberg · furnishings and office', counterparty_id: CP.ikea.id, counterparty_label: CP.ikea.name, supplier_invoice_no: '20260827-115522', source_type: 'manual', source_system: 'manual', source_reference: 'exp:ikea-aug', document_state: 'complete', payment_state: 'paid', reconciliation_state: 'matched', posted_by: 'ops@example.com' }, [
-    { category: 'furniture', taxCode: 'DE_STANDARD', net: 40_000, description: 'Sofa bed SÖDERHAMN · Schulstraße I', unitId: 'u-s1', allocation: 'manual', assetState: 'candidate', classification: 'reviewed' },
-    { category: 'furniture', taxCode: 'DE_STANDARD', net: 25_000, description: 'Wardrobe PAX · Schulstraße II', unitId: 'u-s2', allocation: 'manual', assetState: 'candidate', classification: 'reviewed' },
+    { category: 'furniture', taxCode: 'DE_STANDARD', net: 40_000, description: 'Sofa bed SÖDERHAMN · Apartment I', unitId: 'u-s1', allocation: 'manual', assetState: 'candidate', classification: 'reviewed' },
+    { category: 'furniture', taxCode: 'DE_STANDARD', net: 25_000, description: 'Wardrobe PAX · Apartment II', unitId: 'u-s2', allocation: 'manual', assetState: 'candidate', classification: 'reviewed' },
     { category: 'office_admin', taxCode: 'DE_STANDARD', net: 10_000, description: 'Office shelving', unitId: null, allocation: 'unallocated', classification: 'reviewed' },
   ]);
   OVERRIDES.push({ id: nid('ov'), target_type: 'line', target_id: LINES.find((l) => l.transaction_id === t.id && l.line_no === 3)!.id, field: 'category', old_value: 'furniture', new_value: 'office_admin', reason: 'shelving is for the office, not a unit', actor: 'ops@example.com', created_at: ts(-23) });
@@ -312,11 +312,11 @@ doc({ document_type: 'receipt', original_filename: 'amazon-DS-AEU-INV-DE-2026-44
 
 /* Electricity, 19 %, unit-direct; heating review. */
 {
-  const e = post({ kind: 'expense', booked_on: d(-15), service_from: d(-45), service_to: d(-15), invoice_date: d(-14), due_on: d(0), description: 'Electricity · Schulstraße I · monthly instalment', counterparty_id: CP.stadtwerke.id, counterparty_label: CP.stadtwerke.name, supplier_invoice_no: 'SWB-4471-09', unit_id: 'u-s1', source_type: 'manual', source_system: 'manual', source_reference: 'exp:sw-s1-sep', document_state: 'complete', posted_by: 'ops@example.com' }, [
+  const e = post({ kind: 'expense', booked_on: d(-15), service_from: d(-45), service_to: d(-15), invoice_date: d(-14), due_on: d(0), description: 'Electricity · Apartment I · monthly instalment', counterparty_id: CP.stadtwerke.id, counterparty_label: CP.stadtwerke.name, supplier_invoice_no: 'SWB-4471-09', unit_id: 'u-s1', source_type: 'manual', source_system: 'manual', source_reference: 'exp:sw-s1-sep', document_state: 'complete', posted_by: 'ops@example.com' }, [
     { category: 'electricity', taxCode: 'DE_STANDARD', net: 9_800, description: 'Abschlag Strom', classification: 'auto_verified' },
   ]);
   doc({ document_type: 'supplier_invoice', original_filename: 'stadtwerke-SWB-4471-09.pdf', document_date: d(-14), counterparty_id: CP.stadtwerke.id }, { type: 'transaction', id: e.id });
-  post({ kind: 'expense', booked_on: d(-15), service_from: d(-45), service_to: d(-15), invoice_date: d(-14), due_on: d(0), description: 'Electricity · Schulstraße II · monthly instalment', counterparty_id: CP.stadtwerke.id, counterparty_label: CP.stadtwerke.name, supplier_invoice_no: 'SWB-4472-09', unit_id: 'u-s2', source_type: 'manual', source_system: 'manual', source_reference: 'exp:sw-s2-sep', document_state: 'complete', posted_by: 'ops@example.com' }, [
+  post({ kind: 'expense', booked_on: d(-15), service_from: d(-45), service_to: d(-15), invoice_date: d(-14), due_on: d(0), description: 'Electricity · Apartment II · monthly instalment', counterparty_id: CP.stadtwerke.id, counterparty_label: CP.stadtwerke.name, supplier_invoice_no: 'SWB-4472-09', unit_id: 'u-s2', source_type: 'manual', source_system: 'manual', source_reference: 'exp:sw-s2-sep', document_state: 'complete', posted_by: 'ops@example.com' }, [
     { category: 'electricity', taxCode: 'DE_STANDARD', net: 8_600, description: 'Abschlag Strom', classification: 'auto_verified' },
   ]);
   doc({ document_type: 'supplier_invoice', original_filename: 'stadtwerke-SWB-4472-09.pdf', document_date: d(-14), counterparty_id: CP.stadtwerke.id }, { type: 'transaction', id: TX[TX.length - 1].id });
@@ -449,7 +449,7 @@ const TAX_ADJUSTMENTS: TaxAdjustmentRow[] = [
   { id: 'ta-2', tax_type: 'gewst', fiscal_year: thisYear, kind: 'gewst_addition', amount_cents: 0, reason: 'Rents for the apartments are below the € 200,000 Freibetrag of § 8 Nr. 1 GewStG — no addition', legal_reference: '§ 8 Nr. 1 GewStG', actor: 'sb@example.com', superseded_by: null, created_at: ts(-20) },
 ];
 const ASSETS: AssetRow[] = [
-  { id: 'as-1', description: 'Sofa bed SÖDERHAMN · Schulstraße I', line_id: LINES.find((l) => l.description?.startsWith('Sofa bed'))!.id, counterparty_id: CP.ikea.id, purchased_on: d(-24), acquisition_cents: 40_000, unit_id: 'u-s1', category: 'furniture', useful_life_months: null, depreciation_method: null, depreciation_start_on: null, status: 'candidate', accountant_confirmed: false, confirmed_by: null, confirmed_at: null, document_id: null, note: 'AfA table: Büromöbel 13 years; sofa beds in furnished lettings — adviser to decide.', created_at: ts(-23) },
+  { id: 'as-1', description: 'Sofa bed SÖDERHAMN · Apartment I', line_id: LINES.find((l) => l.description?.startsWith('Sofa bed'))!.id, counterparty_id: CP.ikea.id, purchased_on: d(-24), acquisition_cents: 40_000, unit_id: 'u-s1', category: 'furniture', useful_life_months: null, depreciation_method: null, depreciation_start_on: null, status: 'candidate', accountant_confirmed: false, confirmed_by: null, confirmed_at: null, document_id: null, note: 'AfA table: Büromöbel 13 years; sofa beds in furnished lettings — adviser to decide.', created_at: ts(-23) },
 ];
 const EXPORTS: ExportRow[] = [
   { id: 'ex-1', export_kind: 'vat_report', period_from: q1.from, period_to: q1.to, format: 'csv', generator: 'bolagio-control-finance', version: '2026.09.1', row_count: 9, sha256: 'c1d2'.repeat(16), byte_size: 1_842, generated_by: 'ops@example.com', generated_at: ts(-27) },
@@ -469,7 +469,7 @@ const INVOICES: InvoiceRow[] = [
   { id: 'inv-1', kind: 'invoice', series: null, number: null, status: 'draft', issued_on: null, issued_at: null, issued_by: null, issuer_name: null, issuer_tax_id_masked: null, recipient_name: 'Koch, J.', recipient_company: null, recipient_country: 'DE', booking_intent_id: 'i-10', booking_reference: 'BLG-M8X2PL', unit_id: 'u-s2', service_from: d(-10), service_to: d(-7), currency: 'EUR', net_cents: 40_654, vat_cents: 2_846, gross_cents: 43_500, payment_state: 'paid', corrects_invoice_id: null, transaction_id: revenueByStay.get('i-10')!.id, document_id: null, created_by: 'system', created_at: ts(-7) },
 ];
 const INVOICE_LINES: InvoiceLineRow[] = [
-  { id: 'invl-1', invoice_id: 'inv-1', line_no: 1, description: 'Accommodation · Schulstraße II · 3 nights', quantity: 3, category: 'accommodation_revenue', tax_code: 'DE_ACCOMMODATION_REDUCED', rate_bp: 700, net_cents: 35_981, vat_cents: 2_519, gross_cents: 38_500 },
+  { id: 'invl-1', invoice_id: 'inv-1', line_no: 1, description: 'Accommodation · Apartment II · 3 nights', quantity: 3, category: 'accommodation_revenue', tax_code: 'DE_ACCOMMODATION_REDUCED', rate_bp: 700, net_cents: 35_981, vat_cents: 2_519, gross_cents: 38_500 },
   { id: 'invl-2', invoice_id: 'inv-1', line_no: 2, description: 'Final cleaning fee', quantity: 1, category: 'accommodation_ancillary', tax_code: 'DE_ANCILLARY_REVIEW', rate_bp: 0, net_cents: 5_000, vat_cents: 0, gross_cents: 5_000 },
 ];
 const POLICY: PolicyRow[] = [

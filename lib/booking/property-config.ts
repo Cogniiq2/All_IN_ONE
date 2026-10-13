@@ -79,7 +79,7 @@ export interface PortfolioUnitReference {
 export const PORTFOLIO: readonly PortfolioUnitReference[] = [
   {
     slug: 'schulstrasse-i',
-    displayName: 'Schulstraße I',
+    displayName: 'Design - Apartment I · Premium Penthouse mit Dachterrasse',
     street: 'Schulstraße',
     status: 'active',
     beds24: { propertyId: '354659', roomId: '731147' },
@@ -87,7 +87,7 @@ export const PORTFOLIO: readonly PortfolioUnitReference[] = [
   },
   {
     slug: 'schulstrasse-ii',
-    displayName: 'Schulstraße II',
+    displayName: 'Design - Apartment II · Premium Wohnung mit Terrasse',
     street: 'Schulstraße',
     status: 'active',
     beds24: { propertyId: '354658', roomId: '731146' },

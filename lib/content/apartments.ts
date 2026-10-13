@@ -194,9 +194,11 @@ export type RentalUnit = Apartment | CommercialUnit;
 export const apartments: Apartment[] = [
   {
     slug: 'schulstrasse-i',
+    // Name and identity confirmed by the owners, 2026-10-13: the penthouse
+    // with the roof terrace (Beds24 354659 / 731147).
     name: {
-      de: 'Apartment Schulstraße I',
-      en: 'Apartment Schulstraße I',
+      de: 'Design - Apartment I · Premium Penthouse mit Dachterrasse',
+      en: 'Design - Apartment I · Premium Penthouse mit Dachterrasse',
     },
     status: 'available',
     // Primarily short-term accommodation. The owners may additionally discuss a
@@ -205,12 +207,12 @@ export const apartments: Apartment[] = [
     rentalModes: ['short-term', 'long-term-residential'],
     street: 'Schulstraße',
     positioning: {
-      de: 'Innenstadt Bayreuth — im selben Haus wie Apartment II.',
-      en: 'Bayreuth city centre — in the same building as Apartment II.',
+      de: 'Penthouse mit Dachterrasse in der Bayreuther Innenstadt — im selben Haus wie Apartment II.',
+      en: 'Penthouse with a roof terrace in central Bayreuth — in the same building as Apartment II.',
     },
     intro: {
-      de: 'Ein Apartment in der Schulstraße, mitten in der Bayreuther Innenstadt. Es gehört unserer Familie, wird von uns selbst betreut und für jeden Aufenthalt persönlich vorbereitet. Grundriss, Ausstattung und Preise stimmen wir direkt mit Ihnen ab.',
-      en: 'An apartment on Schulstraße, in the centre of Bayreuth. It belongs to our family, we look after it ourselves, and we prepare it personally for every stay. Layout, furnishings and rates are agreed with you directly.',
+      de: 'Das Penthouse unserer beiden Apartments in der Schulstraße, mit Dachterrasse, mitten in der Bayreuther Innenstadt. Es gehört unserer Familie, wird von uns selbst betreut und für jeden Aufenthalt persönlich vorbereitet. Grundriss, Ausstattung und Preise stimmen wir direkt mit Ihnen ab.',
+      en: 'The penthouse of our two apartments on Schulstraße, with a roof terrace, in the centre of Bayreuth. It belongs to our family, we look after it ourselves, and we prepare it personally for every stay. Layout, furnishings and rates are agreed with you directly.',
     },
     // Working figure given by the owners for every unit in both buildings.
     // Rendered only through formatArea() as "ca. 120 m²".
@@ -221,8 +223,8 @@ export const apartments: Apartment[] = [
     bedroomPackages: ['one_bedroom', 'two_bedroom'],
     detail: [
       {
-        de: 'Das Apartment liegt in der Schulstraße, mitten in der Bayreuther Innenstadt. Es gehört unserer Familie, wird von uns selbst betreut und vor jedem Aufenthalt persönlich vorbereitet — kein Schlüsselkasten, keine Verwaltung dazwischen.',
-        en: 'The apartment is on Schulstraße, in the middle of central Bayreuth. It belongs to our family, we look after it ourselves, and we prepare it personally before every stay — no key box, no management company in between.',
+        de: 'Das Penthouse liegt in der Schulstraße, mitten in der Bayreuther Innenstadt, und hat eine Dachterrasse. Es gehört unserer Familie, wird von uns selbst betreut und vor jedem Aufenthalt persönlich vorbereitet — kein Schlüsselkasten, keine Verwaltung dazwischen.',
+        en: 'The penthouse is on Schulstraße, in the middle of central Bayreuth, and has a roof terrace. It belongs to our family, we look after it ourselves, and we prepare it personally before every stay — no key box, no management company in between.',
       },
       {
         de: 'Wer mit mehreren Personen anreist, kann beide Wohnungen im selben Haus zusammen anfragen. Für Familien und Festspielgruppen ist das häufig die bessere Lösung als zwei Hotelzimmer.',
@@ -248,28 +250,30 @@ export const apartments: Apartment[] = [
   },
   {
     slug: 'schulstrasse-ii',
+    // Name and identity confirmed by the owners, 2026-10-13: the apartment
+    // with the terrace, below the penthouse (Beds24 354658 / 731146).
     name: {
-      de: 'Apartment Schulstraße II',
-      en: 'Apartment Schulstraße II',
+      de: 'Design - Apartment II · Premium Wohnung mit Terrasse',
+      en: 'Design - Apartment II · Premium Wohnung mit Terrasse',
     },
     status: 'available',
     rentalModes: ['short-term', 'long-term-residential'],
     street: 'Schulstraße',
     positioning: {
-      de: 'Innenstadt Bayreuth — im selben Haus wie Apartment I.',
-      en: 'Bayreuth city centre — in the same building as Apartment I.',
+      de: 'Wohnung mit Terrasse in der Bayreuther Innenstadt — im selben Haus wie Apartment I.',
+      en: 'Apartment with a terrace in central Bayreuth — in the same building as Apartment I.',
     },
     intro: {
-      de: 'Das zweite unserer beiden Apartments in der Schulstraße. Wer mit mehreren Personen anreist, kann beide Wohnungen im selben Haus zusammen anfragen — für Familien und Festspielgruppen ist das oft die bessere Lösung als zwei Hotelzimmer.',
-      en: 'The second of our two apartments on Schulstraße. If you are travelling as a larger group, both apartments in the same building can be enquired about together — for families and festival parties that is often better than two hotel rooms.',
+      de: 'Das zweite unserer beiden Apartments in der Schulstraße, mit Terrasse. Wer mit mehreren Personen anreist, kann beide Wohnungen im selben Haus zusammen anfragen — für Familien und Festspielgruppen ist das oft die bessere Lösung als zwei Hotelzimmer.',
+      en: 'The second of our two apartments on Schulstraße, with a terrace. If you are travelling as a larger group, both apartments in the same building can be enquired about together — for families and festival parties that is often better than two hotel rooms.',
     },
     sizeSqm: 120,
-    // As Schulstraße I (Phase 1 booking model, 2026-10-12).
+    // As Apartment I (Phase 1 booking model, 2026-10-12).
     bedroomPackages: ['one_bedroom', 'two_bedroom'],
     detail: [
       {
-        de: 'Das zweite unserer beiden Apartments in der Schulstraße, im selben Haus wie Apartment I und ebenso von uns selbst betreut.',
-        en: 'The second of our two apartments on Schulstraße, in the same building as Apartment I and looked after by us in the same way.',
+        de: 'Das zweite unserer beiden Apartments in der Schulstraße, mit eigener Terrasse, im selben Haus wie das Penthouse und ebenso von uns selbst betreut.',
+        en: 'The second of our two apartments on Schulstraße, with its own terrace, in the same building as the penthouse and looked after by us in the same way.',
       },
       {
         de: 'Beide Wohnungen lassen sich zusammen anfragen. Gerade während der Festspiele reist selten jemand allein an — zwei Wohnungen in einem Haus halten eine Gruppe zusammen, ohne dass alle im selben Raum schlafen.',
@@ -290,7 +294,7 @@ export const apartments: Apartment[] = [
         en: 'A permanent tenancy for a private individual or a company — case by case',
       },
     ],
-    // NEEDS CONFIRMATION: same field list as Schulstraße I.
+    // NEEDS CONFIRMATION: same field list as Apartment I.
   },
   /*
    * ── Opernstraße I–III ───────────────────────────────────────────────────

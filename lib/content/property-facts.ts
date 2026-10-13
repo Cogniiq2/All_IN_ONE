@@ -197,12 +197,21 @@ const LAUNDRY_ITEMS: Localized[] = [
 ];
 
 /* ── The two Schulstraße flats ──────────────────────────────────────────── */
+/*
+ * Identity confirmed by the owners on 2026-10-13, against Beds24:
+ *   Apartment I  — Premium Penthouse mit Dachterrasse   (Beds24 354659 / 731147)
+ *   Apartment II — Premium Wohnung mit Terrasse          (Beds24 354658 / 731146)
+ * The two records below were previously attached to the opposite slug, with
+ * the photographs; both moved together. Each record describes one physical
+ * flat, so the records moved WHOLE — only Apartment II's outdoor space was
+ * renamed, from "Balkon" to the "Terrasse" the owners name it.
+ */
 
-const SCHULSTRASSE_I: PropertyFacts = {
+const APARTMENT_II_TERRASSE: PropertyFacts = {
   highlights: [
     de('Bis 4 Personen', 'Up to 4 guests'),
     de('Aufzug', 'Lift'),
-    de('Balkon', 'Balcony'),
+    de('Terrasse', 'Terrace'),
     de('Klimaanlage', 'Air conditioning'),
     de('Waschmaschine & Trockner', 'Washer & dryer'),
     de('Self Check-in', 'Self check-in'),
@@ -233,10 +242,10 @@ const SCHULSTRASSE_I: PropertyFacts = {
     { id: 'family', label: de('Familie', 'Families'), icon: 'family', items: FAMILY_ITEMS },
     {
       id: 'outdoor',
-      label: de('Außenbereich', 'Outdoor space'),
+      label: de('Terrasse', 'Terrace'),
       icon: 'outdoor',
       items: [
-        de('Eigener Balkon', 'Private balcony'),
+        de('Eigene Terrasse', 'Private terrace'),
         de('Außenmöbel', 'Outdoor furniture'),
         de('Essplatz im Freien', 'Outdoor dining area'),
       ],
@@ -262,7 +271,7 @@ const SCHULSTRASSE_I: PropertyFacts = {
   ],
 };
 
-const SCHULSTRASSE_II: PropertyFacts = {
+const APARTMENT_I_PENTHOUSE: PropertyFacts = {
   highlights: [
     de('Bis 4 Personen', 'Up to 4 guests'),
     de('Dachterrasse', 'Roof terrace'),
@@ -334,8 +343,8 @@ const SCHULSTRASSE_II: PropertyFacts = {
 };
 
 const FACTS_BY_SLUG: Record<string, PropertyFacts> = {
-  'schulstrasse-i': SCHULSTRASSE_I,
-  'schulstrasse-ii': SCHULSTRASSE_II,
+  'schulstrasse-i': APARTMENT_I_PENTHOUSE,
+  'schulstrasse-ii': APARTMENT_II_TERRASSE,
   // The Opernstraße flats are still being renovated. Nothing about their
   // fittings is settled, so they carry no fact sheet rather than a provisional
   // one, and the detail view simply omits the section.

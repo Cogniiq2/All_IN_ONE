@@ -166,7 +166,7 @@ export function ApartmentDetailClient({ slug }: { slug: string }) {
             `minmax(0, …)` on the flexible column, and `min-w-0` on the column
             itself. A grid track will not shrink below its content's minimum,
             and the gallery's thumbnail rail is one long flex line of
-            non-shrinking 96px tiles — 35 of them for Schulstraße I, a
+            non-shrinking 96px tiles — 40 of them for Apartment I, a
             min-content width of 3632px. Without the floor removed the column
             grew to that, and the lead photograph grew with it: a 3632x2270
             frame on a 1084px page. Opernstraße never showed it because three

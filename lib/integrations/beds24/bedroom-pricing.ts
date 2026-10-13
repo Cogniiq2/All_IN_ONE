@@ -7,7 +7,7 @@ import 'server-only';
  *   one_bedroom   →  Beds24 Offer 1  "1 Schlafzimmer"   1–2 guests
  *   two_bedroom   →  Beds24 Offer 2  "2 Schlafzimmer"   1–4 guests
  *
- * The same on both Schulstraße rooms (354659/731147 and 354658/731146).
+ * The same on both apartments: I (354659/731147) and II (354658/731146).
  * Established by the owners' Beds24 configuration and VERIFIED against the
  * live `/inventory/rooms/offers` responses on 2026-10-12 — see
  * `Beds24OffersResponse` in types.ts for the recorded shape.

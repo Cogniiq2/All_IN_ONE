@@ -141,7 +141,7 @@ function dayAfter(iso: string): string {
 /**
  * The event for a confirmed stay: all-day, arrival through departure.
  *
- * "BoLaGio – Apartment Schulstraße I", so it is recognisable in a month view
+ * "BoLaGio – Design - Apartment I · …", so it is recognisable in a month view
  * months later without opening it.
  */
 export function stayEvent(
