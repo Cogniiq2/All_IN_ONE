@@ -64,6 +64,75 @@ describe('quotes', () => {
   });
 });
 
+/**
+ * The owners' canonical pricing (2026-10-13), as the Beds24 account is to be
+ * configured with it — played here by the simulator:
+ *
+ *   1–2 guests, 1 Bedroom (Offer 1)   base
+ *   2 Bedrooms (Offer 2), 1–4 guests  base + €99 per night
+ *   1 night  +€60 per stay · 2 nights +€40 per stay · 3+ nights none
+ *   Apartment II                      Apartment I − €50 per night
+ *
+ * The route must hand back exactly Beds24's total for the chosen package.
+ * EXPECTED_EUR restates the rule only to name the number the quote must
+ * equal; the website never runs it.
+ */
+describe('canonical bedroom pricing, passed through verbatim', () => {
+  const X = 374; // an Apartment I base night for the test — a seasonal value Beds24 owns, not a constant of the site
+  const EXPECTED_EUR = (slug: string, nights: number, pkg: 'one_bedroom' | 'two_bedroom') =>
+    (X - (slug === 'schulstrasse-ii' ? 50 : 0)) * nights + (nights === 1 ? 60 : nights === 2 ? 40 : 0) + (pkg === 'two_bedroom' ? 99 * nights : 0);
+  const quote = (slug: string, nights: number, guests: number, bedroomPackage: string) =>
+    h.call('POST', '/api/booking/quote', { unitSlug: slug, ...futureStay(70, nights), adults: guests, children: 0, bedroomPackage });
+
+  beforeEach(async () => {
+    await h.beds24.config({ canonicalPricing: { apartmentIBaseNightlyEur: X } });
+    // The harness opens Apartment I only; these quotes need both (test database only).
+    await h.setBookable('schulstrasse-ii', true);
+  });
+  afterAll(async () => { await h.beds24.config({ canonicalPricing: null }); });
+
+  for (const slug of ['schulstrasse-i', 'schulstrasse-ii']) {
+    for (const nights of [1, 2, 3, 7]) {
+      it(`${slug} · ${nights} night(s): 1–2 guests at base, 3–4 guests on 2 Bedrooms at base + €99/night`, async () => {
+        for (const guests of [1, 2]) {
+          const one = await quote(slug, nights, guests, 'one_bedroom');
+          expect(one.status).toBe(200);
+          expect(one.body.bedroomPricing).toEqual({ status: 'configured', offerId: 1 });
+          expect(one.body.totalCents).toBe(EXPECTED_EUR(slug, nights, 'one_bedroom') * 100);
+        }
+        for (const guests of [1, 2, 3, 4]) {
+          const two = await quote(slug, nights, guests, 'two_bedroom');
+          expect(two.status).toBe(200);
+          expect(two.body.bedroomPricing).toEqual({ status: 'configured', offerId: 2 });
+          expect(two.body.totalCents).toBe(EXPECTED_EUR(slug, nights, 'two_bedroom') * 100);
+        }
+        for (const guests of [3, 4]) {
+          const refused = await quote(slug, nights, guests, 'one_bedroom');
+          expect(refused.status).toBe(422);
+          expect(refused.body).toMatchObject({ error: 'occupancy', meta: { maxGuests: 2, bedroomPackage: 'one_bedroom' } });
+        }
+      });
+    }
+  }
+
+  it('stacks the short-stay surcharge with the bedroom surcharge, and keeps Apartment II €50/night below I', async () => {
+    const totals = async (slug: string, nights: number) => ({
+      one: (await quote(slug, nights, 2, 'one_bedroom')).body.totalCents / 100,
+      two: (await quote(slug, nights, 4, 'two_bedroom')).body.totalCents / 100,
+    });
+    const i1 = await totals('schulstrasse-i', 1);
+    const i2 = await totals('schulstrasse-i', 2);
+    const i3 = await totals('schulstrasse-i', 3);
+    expect(i1).toEqual({ one: X + 60, two: X + 60 + 99 });
+    expect(i2).toEqual({ one: 2 * X + 40, two: 2 * X + 40 + 2 * 99 });
+    expect(i3).toEqual({ one: 3 * X, two: 3 * X + 3 * 99 });
+    for (const [nights, apartmentI] of [[1, i1], [2, i2], [3, i3]] as const) {
+      const apartmentII = await totals('schulstrasse-ii', nights);
+      expect(apartmentII).toEqual({ one: apartmentI.one - 50 * nights, two: apartmentI.two - 50 * nights });
+    }
+  });
+});
+
 describe('price integrity', () => {
   it('refuses a stale confirmed total with the fresh quote, creating nothing', async () => {
     const stay = futureStay(45, 2);

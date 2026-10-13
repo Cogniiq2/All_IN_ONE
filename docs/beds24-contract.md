@@ -109,7 +109,41 @@ replays them.
 | `offerId` query filter works (returns only that offer) | deliberately NOT used: every offer is fetched and the seam selects, so a missing offer is seen as missing |
 | Existing bookings carry `offerId` = 0 (channel reservations) and support `infoItems` | imported reservations derive `bedroom_package` from `offerId` 1/2; 0 stays unknown |
 
-Totals observed (EUR, 2 guests unless stated; 2 Schlafzimmer identical for 3–4 guests):
+### 5a. Canonical bedroom / occupancy pricing (owners' decision, 2026-10-13)
+
+Configured **in Beds24**, identically on both apartments
+(Apartment I 354659/731147, Apartment II 354658/731146):
+
+| | Rule |
+|---|---|
+| 1 Schlafzimmer — Offer 1, 1–2 guests (`one_bedroom`) | seasonal base price |
+| 2 Schlafzimmer — Offer 2, 1–4 guests (`two_bedroom`) | base **+ €99 per night** |
+| 1-night stay | **+ €60** per stay |
+| 2-night stay | **+ €40** per stay |
+| 3+ nights | no short-stay surcharge |
+| Apartment II | Apartment I **− €50 per night**; monthly rate −20 %, minimum 28 nights where relevant |
+
+It replaces the previous **+€39 per night** for 2 Schlafzimmer. Nothing in the
+website implements any line of it: `price` arrives with all of it applied and
+`resolveBeds24BedroomPricing` only selects Offer 1 or Offer 2. The rule is
+asserted in tests only — `tests/bedroom-package.test.ts` (canonical Beds24
+answers through `mapOffer`) and `tests/integration/bedroom-pricing.test.ts`
+(the simulator's `canonicalPricing` mode through the quote route).
+
+**The live account must be changed by the owners.** The write tests of
+2026-10-13 (runs 38356575930, 38357250144) still quoted 2 Schlafzimmer at
+€473 for one night on Apartment I against a base night of €374, i.e. the old
++€39. Until Offer 2 is repriced in Beds24 the website quotes, holds and
+charges exactly what Beds24 answers — the old difference — and must not
+override it. Once Beds24 is changed, no deploy is needed; a quote shown before
+the change and confirmed after it is refused with `price_changed` and the
+fresh total.
+
+### 5b. Totals observed on 2026-10-12 — under the previous +€39 configuration
+
+Recorded evidence, kept exactly as Beds24 answered; **not** the current rule.
+(EUR, 2 guests unless stated; 2 Schlafzimmer identical for 3–4 guests;
+"Schulstraße I/II" = Apartment I/II.)
 
 | | 1 night | 2 nights | 3 nights | 7 nights |
 |---|---|---|---|---|

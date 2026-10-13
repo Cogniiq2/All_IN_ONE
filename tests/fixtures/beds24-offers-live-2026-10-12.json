@@ -1,5 +1,6 @@
 {
   "_about": "Real Beds24 V2 GET /inventory/rooms/offers responses, captured read-only on 2026-10-12 by .github/workflows/beds24-readonly-check.yml (Part A2, run 38272891875). Arrival 2026-11-08, numChildren=0. Prices and offer metadata only; no credentials, no guest data. The website must reproduce these totals by SELECTING the offer, never by computing.",
+  "_pricingNote": "Recorded under the account's 2026-10-12 configuration, when 2 Schlafzimmer cost +€39 per night over 1 Schlafzimmer. The owners' canonical rule since 2026-10-13 is +€99 per night (docs/beds24-contract.md §5). The prices below are left exactly as Beds24 returned them: they are evidence, and the tests that use them prove selection and verbatim pass-through, not the rule.",
   "capturedAt": "2026-10-12",
   "arrival": "2026-11-08",
   "units": {

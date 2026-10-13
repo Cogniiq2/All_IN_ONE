@@ -62,8 +62,10 @@ const unitRef = (slug: string) => ({
 const APT_I = unitRef('schulstrasse-i');
 
 const BOTH = (offers: unknown[]) => ({ data: [{ roomId: 731147, propertyId: 354659, offers }] }) as Beds24OffersResponse;
+// One night on Apartment I under the canonical rule (2026-10-13): base 374 +
+// 60 one-night surcharge; 2 Schlafzimmer + 99. Example values, not rates.
 const OFFER_1 = { offerId: 1, offerName: '1 Schlafzimmer', price: 434, unitsAvailable: 1 };
-const OFFER_2 = { offerId: 2, offerName: '2 Schlafzimmer', price: 473, unitsAvailable: 1 };
+const OFFER_2 = { offerId: 2, offerName: '2 Schlafzimmer', price: 533, unitsAvailable: 1 };
 
 function liveCase(unit: string, nights: number, guests: number): LiveCase {
   const found = LIVE.cases.find((c) => c.unit === unit && c.nights === nights && c.guests === guests && c.query === 'numAdults');
@@ -159,6 +161,13 @@ describe('resolveBeds24BedroomPricing', () => {
 
 /* ── Real Beds24 responses, both apartments ────────────────────────────── */
 
+/*
+ * Recorded 2026-10-12, when the Beds24 account priced "2 Schlafzimmer" at
+ * +€39 per night (the rule the owners replaced with +€99 on 2026-10-13).
+ * The numbers are evidence of what Beds24 answered and stay as recorded:
+ * what these tests prove — the offer is SELECTED and its price taken
+ * verbatim — does not depend on the rule behind it.
+ */
 describe('live responses recorded 2026-10-12 produce Beds24\'s own totals', () => {
   const quoteFor = (unit: string, nights: number, guests: number, bedroomPackage: BedroomPackage) =>
     mapOffer(
@@ -215,6 +224,106 @@ describe('live responses recorded 2026-10-12 produce Beds24\'s own totals', () =
   });
 });
 
+/* ── The canonical rule (2026-10-13) ───────────────────────────────────── */
+
+/**
+ * The owners' canonical pricing, as the Beds24 account is to be configured:
+ * 1–2 guests on 1 Schlafzimmer at base; 2 Schlafzimmer at base + €99/night;
+ * +€60 for a 1-night stay, +€40 for a 2-night stay, none from 3 nights;
+ * Apartment II €50/night below Apartment I.
+ *
+ * TEST-ONLY. `canonicalBeds24Answer` builds the response Beds24 would give
+ * under that configuration, so the website's selection can be checked against
+ * the rule. The website never runs this arithmetic: it takes `price`.
+ */
+describe('canonical bedroom pricing — Beds24\'s total, selected and taken verbatim', () => {
+  const X = 374; // an Apartment I base night for the test; seasonal values belong to Beds24
+  const UNITS = {
+    'schulstrasse-i': { roomId: 731147, propertyId: 354659, belowApartmentI: 0 },
+    'schulstrasse-ii': { roomId: 731146, propertyId: 354658, belowApartmentI: 50 },
+  } as const;
+  type Slug = keyof typeof UNITS;
+
+  function canonicalBeds24Answer(slug: Slug, nights: number, guests: number): Beds24OffersResponse {
+    const u = UNITS[slug];
+    const stay = (X - u.belowApartmentI) * nights + (nights === 1 ? 60 : nights === 2 ? 40 : 0);
+    const offers = [
+      ...(guests <= 2 ? [{ offerId: 1, offerName: '1 Schlafzimmer', price: stay, unitsAvailable: 1 }] : []),
+      { offerId: 2, offerName: '2 Schlafzimmer', price: stay + 99 * nights, unitsAvailable: 1 },
+    ];
+    return { success: true, data: [{ roomId: u.roomId, propertyId: u.propertyId, offers }] } as Beds24OffersResponse;
+  }
+
+  const quoteEur = (slug: Slug, nights: number, guests: number, bedroomPackage: BedroomPackage) => {
+    const u = UNITS[slug];
+    const quote = mapOffer(
+      canonicalBeds24Answer(slug, nights, guests),
+      {
+        unit: { provider: 'beds24', externalPropertyId: String(u.propertyId), externalRoomId: String(u.roomId) },
+        unitSlug: slug,
+        checkIn: '2027-02-01',
+        checkOut: addDays('2027-02-01', nights),
+        adults: guests,
+        children: 0,
+        bedroomPackage,
+      },
+      '2030-01-01T00:00:00Z'
+    );
+    expect(quote.bedroomPricing).toEqual({ status: 'configured', offerId: BEDS24_BEDROOM_OFFERS[bedroomPackage].offerId });
+    expect(quote.components).toHaveLength(1);
+    return quote.totalCents / 100;
+  };
+
+  it('Apartment I, 3+ nights: 1–2 guests = X; 3–4 guests (2 Bedrooms) = X + €99/night', () => {
+    for (const nights of [3, 7]) {
+      expect(quoteEur('schulstrasse-i', nights, 1, 'one_bedroom')).toBe(X * nights);
+      expect(quoteEur('schulstrasse-i', nights, 2, 'one_bedroom')).toBe(X * nights);
+      expect(quoteEur('schulstrasse-i', nights, 3, 'two_bedroom')).toBe((X + 99) * nights);
+      expect(quoteEur('schulstrasse-i', nights, 4, 'two_bedroom')).toBe((X + 99) * nights);
+    }
+    expect(quoteEur('schulstrasse-i', 3, 2, 'one_bedroom')).toBe(1122);
+    expect(quoteEur('schulstrasse-i', 3, 4, 'two_bedroom')).toBe(1419);
+  });
+
+  it('Apartment II: €50/night below Apartment I, and its 2 Bedrooms = its own base + €99/night', () => {
+    for (const nights of [1, 2, 3, 7]) {
+      for (const [guests, pkg] of [[2, 'one_bedroom'], [4, 'two_bedroom']] as const) {
+        expect(quoteEur('schulstrasse-ii', nights, guests, pkg)).toBe(quoteEur('schulstrasse-i', nights, guests, pkg) - 50 * nights);
+      }
+      expect(quoteEur('schulstrasse-ii', nights, 3, 'two_bedroom') - quoteEur('schulstrasse-ii', nights, 2, 'one_bedroom')).toBe(99 * nights);
+    }
+    expect(quoteEur('schulstrasse-ii', 3, 2, 'one_bedroom')).toBe(972);
+    expect(quoteEur('schulstrasse-ii', 3, 3, 'two_bedroom')).toBe(1269);
+  });
+
+  it('short stays: +€60 for one night, +€40 for two, none from three — stacked with the bedroom surcharge', () => {
+    expect(quoteEur('schulstrasse-i', 1, 2, 'one_bedroom')).toBe(X + 60);
+    expect(quoteEur('schulstrasse-i', 1, 2, 'two_bedroom')).toBe(X + 60 + 99);
+    expect(quoteEur('schulstrasse-i', 2, 2, 'one_bedroom')).toBe(2 * X + 40);
+    expect(quoteEur('schulstrasse-i', 2, 3, 'two_bedroom')).toBe(2 * X + 40 + 2 * 99);
+    expect(quoteEur('schulstrasse-i', 3, 2, 'one_bedroom')).toBe(3 * X);
+    expect(quoteEur('schulstrasse-i', 3, 3, 'two_bedroom')).toBe(3 * X + 3 * 99);
+  });
+
+  it('1 Bedroom is never priced for 3 or 4 guests — the guest is refused, not moved to Offer 2', () => {
+    for (const slug of ['schulstrasse-i', 'schulstrasse-ii'] as const) {
+      for (const guests of [3, 4]) {
+        expect(() => quoteEur(slug, 3, guests, 'one_bedroom')).toThrowError(ProviderError);
+      }
+    }
+  });
+
+  it('Beds24 stays authoritative: a total off the rule is still taken as Beds24 sent it, never "corrected"', () => {
+    const answer = canonicalBeds24Answer('schulstrasse-i', 1, 2);
+    answer.data![0].offers![1].price = 473; // e.g. the account still on the old +€39 configuration
+    const quote = mapOffer(answer, {
+      unit: APT_I, unitSlug: 'schulstrasse-i', checkIn: '2027-02-01', checkOut: '2027-02-02',
+      adults: 2, children: 0, bedroomPackage: 'two_bedroom',
+    }, '2030-01-01T00:00:00Z');
+    expect(quote.totalCents).toBe(47_300);
+  });
+});
+
 /* ── The live adapter's requests ───────────────────────────────────────── */
 
 describe('live adapter', () => {
@@ -251,14 +360,14 @@ describe('live adapter', () => {
       providerOfferId: offerId,
       reference: 'BLG-BED234',
       guest: { firstName: 'A', lastName: 'B', email: 'a@example.com', phone: '+49 1' },
-      totalCents: 47_300,
+      totalCents: 53_300,
       currency: 'EUR',
       idempotencyKey: 'k',
       holdExpiresAt: '2030-01-01T00:00:00Z',
     });
     const body = (beds24Request.mock.calls[0][0] as { body: Array<Record<string, unknown>> }).body[0];
     expect(body.offerId).toBe(offerId);
-    expect(body.price).toBe(473);
+    expect(body.price).toBe(533);
     expect(body.numAdult).toBe(2); // the booking WRITE takes the singular form
     expect(body.infoItems).toEqual([{ code: BEDROOM_INFO_CODE, text: `Bedroom setup: ${label}` }]);
     expect(String(body.notes)).toContain(`Bedroom setup: ${label}`);

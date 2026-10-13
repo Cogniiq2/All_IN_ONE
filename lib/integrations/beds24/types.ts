@@ -125,6 +125,10 @@ export interface Beds24Room {
  *                             { "offerId": 2, "offerName": "2 Schlafzimmer",
  *                               "price": 473, "unitsAvailable": 1 } ] } ] }
  *
+ *   (Prices as recorded, under the account's 2026-10-12 configuration of
+ *   +€39/night for 2 Schlafzimmer; the canonical rule is now +€99 — see
+ *   lib/integrations/beds24/bedroom-pricing.ts. The shape is what matters.)
+ *
  *   • rooms sit DIRECTLY in `data` — there is no `roomTypes` level;
  *   • `offerId` (integer) identifies the offer; `offerName` is its label;
  *   • `price` is the TOTAL for the stay in major units, every length-of-stay

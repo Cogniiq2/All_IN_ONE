@@ -32,7 +32,15 @@
  * Control API:
  *   POST /__sim/reset
  *   POST /__sim/config   { blockingStatuses: [...], honourIdempotency: bool, nightlyCents,
- *                          offerNightlyEur: { 1: n, 2: n } }   (fixture offer prices)
+ *                          offerNightlyEur: { 1: n, 2: n },    (fixture offer prices)
+ *                          canonicalPricing: { apartmentIBaseNightlyEur: n } | null }
+ *
+ * `canonicalPricing` makes the simulator price offers the way the Beds24
+ * account is to be CONFIGURED under the owners' canonical rule (2026-10-13):
+ * Apartment II (room 731146) is Apartment I's base − €50/night; Offer 2
+ * "2 Schlafzimmer" adds €99/night; a 1-night stay adds €60 and a 2-night
+ * stay €40, once per stay. This is Beds24's arithmetic, played by the
+ * simulator — the website under test still only SELECTS the offer.
  *
  * Offers answer in the shape the LIVE account returns (verified 2026-10-12):
  * `data[] → { roomId, propertyId, offers[{ offerId, offerName, price,
@@ -62,13 +70,22 @@ export function createBeds24Sim() {
   function freshState() {
     return {
       modes: { ...DEFAULT_MODES },
-      config: { blockingStatuses: ['new', 'confirmed', 'request'], honourIdempotency: true, nightlyCents: 14_000, offerNightlyEur: { 1: 120, 2: 150 }, offerMaxGuests: { 1: 2, 2: 4 }, token: 'sim-beds24-token' },
+      config: { blockingStatuses: ['new', 'confirmed', 'request'], honourIdempotency: true, nightlyCents: 14_000, offerNightlyEur: { 1: 120, 2: 150 }, canonicalPricing: null, offerMaxGuests: { 1: 2, 2: 4 }, token: 'sim-beds24-token' },
       bookings: new Map(),
       blocks: [],
       idempotency: new Map(),
       calls: [],
       counter: 900_000,
     };
+  }
+
+  /** The stay total Beds24 would answer for an offer — see `canonicalPricing` above. */
+  function offerPriceEur(roomId, offerId, nights) {
+    const canonical = state.config.canonicalPricing;
+    if (!canonical) return state.config.offerNightlyEur[offerId] * nights;
+    const base = canonical.apartmentIBaseNightlyEur - (String(roomId) === '731146' ? 50 : 0);
+    const shortStay = nights === 1 ? 60 : nights === 2 ? 40 : 0;
+    return base * nights + shortStay + (offerId === 2 ? 99 * nights : 0);
   }
 
   function json(res, status, body) {
@@ -164,7 +181,7 @@ export function createBeds24Sim() {
         : [1, 2]
             .filter((id) => party <= state.config.offerMaxGuests[id])
             .filter((id) => !q.get('offerId') || Number(q.get('offerId')) === id)
-            .map((id) => ({ offerId: id, offerName: names[id], price: mode === 'no_price' ? undefined : state.config.offerNightlyEur[id] * nights, unitsAvailable: 1 }));
+            .map((id) => ({ offerId: id, offerName: names[id], price: mode === 'no_price' ? undefined : offerPriceEur(roomId, id, nights), unitsAvailable: 1 }));
       return json(res, 200, { success: true, type: 'offer', count: 1, data: [{ roomId: Number(roomId), propertyId: Number(propertyId), offers }] });
     }
 

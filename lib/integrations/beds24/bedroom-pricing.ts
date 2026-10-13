@@ -13,10 +13,14 @@ import 'server-only';
  * `Beds24OffersResponse` in types.ts for the recorded shape.
  *
  * ── What Beds24 already does, and this file must never redo ──────────────
- * Base daily prices, Apartment II = Apartment I − €50, the 1-night and
- * 2-night surcharges, 3+ night pricing and the bedroom price difference are
- * all inside the offer's `price`. This file SELECTS an offer; it never
- * computes, adjusts or compares a price.
+ * The owners' canonical pricing (2026-10-13), configured IN BEDS24:
+ *   1 Schlafzimmer (1–2 guests)   the seasonal base price
+ *   2 Schlafzimmer (1–4 guests)   base + €99 per night
+ *   1-night stay +€60, 2-night stay +€40 (per stay); none from 3 nights
+ *   Apartment II = Apartment I − €50 per night; its monthly rate −20 %
+ * Every one of those is inside the offer's `price`. This file SELECTS an
+ * offer; it never computes, adjusts or compares a price — so changing the
+ * rule is a Beds24 change, and no code here moves with it.
  *
  * ── The selection rules ──────────────────────────────────────────────────
  *   1. receive every offer Beds24 returned for the room;
