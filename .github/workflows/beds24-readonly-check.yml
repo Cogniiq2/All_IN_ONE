@@ -106,6 +106,70 @@ jobs:
           node-version: '22'
           cache: npm
 
+      # ── PART A12 — FINANCE ROUTES: specs, docs, every booking (read-only) ──
+      # Public documents only, plus GETs on the account: does Beds24's own
+      # OpenAPI spec describe any payout/commission/settlement data, what do
+      # Booking.com's Payments API and PCP v2 pages say about access, and does
+      # ANY BoLaGio booking carry a non-zero commission or a payment line.
+      - name: "Part A12 — finance automation routes (read-only)"
+        if: always()
+        continue-on-error: true
+        env:
+          BEDS24_REFRESH_TOKEN: ${{ secrets.BEDS24_REFRESH_TOKEN }}
+        run: |
+          set -uo pipefail
+          echo "── Beds24 API v2 spec: payout/commission vocabulary ──"
+          for u in https://beds24.com/api/v2/apiV2.yaml https://api.beds24.com/v2/apiV2.yaml; do
+            code=$(curl -sS -L --max-time 30 -o "$RUNNER_TEMP/b24.yaml" -w "%{http_code}" "$u" || echo 000)
+            echo "$u → HTTP $code, $(wc -c < "$RUNNER_TEMP/b24.yaml" 2>/dev/null || echo 0) bytes"
+            if [ "$code" = "200" ]; then
+              grep -oiE "[A-Za-z_]*(payout|commission|settlement|channelCollect|paymentsBy|payment)[A-Za-z_]*" "$RUNNER_TEMP/b24.yaml" | sort | uniq -c | sort -rn | head -40
+              echo "paths:"; grep -E "^  /" "$RUNNER_TEMP/b24.yaml" | head -80
+              break
+            fi
+          done
+          echo "── Booking.com connectivity docs (public) ──"
+          for u in \
+            https://developers.booking.com/connectivity/docs/payments-api/understanding-the-payments-api.md \
+            https://developers.booking.com/connectivity/docs/payments-api/managing-payment-and-payout-details.md \
+            https://developers.booking.com/connectivity/docs/payments-api/testing-your-integration.md \
+            https://developers.booking.com/connectivity/docs/reservations-api/implementing-payments-clarity-package-v2.md \
+            https://developers.booking.com/connectivity/docs/token-based-authentication.md; do
+            code=$(curl -sS -L --max-time 30 -A "Mozilla/5.0" -o "$RUNNER_TEMP/doc.md" -w "%{http_code}" "$u" || echo 000)
+            echo "### $u → HTTP $code"
+            [ "$code" = "200" ] && grep -iE "partner|provider|machine account|portal|permission|eligib|only|prerequisite|Payments by Booking|PAYOUT|commission|payout|feature|header|enable|property" "$RUNNER_TEMP/doc.md" | sed 's/^/    /' | head -45
+          done
+          cat <<'NODE_EOF' > "$RUNNER_TEMP/finance-scan.mjs"
+          const BASE = 'https://beds24.com/api/v2';
+          const auth = await fetch(`${BASE}/authentication/token`, { headers: { accept: 'application/json', refreshToken: process.env.BEDS24_REFRESH_TOKEN?.trim() ?? '' }, signal: AbortSignal.timeout(30000) });
+          const token = (await auth.json().catch(() => null))?.token;
+          if (!token) { console.log(`✗ auth failed HTTP ${auth.status}`); process.exit(1); }
+          const H = { headers: { accept: 'application/json', token }, signal: AbortSignal.timeout(30000) };
+          const ST = ['new','request','confirmed','cancelled','black','inquiry'].map((s) => `status=${s}`).join('&');
+          const all = [];
+          for (const pid of ['354659', '354658']) {
+            for (let page = 1; page <= 20; page++) {
+              const r = await fetch(`${BASE}/bookings?propertyId=${pid}&arrivalFrom=2015-01-01&arrivalTo=2030-12-31&${ST}&includeInvoiceItems=true&page=${page}`, H);
+              const b = await r.json().catch(() => null);
+              const rows = b?.data ?? []; all.push(...rows);
+              if (!rows.length || !b?.pages?.nextPageExists) break;
+            }
+          }
+          const nz = (k) => all.filter((b) => Number(b[k] ?? 0) !== 0).length;
+          console.log(`── every booking (${all.length}): non-zero commission ${nz('commission')} · deposit ${nz('deposit')} · tax ${nz('tax')}`);
+          const types = {}; for (const b of all) for (const it of b.invoiceItems ?? []) types[it.type] = (types[it.type] ?? 0) + 1;
+          console.log(`   invoice item types across all bookings: ${JSON.stringify(types)}`);
+          const pay = all.flatMap((b) => (b.invoiceItems ?? []).filter((it) => it.type !== 'charge').map((it) => `${b.id}:${it.type}:${it.amount}:${JSON.stringify(String(it.description ?? '').slice(0, 40))}`));
+          console.log(`   non-charge invoice items: ${pay.slice(0, 20).join(' | ') || 'none'}`);
+          const cs = await fetch(`${BASE}/channels/settings?propertyId=354659`, H).then((r) => r.json()).catch(() => null);
+          const flat = (v, p, out) => { if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) flat(x, p ? `${p}.${k}` : k, out); else out.push([p, v]); return out; };
+          const SECRET = /token|secret|key|password|header|auth/i;
+          const hits = flat(cs, '', []).filter(([k]) => /book|payment|collect|virtual|vcc|commission|payout|pcp|clarity/i.test(k)).map(([k, v]) => `${k}=${SECRET.test(k) ? '<set>' : JSON.stringify(v)}`);
+          console.log(`── channel settings (payment-shaped fields): ${hits.slice(0, 40).join(' · ') || 'none'}`);
+          console.log('\nGET only. Nothing was created or modified.');
+          NODE_EOF
+          node "$RUNNER_TEMP/finance-scan.mjs"
+
       # ── PART A11 — HISTORY DEPTH AND FINANCIAL FIELDS (read-only) ──────
       # How far back the account's bookings go (every status, both properties,
       # arrivals from 2015), and which financial fields Beds24 exposes on a
