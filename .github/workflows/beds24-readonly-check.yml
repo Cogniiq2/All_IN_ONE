@@ -106,6 +106,69 @@ jobs:
           node-version: '22'
           cache: npm
 
+      # ── PART A11 — HISTORY DEPTH AND FINANCIAL FIELDS (read-only) ──────
+      # How far back the account's bookings go (every status, both properties,
+      # arrivals from 2015), and which financial fields Beds24 exposes on a
+      # booking: commission, invoice items, payments, info items. Field
+      # NAMES and amounts only — no guest names, emails, phones or notes.
+      # Also probes whether any payout/settlement endpoint answers. GET only.
+      - name: "Part A11 — history depth and financial fields (read-only)"
+        if: always()
+        continue-on-error: true
+        env:
+          BEDS24_REFRESH_TOKEN: ${{ secrets.BEDS24_REFRESH_TOKEN }}
+        run: |
+          set -euo pipefail
+          cat <<'NODE_EOF' > "$RUNNER_TEMP/history-finance.mjs"
+          const BASE = 'https://beds24.com/api/v2';
+          const T = { signal: AbortSignal.timeout(30000) };
+          const auth = await fetch(`${BASE}/authentication/token`, { headers: { accept: 'application/json', refreshToken: process.env.BEDS24_REFRESH_TOKEN?.trim() ?? '' }, ...T });
+          const token = (await auth.json().catch(() => null))?.token;
+          if (!token) { console.log(`✗ auth failed HTTP ${auth.status}`); process.exit(1); }
+          const H = { headers: { accept: 'application/json', token }, signal: AbortSignal.timeout(30000) };
+          const ST = ['new','request','confirmed','cancelled','black','inquiry'].map((s) => `status=${s}`).join('&');
+          const list = async (qs) => {
+            const out = []; const seen = new Set();
+            for (let page = 1; page <= 40; page++) {
+              const r = await fetch(`${BASE}/bookings?${qs}&page=${page}`, H);
+              const b = await r.json().catch(() => null);
+              if (r.status !== 200) { console.log(`  HTTP ${r.status} ${JSON.stringify(b).slice(0, 160)}`); break; }
+              let fresh = 0;
+              for (const x of b?.data ?? []) if (!seen.has(x.id)) { seen.add(x.id); out.push(x); fresh++; }
+              if (!fresh || !b?.pages?.nextPageExists) break;
+            }
+            return out;
+          };
+          for (const pid of ['354659', '354658']) {
+            const all = await list(`propertyId=${pid}&arrivalFrom=2015-01-01&arrivalTo=2030-12-31&${ST}`);
+            all.sort((a, b) => String(a.arrival).localeCompare(String(b.arrival)));
+            const by = (k) => all.reduce((m, b) => ((m[b[k]] = (m[b[k]] ?? 0) + 1), m), {});
+            const booked = all.map((b) => b.bookingTime).filter(Boolean).sort();
+            console.log(`property ${pid}: ${all.length} booking(s) since 2015 · earliest arrival ${all[0]?.arrival ?? '-'} · latest arrival ${all.at(-1)?.arrival ?? '-'} · earliest bookingTime ${booked[0] ?? '-'}`);
+            console.log(`  by status ${JSON.stringify(by('status'))} · by room ${JSON.stringify(by('roomId'))} · by apiSourceId ${JSON.stringify(by('apiSourceId'))}`);
+            console.log(`  arriving before 2025-10-14 (outside the 12-month import window): ${all.filter((b) => String(b.arrival) < '2025-10-14').length}`);
+          }
+          // Financial fields on one Booking.com booking, with invoice items, info items and payments.
+          const sample = (await list(`propertyId=354659&arrivalFrom=2026-09-01&arrivalTo=2026-10-31&status=confirmed&includeInvoiceItems=true&includeInfoItems=true`)).filter((b) => b.apiSourceId === 19).slice(0, 3);
+          const SAFE = /price|commission|deposit|tax|amount|rate|currency|offer|apiSource|channel|status|arrival|departure|numAdult|numChild|payment|invoice|fee|charge|paid|balance|refer/i;
+          const PII = /name|email|phone|mobile|address|city|postcode|country|comment|note|message|guest|card/i;
+          for (const b of sample) {
+            const top = Object.entries(b).filter(([k]) => SAFE.test(k) && !PII.test(k) && !Array.isArray(b[k]) && typeof b[k] !== 'object');
+            console.log(`booking ${b.id} (apiSourceId ${b.apiSourceId}): ${top.map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(' · ')}`);
+            for (const it of b.invoiceItems ?? []) console.log(`  invoiceItem type=${it.type} qty=${it.qty} amount=${it.amount} lineTotal=${it.lineTotal ?? '-'} vatRate=${it.vatRate ?? '-'} description=${JSON.stringify(String(it.description ?? '').slice(0, 60))}`);
+            for (const it of b.infoItems ?? []) console.log(`  infoItem code=${JSON.stringify(it.code)} textLength=${String(it.text ?? '').length}`);
+            console.log(`  keys: ${Object.keys(b).sort().join(', ')}`);
+          }
+          // Does any payout / settlement endpoint answer? Read-only GETs; status and top-level keys only.
+          for (const path of ['/bookings/invoices', '/bookings/payments', '/accounts/payouts', '/channels/booking/payouts', '/channels/booking/reservations', '/channels/settings', '/finance/payouts']) {
+            const r = await fetch(`${BASE}${path}?propertyId=354659`, H);
+            const b = await r.json().catch(() => null);
+            console.log(`GET ${path} → HTTP ${r.status} · ${b && typeof b === 'object' ? 'keys ' + Object.keys(b).slice(0, 8).join(',') + (Array.isArray(b?.data) ? ` · ${b.data.length} item(s)` : '') + (b?.error ? ` · error ${JSON.stringify(b.error).slice(0, 120)}` : '') : 'non-JSON'}`);
+          }
+          console.log('\nGET only. Nothing was created or modified.');
+          NODE_EOF
+          node "$RUNNER_TEMP/history-finance.mjs"
+
       # ── PART A10 — STALE RESERVATIONS + FULL COMPARISON DUMP (read-only) ─
       # The three Supabase rows the sync stopped seeing (Beds24 ids 93233344,
       # 93233346, 93233348): looked up by id on the WHOLE account, and by their
