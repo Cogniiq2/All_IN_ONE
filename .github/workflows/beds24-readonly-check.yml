@@ -854,6 +854,56 @@ jobs:
           NODE_EOF
           node "$RUNNER_TEMP/ota-lookup.mjs"
 
+      # ── PART A10 — STALE RESERVATIONS + FULL COMPARISON DUMP (read-only) ─
+      # The three Supabase rows the sync stopped seeing (Beds24 ids 93233344,
+      # 93233346, 93233348): looked up by id on the WHOLE account, and by their
+      # Booking.com reference, any property, any room, every status. Then one
+      # compact line per booking on the account for a booking-by-booking
+      # comparison with bolagio_reservations. No guest names, emails or
+      # phones are printed. GET only.
+      - name: "Part A10 — stale reservations and comparison dump (read-only)"
+        if: always()
+        continue-on-error: true
+        env:
+          BEDS24_REFRESH_TOKEN: ${{ secrets.BEDS24_REFRESH_TOKEN }}
+        run: |
+          set -euo pipefail
+          cat <<'NODE_EOF' > "$RUNNER_TEMP/stale-lookup.mjs"
+          const BASE = 'https://beds24.com/api/v2';
+          const IDS = ['93233344', '93233346', '93233348'];
+          const REFS = ['5297351168', '5427027689', '6955044737'];
+          const ST = ['new','request','confirmed','cancelled','black','inquiry'].map((s) => `status=${s}`).join('&');
+          const auth = await fetch(`${BASE}/authentication/token`, { headers: { accept: 'application/json', refreshToken: process.env.BEDS24_REFRESH_TOKEN?.trim() ?? '' } });
+          const token = (await auth.json().catch(() => null))?.token;
+          if (!token) { console.log(`✗ auth failed HTTP ${auth.status}`); process.exit(1); }
+          const list = async (qs) => {
+            const out = []; const seen = new Set();
+            for (let page = 1; page <= 25; page++) {
+              const r = await fetch(`${BASE}/bookings?${qs}&page=${page}`, { headers: { accept: 'application/json', token } });
+              const b = await r.json().catch(() => null);
+              if (r.status !== 200) { console.log(`  HTTP ${r.status} ${JSON.stringify(b).slice(0, 160)}`); break; }
+              let fresh = 0;
+              for (const x of b?.data ?? []) if (!seen.has(x.id)) { seen.add(x.id); out.push(x); fresh++; }
+              if (!fresh || !b?.pages?.nextPageExists) break;
+            }
+            return out;
+          };
+          const row = (b) => JSON.stringify({ id: b.id, status: b.status, propertyId: b.propertyId, roomId: b.roomId, arrival: b.arrival, departure: b.departure, price: b.price, apiSourceId: b.apiSourceId ?? null, apiRef: b.apiReference ?? null, offerId: b.offerId ?? null, masterId: b.masterId ?? null, modified: b.modifiedTime ?? null, booked: b.bookingTime ?? null });
+          console.log('1) By Beds24 id, whole account, every status:');
+          const byId = await list(`${IDS.map((i) => `id=${i}`).join('&')}&${ST}`);
+          for (const id of IDS) { const hit = byId.filter((b) => String(b.id) === id); console.log(`  ${id}: ${hit.length ? hit.map(row).join(' || ') : 'NOT FOUND'}`); }
+          console.log('2) Whole account, every status, arrivals 2024-01-01..2029-12-31:');
+          const all = await list(`arrivalFrom=2024-01-01&arrivalTo=2029-12-31&${ST}`);
+          console.log(`  ${all.length} booking(s) on the account`);
+          for (const ref of REFS) { const hit = all.filter((b) => String(b.apiReference ?? '').includes(ref)); console.log(`  ref ${ref}: ${hit.length ? hit.map(row).join(' || ') : 'NO BOOKING CARRIES THIS REFERENCE'}`); }
+          console.log('3) Bookings on the account overlapping the stale stays (any room):');
+          for (const [a, d] of [['2027-03-12','2027-03-13'], ['2027-07-28','2027-08-01']]) for (const b of all.filter((b) => String(b.arrival) < d && String(b.departure) > a)) console.log(`  ${a}→${d}: ${row(b)}`);
+          console.log('4) Comparison dump, one line per booking:');
+          for (const b of all.sort((x, y) => x.id - y.id)) console.log(`  B24ROW ${row(b)}`);
+          console.log('\nGET only. Nothing was created or modified.');
+          NODE_EOF
+          node "$RUNNER_TEMP/stale-lookup.mjs"
+
       # ── PART A8 — WHICH DEPLOYMENT SERVES THE PRODUCTION DOMAIN ─────────
       # Public HTTP reads only, no credential in scope: response headers and
       # the redirect chain of bolagio-residences.de, and whether what answers
