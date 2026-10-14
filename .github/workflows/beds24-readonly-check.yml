@@ -117,14 +117,15 @@ jobs:
         env:
           BEDS24_REFRESH_TOKEN: ${{ secrets.BEDS24_REFRESH_TOKEN }}
         run: |
-          set -uo pipefail
+          set -u
           echo "── Beds24 API v2 spec: payout/commission vocabulary ──"
           for u in https://beds24.com/api/v2/apiV2.yaml https://api.beds24.com/v2/apiV2.yaml; do
             code=$(curl -sS -L --max-time 30 -o "$RUNNER_TEMP/b24.yaml" -w "%{http_code}" "$u" || echo 000)
             echo "$u → HTTP $code, $(wc -c < "$RUNNER_TEMP/b24.yaml" 2>/dev/null || echo 0) bytes"
             if [ "$code" = "200" ]; then
               grep -oiE "[A-Za-z_]*(payout|commission|settlement|channelCollect|paymentsBy|payment)[A-Za-z_]*" "$RUNNER_TEMP/b24.yaml" | sort | uniq -c | sort -rn | head -40
-              echo "paths:"; grep -E "^  /" "$RUNNER_TEMP/b24.yaml" | head -80
+              echo "── spec context: commission / channelCollect / channels/booking ──"
+              grep -n -iE -B2 -A6 "commission|channelCollect|/channels/booking:" "$RUNNER_TEMP/b24.yaml" | cut -c1-220 | head -120 || true
               break
             fi
           done
@@ -137,7 +138,7 @@ jobs:
             https://developers.booking.com/connectivity/docs/token-based-authentication.md; do
             code=$(curl -sS -L --max-time 30 -A "Mozilla/5.0" -o "$RUNNER_TEMP/doc.md" -w "%{http_code}" "$u" || echo 000)
             echo "### $u → HTTP $code"
-            [ "$code" = "200" ] && grep -iE "partner|provider|machine account|portal|permission|eligib|only|prerequisite|Payments by Booking|PAYOUT|commission|payout|feature|header|enable|property" "$RUNNER_TEMP/doc.md" | sed 's/^/    /' | head -45
+            [ "$code" = "200" ] && grep -iE "partner|provider|machine account|portal|permission|eligib|only|prerequisite|Payments by Booking|PAYOUT|commission|payout|feature|header|enable|property" "$RUNNER_TEMP/doc.md" | cut -c1-400 | head -40 || true
           done
           cat <<'NODE_EOF' > "$RUNNER_TEMP/finance-scan.mjs"
           const BASE = 'https://beds24.com/api/v2';
