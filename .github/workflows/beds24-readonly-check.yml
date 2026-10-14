@@ -801,6 +801,59 @@ jobs:
           NODE_EOF
           node "$RUNNER_TEMP/webhook-config.mjs"
 
+      # ── PART A9 — ARE THE BOOKING.COM RESERVATIONS IN BEDS24? (read-only) ─
+      # Looks up the owner-supplied Booking.com reservation numbers among every
+      # booking on both rooms, every status, and the October bookings Beds24
+      # holds. Prints ids, status, dates, party and price — no guest names.
+      - name: "Part A9 — Booking.com references in Beds24 (read-only)"
+        if: always()
+        continue-on-error: true
+        env:
+          BEDS24_REFRESH_TOKEN: ${{ secrets.BEDS24_REFRESH_TOKEN }}
+        run: |
+          set -euo pipefail
+          cat <<'NODE_EOF' > "$RUNNER_TEMP/ota-lookup.mjs"
+          const BASE = 'https://beds24.com/api/v2';
+          const WANT = ['6623274251','5188263944','6581782671','6436177157','6521839023','5159923754','5427010293','6860390433','6233263014'];
+          const STATUSES = ['new','request','confirmed','cancelled','black','inquiry'];
+          const auth = await fetch(`${BASE}/authentication/token`, { headers: { accept: 'application/json', refreshToken: process.env.BEDS24_REFRESH_TOKEN?.trim() ?? '' } });
+          const token = (await auth.json().catch(() => null))?.token;
+          if (!token) { console.log(`✗ auth failed HTTP ${auth.status}`); process.exit(1); }
+          const list = async (qs) => {
+            const out = [];
+            for (let page = 1; page <= 20; page++) {
+              const r = await fetch(`${BASE}/bookings?${qs}&page=${page}`, { headers: { accept: 'application/json', token } });
+              const b = await r.json().catch(() => null);
+              if (r.status !== 200) { console.log(`  HTTP ${r.status} ${JSON.stringify(b).slice(0, 160)}`); break; }
+              out.push(...(b?.data ?? []));
+              if (!b?.pages?.nextPageExists) break;
+            }
+            return out;
+          };
+          const st = STATUSES.map((s) => `status=${s}`).join('&');
+          const all = [];
+          for (const [label, pid, rid] of [['apartment-i', '354659', '731147'], ['apartment-ii', '354658', '731146']]) {
+            const rows = await list(`propertyId=${pid}&roomId=${rid}&arrivalFrom=2025-01-01&arrivalTo=2028-12-31&${st}`);
+            rows.forEach((b) => all.push({ ...b, _unit: label }));
+            console.log(`${label}: ${rows.length} booking(s), every status`);
+          }
+          // Also every booking on the two properties regardless of room — a booking on another room would show here.
+          for (const pid of ['354659', '354658']) {
+            const rows = await list(`propertyId=${pid}&arrivalFrom=2025-01-01&arrivalTo=2028-12-31&${st}`);
+            for (const b of rows) if (!all.some((x) => x.id === b.id)) all.push({ ...b, _unit: `property ${pid} room ${b.roomId}` });
+          }
+          const line = (b) => `${b.id} | ${b._unit} | ${b.status} | ${b.arrival}→${b.departure} | ${b.numAdult}+${b.numChild} | ${b.price} | apiSourceId=${b.apiSourceId ?? '-'} | apiRef=${b.apiReference ?? '-'} | modified=${b.modifiedTime ?? '-'}`;
+          console.log('\nOwner-supplied Booking.com references:');
+          for (const ref of WANT) {
+            const hit = all.filter((b) => String(b.apiReference ?? '').includes(ref) || String(b.reference ?? '').includes(ref));
+            console.log(`  ${ref}: ${hit.length ? hit.map(line).join(' || ') : 'NOT IN BEDS24 (no booking carries this reference)'}`);
+          }
+          console.log('\nEvery Beds24 booking arriving in October 2026, both properties:');
+          for (const b of all.filter((b) => String(b.arrival) >= '2026-10-01' && String(b.arrival) <= '2026-10-31').sort((a, b) => String(a.arrival).localeCompare(String(b.arrival)))) console.log(`  ${line(b)}`);
+          console.log('\nGET only. Nothing was created or modified.');
+          NODE_EOF
+          node "$RUNNER_TEMP/ota-lookup.mjs"
+
       # ── PART A8 — WHICH DEPLOYMENT SERVES THE PRODUCTION DOMAIN ─────────
       # Public HTTP reads only, no credential in scope: response headers and
       # the redirect chain of bolagio-residences.de, and whether what answers
