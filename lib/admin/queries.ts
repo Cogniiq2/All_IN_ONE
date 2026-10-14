@@ -83,15 +83,22 @@ async function guard<T>(fn: () => Promise<T>): Promise<QueryResult<T>> {
 
 /* ── Units ─────────────────────────────────────────────────────────────── */
 
+/**
+ * The owner-facing name of a unit. The content file is the display layer
+ * ("Design - Apartment I · Premium Penthouse mit Dachterrasse"); the
+ * database's `display_name` ("Schulstraße I") is the stable operational
+ * label and the fallback for a unit the content file does not know. Slugs,
+ * ids and mappings are never touched by this.
+ */
 function unitName(slug: string, fallback: string): string {
-  return fallback || getRentalUnit(slug)?.name.de || slug;
+  return getRentalUnit(slug)?.name.de || fallback || slug;
 }
 
 function toUnitDto(row: UnitRow, meta: { syncedAt: string | null; daysCached: number }): UnitDto {
   const content = getRentalUnit(row.slug);
   return {
     slug: row.slug,
-    displayName: row.display_name || content?.name.de || row.slug,
+    displayName: content?.name.de || row.display_name || row.slug,
     contentStatus: content ? content.status : null,
     street: content?.street ?? null,
     isBookable: row.is_bookable,
@@ -289,7 +296,7 @@ export async function loadPerformance(range: DateRange): Promise<QueryResult<Per
       if (result.rows.length < PAGE || rows.length >= result.total) break;
     }
 
-    const names = new Map(units.map((u) => [u.id, u.display_name] as const));
+    const names = new Map(units.map((u) => [u.id, unitName(u.slug, u.display_name)] as const));
     /*
      * Only units with an ENABLED provider mapping count towards available
      * room nights. An apartment that is not sold anywhere cannot depress
@@ -420,7 +427,7 @@ function toJob(row: JobRow): ReconciliationJobDto {
 async function unitNameMap(): Promise<Map<string, string>> {
   const source = await rowSource();
   const units = await source.units();
-  return new Map(units.map((u) => [u.id, u.display_name]));
+  return new Map(units.map((u) => [u.id, unitName(u.slug, u.display_name)]));
 }
 
 export interface BookingPage {
@@ -434,7 +441,7 @@ export async function listBookings(filter: BookingListFilter): Promise<QueryResu
   return guard(async () => {
     const source = await rowSource();
     const units = await source.units();
-    const names = new Map(units.map((u) => [u.id, u.display_name]));
+    const names = new Map(units.map((u) => [u.id, unitName(u.slug, u.display_name)]));
     const unitId = filter.unit ? units.find((u) => u.slug === filter.unit)?.id ?? '__none__' : null;
     const sortColumn = (
       {
@@ -649,7 +656,7 @@ export async function loadCalendar(windowStart: string, windowEnd: string, today
   return guard(async () => {
     const source = await rowSource();
     const units = await source.units();
-    const names = new Map(units.map((u) => [u.id, u.display_name]));
+    const names = new Map(units.map((u) => [u.id, unitName(u.slug, u.display_name)]));
     const [{ rows }, closed, canonical] = await Promise.all([
       source.intents({ overlaps: { from: windowStart, to: windowEnd }, limit: 200, sort: 'check_in' }),
       source.inventoryClosed(windowStart, windowEnd).catch(() => []),
@@ -727,7 +734,7 @@ export async function loadCalendar(windowStart: string, windowEnd: string, today
       today,
       units: units.map((u) => ({
         slug: u.slug,
-        displayName: u.display_name || getRentalUnit(u.slug)?.name.de || u.slug,
+        displayName: unitName(u.slug, u.display_name),
         isBookable: u.is_bookable,
         contentStatus: getRentalUnit(u.slug)?.status ?? null,
       })),
@@ -1093,16 +1100,25 @@ export async function loadSystemHealth(now: Date = new Date()): Promise<QueryRes
 
       const openTurnovers = sum(queues, 'turnovers', ['required', 'in_progress']);
       const turnoverMeasured = queues.some((q) => q.queue === 'turnovers');
+      const channelDerivation = await source.channelTurnoverDerivationAvailable().catch(() => null);
+      // "Healthy" needs the derivation for imported stays to exist: with direct
+      // booking shut, every real departure comes from the reservation import,
+      // and a board that cannot derive from it is only configured, not working.
+      const status: HealthSectionDto['status'] = channelDerivation === false ? 'attention' : !turnoverMeasured ? 'not_instrumented' : 'healthy';
       sections.push({
         key: 'cleaning',
         title: 'Cleaning',
-        status: !turnoverMeasured ? 'not_instrumented' : 'healthy',
-        summary: !turnoverMeasured
-          ? 'No turnover has been derived yet. Turnovers appear once a confirmed departure is inside the sixty-day horizon.'
-          : `${openTurnovers} open turnover${openTurnovers === 1 ? '' : 's'}. Overdue windows are alerted above and listed under Cleaning.`,
+        status,
+        summary:
+          channelDerivation === false
+            ? 'Turnovers are derived from direct bookings only. Migration 20261014 (channel turnovers) is not applied, so departures of imported Booking.com and Airbnb stays appear on the Cleaning board as a planning list without a Pending / Done status.'
+            : !turnoverMeasured
+              ? 'No turnover has been derived yet. One appears for every booked departure inside the sixty-day horizon after the next operations pass (every few minutes).'
+              : `${openTurnovers} open turnover${openTurnovers === 1 ? '' : 's'}, derived from every booked departure. Overdue windows are alerted above and listed under Cleaning.`,
         facts: [
           { label: 'Open', value: String(openTurnovers) },
           { label: 'Done', value: String(sum(queues, 'turnovers', ['done'])) },
+          { label: 'Imported stays', value: channelDerivation === null ? 'unknown' : channelDerivation ? 'derived' : 'not derived', tone: channelDerivation === false ? 'caution' : channelDerivation ? 'positive' : 'muted' },
         ],
       });
     }

@@ -25,11 +25,14 @@ import 'server-only';
  */
 
 import { guestOperationsTiming } from '@/lib/booking/property-config';
-import { emitGuestEvents, syncTurnovers, type GuestEventReport, type TurnoverSyncReport } from '@/lib/booking/commands';
+import { emitGuestEvents, syncChannelTurnovers, syncTurnovers, type GuestEventReport, type TurnoverSyncReport } from '@/lib/booking/commands';
 import type { BookingLogger } from '@/lib/booking/logger';
 
 export interface OperationsReport {
+  /** Turnovers from confirmed direct bookings. */
   turnovers: TurnoverSyncReport;
+  /** Turnovers from active imported reservations; null while migration 20261014 is not applied. */
+  channelTurnovers: TurnoverSyncReport | null;
   guestEvents: GuestEventReport;
   /** Finance ingestion summary, or null when finance is not applied / failed (recorded in its own signal). */
   finance: { mode: 'queue' | 'scan'; enqueued: number; claimed: number; scanned: number; revenuePosted: number; paymentsRecorded: number; refundsPosted: number; refundsWithoutRevenue: number; matches: number; errors: number } | null;
@@ -37,6 +40,8 @@ export interface OperationsReport {
 
 export async function runOperationsPass(logger: BookingLogger): Promise<OperationsReport> {
   const turnovers = await syncTurnovers();
+  // After the direct ones, so a stay present in both tables is derived once, from its intent.
+  const channelTurnovers = await syncChannelTurnovers();
   const guestEvents = await emitGuestEvents(guestOperationsTiming());
   /*
    * Finance CONSUMES the facts above. It runs last, after the booking work is
@@ -59,9 +64,10 @@ export async function runOperationsPass(logger: BookingLogger): Promise<Operatio
     logger.warn('finance.ingest', { outcome: 'failed', errorCode: cause instanceof Error ? cause.name : 'unknown' });
   }
   logger.info('operations.pass', {
-    count: turnovers.created + turnovers.updated + turnovers.voided,
+    count: turnovers.created + turnovers.updated + turnovers.voided + (channelTurnovers ? channelTurnovers.created + channelTurnovers.updated + channelTurnovers.voided : 0),
     resolution: `turnovers created=${turnovers.created} updated=${turnovers.updated} voided=${turnovers.voided}; ` +
+      (channelTurnovers ? `channel turnovers created=${channelTurnovers.created} updated=${channelTurnovers.updated} voided=${channelTurnovers.voided}; ` : 'channel turnovers not derived (migration 20261014 absent); ') +
       `events prearrival=${guestEvents.prearrival} checkin=${guestEvents.checkin} review=${guestEvents.review}`,
   });
-  return { turnovers, guestEvents, finance };
+  return { turnovers, channelTurnovers, guestEvents, finance };
 }

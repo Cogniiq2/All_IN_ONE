@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import { currentOperator } from '@/lib/admin/auth';
 import { can } from '@/lib/admin/permissions';
 import { loadCleaningBoard } from '@/lib/admin/queries';
-import { formatLongDay } from '@/lib/admin/format';
-import { PageHeader, Section, ErrorNotice, Metric } from '@/components/admin/primitives';
+import { formatIsoDate, formatLongDay } from '@/lib/admin/format';
+import { PageHeader, Section, ErrorNotice, Metric, Notice } from '@/components/admin/primitives';
 import { ChannelTurnoverList } from '@/components/admin/cleaning/channel-turnovers';
 import { RefreshControl } from '@/components/admin/shell/refresh-control';
 import { TurnoverGroup } from '@/components/admin/cleaning/turnover-list';
@@ -12,8 +12,9 @@ export const metadata: Metadata = { title: 'Cleaning' };
 
 /**
  * The turnover board. Every row is derived by the booking core from a
- * confirmed departure; the board never invents a cleaning and never hides
- * one. Overdue first, today second, then what is coming.
+ * departure — a confirmed direct booking or an active imported reservation;
+ * the board never invents a cleaning and never hides one. Overdue first,
+ * today second, then what is coming.
  */
 export default async function CleaningPage() {
   const [board, operator] = await Promise.all([loadCleaningBoard(), currentOperator()]);
@@ -22,27 +23,30 @@ export default async function CleaningPage() {
   if (!board.ok) {
     return (
       <>
-        <PageHeader eyebrow="Operations" title="Cleaning" />
-        <ErrorNotice title="The turnover board could not be loaded.">{board.error}</ErrorNotice>
+        <PageHeader eyebrow="Daily" title="Cleaning" />
+        <ErrorNotice title="The cleaning board could not be loaded.">{board.error}</ErrorNotice>
       </>
     );
   }
   const b = board.data;
+  const next = b.overdue[0] ?? b.dueToday[0] ?? b.upcoming[0] ?? null;
+  const nextDate = next?.departure ?? b.channelTurnovers[0]?.departure.checkOut ?? null;
+  const toClean = b.counts.open + b.channelTurnovers.length;
 
   return (
     <>
       <PageHeader
-        eyebrow="Operations"
+        eyebrow="Daily"
         title="Cleaning"
-        description={`${formatLongDay(b.today)} · turnovers from confirmed direct departures, and channel departures from the reservation import, inside the sixty-day horizon.`}
+        description={`${formatLongDay(b.today)} · one turnover per departure, from every channel, for the next sixty days. Mark each one done when the apartment is ready.`}
         actions={<RefreshControl loadedAt={board.loadedAt} every={120} />}
       />
 
       <div className="bc-metrics" style={{ ['--cols' as string]: 4 }}>
-        <Metric label="Open" value={b.counts.open} />
-        <Metric label="Overdue" value={b.counts.overdue} note={b.counts.overdue > 0 ? 'window closed, not done' : undefined} />
-        <Metric label="Same-day changeovers" value={b.counts.sameDay} />
-        <Metric label="Unassigned" value={b.counts.unassigned} />
+        <Metric label="To clean" value={toClean} note={nextDate ? `next check-out ${nextDate === b.today ? 'today' : formatIsoDate(nextDate)}` : 'nothing open in sixty days'} />
+        <Metric label="Overdue" value={b.counts.overdue} note={b.counts.overdue > 0 ? 'past the cleaning window, not done' : undefined} />
+        <Metric label="Same-day changeovers" value={b.counts.sameDay + b.channelTurnovers.filter((t) => t.sameDay).length} note="guests arrive the day others leave" />
+        <Metric label="Nobody assigned" value={b.counts.unassigned} />
       </div>
 
       {!mayManage && (
@@ -51,49 +55,49 @@ export default async function CleaningPage() {
         </p>
       )}
 
-      <Section title="Overdue" meta={<span>window closed and still open</span>} id="overdue">
+      <Section title="Overdue" meta={<span>the cleaning window has passed and nobody marked it done</span>} id="overdue">
         <TurnoverGroup items={b.overdue} empty="Nothing is overdue." mayManage={mayManage} />
       </Section>
 
       <Section title="Today" id="today">
-        <TurnoverGroup items={b.dueToday} empty="No departure to turn over today." mayManage={mayManage} />
+        <TurnoverGroup items={b.dueToday} empty="No check-out to clean after today." mayManage={mayManage} />
       </Section>
 
-      <Section title="Upcoming" meta={<span>{b.upcoming.length} in the horizon</span>} id="upcoming">
-        <TurnoverGroup items={b.upcoming} empty="No upcoming turnover. Confirmed departures create one automatically." mayManage={mayManage} />
+      <Section title="Upcoming" meta={<span>{b.upcoming.length} in the next sixty days</span>} id="upcoming">
+        <TurnoverGroup items={b.upcoming} empty="No upcoming check-out. Every booked departure creates a turnover automatically." mayManage={mayManage} />
       </Section>
 
-      <Section title="Recently closed" id="recent">
-        <TurnoverGroup items={b.recent} empty="Nothing closed in the last two weeks." mayManage={mayManage} />
+      <Section title="Recently done" id="recent">
+        <TurnoverGroup items={b.recent} empty="Nothing finished in the last two weeks." mayManage={mayManage} />
       </Section>
 
       {/*
-        The channel side of the work.
-
-        Every departure here leaves a room to clean, exactly as a direct
-        booking's does. They are listed rather than turned into turnover
-        records because a turnover emits a cleaning event the automation
-        platform acts on, and manufacturing one for every Booking.com stay
-        already in the account would fire real messages for cleanings long
-        since done. Planning first; work orders when the derivation is
-        extended deliberately.
+        Departures the derivation has not reached yet. Empty once migration
+        20261014 is applied and the operations pass has run; until then this
+        is the planning list the board always showed for channel stays, so
+        nothing disappears from the owner's view in between.
       */}
-      <Section
-        title="Channel departures"
-        meta={<span>from imported reservations · next arrival and what to prepare · no work order, no automation</span>}
-        id="channel-departures"
-      >
-        <div className="mt-4">
-          <ChannelTurnoverList items={b.channelTurnovers} />
-          <p className="bc-meta mt-3" style={{ fontSize: 12 }}>
-            These come from the read-only reservation import. They do not create turnover records and trigger nothing; assign them
-            the way you do today until turnovers are derived from channel stays as well.
-          </p>
-        </div>
-      </Section>
+      {b.channelTurnovers.length > 0 && (
+        <Section
+          title="Check-outs not yet on the board"
+          meta={<span>{b.channelTurnovers.length} booked departure{b.channelTurnovers.length === 1 ? '' : 's'} without a turnover record</span>}
+          id="channel-departures"
+        >
+          <div className="mt-4">
+            <Notice tone="caution" title="These cannot be marked done yet">
+              They come from the reservation import and will appear above, with a Pending / Done status, once the cleaning derivation for
+              imported stays is enabled on the database (migration 20261014) and the next scheduled pass has run — about three minutes later.
+            </Notice>
+            <div className="mt-4">
+              <ChannelTurnoverList items={b.channelTurnovers} />
+            </div>
+          </div>
+        </Section>
+      )}
 
       <p className="bc-meta mt-10" style={{ fontSize: 12 }}>
-        A turnover is voided only when the departure it came from no longer exists; a moved departure reopens it. Cleaning routing to a person or a calendar happens in the automation platform from the cleaning events, not from this screen.
+        A turnover disappears only when the stay it came from is cancelled; a moved check-out reopens it. The cleaning window is
+        check-out time to check-in time on the departure day; when the next guests arrive later, the room is needed by that date.
       </p>
     </>
   );

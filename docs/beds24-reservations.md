@@ -457,7 +457,7 @@ Neither blocks the technical work, and neither is assumed to be already done.
   detail page, and a board that pretends otherwise invents one.
 * **Bookings** — a *Channel reservations* section beside the direct-booking
   table. Never merged into it.
-* **Cleaning** — a *Channel departures* section (see below).
+* **Cleaning** — one turnover per departure, from every channel (see below).
 * **System** — the `reservation_sync` heartbeat, overdue after two hours.
 
 ### Double counting
@@ -470,25 +470,35 @@ dropped rather than drawn twice. Matching is on `beds24_booking_id`, and on
 
 ---
 
-## 13. Cleaning — deliberately unfinished
+## 13. Cleaning — turnovers from imported stays (migration 20261014)
 
-`bolagio_turnovers` rows are derived by the database from **confirmed direct
-departures**, and creating one emits a `cleaning.required` event into the
-outbox that the automation platform acts on. Deriving turnovers from imported
-Booking.com history would fire that event for every stay already in the
-account — real messages, for cleanings long since done.
+Until 2026-10-14 `bolagio_turnovers` rows were derived only from **confirmed
+direct departures** (`bolagio_sync_turnovers`), and the board could only *show*
+channel departures as a planning list. With direct booking shut that meant no
+turnover existed at all.
 
-So this release **shows** channel departures on the cleaning board and creates
-no work orders and no automations for them. Nothing new is sent, to anyone.
+Migration `20261014120000_channel_turnovers.sql` adds the second origin:
 
-The follow-up, to be done deliberately and with the automation side considered:
+* `bolagio_turnovers.reservation_id` → `bolagio_reservations(id)`, unique;
+  `intent_id` is nullable; a check requires **exactly one** of the two.
+* `bolagio_sync_channel_turnovers(p_horizon_days, p_now)`: one turnover per
+  **active** reservation departing from yesterday to the horizon, updated when
+  the stay moves (a `done` one is reopened), voided — never deleted — when the
+  reservation stops being active. The next arrival is read from
+  `bolagio_reservations` alone, so every channel is one truth.
+* **No duplicates.** A direct booking is in both tables, linked by
+  `direct_intent_id`; it keeps its intent turnover and the reservation side
+  skips it, and skips any reservation an intent turnover already covers on
+  the same unit and day.
+* **No outbox events.** Unlike the intent sync, this one emits no
+  `cleaning.*` events: the board is the work list for channel stays, and
+  wiring the automation platform to them is a separate decision.
 
-1. `alter table bolagio_turnovers alter column intent_id drop not null`, add
-   `reservation_id uuid references bolagio_reservations(id)`, unique.
-2. Extend `bolagio_sync_turnovers` to derive from active canonical
-   reservations as well as confirmed intents.
-3. Decide the cut-off — almost certainly "departures from the day the
-   derivation goes live onward" — so the backfill does not emit history.
+The operations pass (`runOperationsPass`, every reconcile run) calls both
+syncs, intents first. On a database without the migration the channel call
+returns null, the board shows the planning list as before, and `/admin/system`
+reports the derivation as **not applied** (status *attention*). Real-Postgres
+proof: `tests/sql/channel-turnovers.sql` via `scripts/db-test.sh`.
 
 ---
 

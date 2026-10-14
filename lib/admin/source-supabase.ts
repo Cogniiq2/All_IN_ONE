@@ -395,26 +395,40 @@ export function supabaseRowSource(): RowSource {
     },
 
     async turnovers(query) {
-      let q = supabaseAdmin()
-        .from('bolagio_turnovers')
-        .select(
-          'id, unit_id, intent_id, departure, window_start, window_end, next_arrival, same_day, status, assigned_to, note,' +
-            ' started_at, done_at, done_by, created_at, updated_at, bolagio_booking_intents(reference), bolagio_units(slug)'
-        )
-        .order('departure', { ascending: true })
-        .limit(Math.min(400, query.limit ?? 200));
-      if (query.statuses && query.statuses.length > 0) q = q.in('status', query.statuses as string[]);
-      if (query.departureFrom) q = q.gte('departure', query.departureFrom);
-      if (query.departureTo) q = q.lt('departure', query.departureTo);
-      if (query.intentId) q = q.eq('intent_id', query.intentId);
-      const { data, error } = await q;
+      const BASE =
+        'id, unit_id, intent_id, departure, window_start, window_end, next_arrival, same_day, status, assigned_to, note,' +
+        ' started_at, done_at, done_by, created_at, updated_at, bolagio_booking_intents(reference), bolagio_units(slug)';
+      const run = async (withReservation: boolean) => {
+        let q = supabaseAdmin()
+          .from('bolagio_turnovers')
+          .select(withReservation ? `${BASE}, reservation_id` : BASE)
+          .order('departure', { ascending: true })
+          .limit(Math.min(400, query.limit ?? 200));
+        if (query.statuses && query.statuses.length > 0) q = q.in('status', query.statuses as string[]);
+        if (query.departureFrom) q = q.gte('departure', query.departureFrom);
+        if (query.departureTo) q = q.lt('departure', query.departureTo);
+        if (query.intentId) q = q.eq('intent_id', query.intentId);
+        return q;
+      };
+      // `reservation_id` arrives with migration 20261014; a database without it
+      // still serves the direct-booking turnovers rather than no board at all.
+      let { data, error } = await run(true);
+      if (error && /reservation_id/.test(error.message ?? '')) ({ data, error } = await run(false));
       if (error) throw error;
-      return ((data ?? []) as unknown as Array<Omit<TurnoverRow, 'reference' | 'unit_slug'> & { bolagio_booking_intents?: { reference: string } | { reference: string }[] | null; bolagio_units?: { slug: string } | { slug: string }[] | null }>).map((row) => {
+      return ((data ?? []) as unknown as Array<Omit<TurnoverRow, 'reference' | 'unit_slug' | 'reservation_id'> & { reservation_id?: string | null; bolagio_booking_intents?: { reference: string } | { reference: string }[] | null; bolagio_units?: { slug: string } | { slug: string }[] | null }>).map((row) => {
         const { bolagio_booking_intents, bolagio_units, ...rest } = row;
         const intent = Array.isArray(bolagio_booking_intents) ? bolagio_booking_intents[0] : bolagio_booking_intents;
         const unit = Array.isArray(bolagio_units) ? bolagio_units[0] : bolagio_units;
-        return { ...rest, reference: intent?.reference ?? null, unit_slug: unit?.slug ?? '' };
+        return { ...rest, reservation_id: rest.reservation_id ?? null, reference: intent?.reference ?? null, unit_slug: unit?.slug ?? '' };
       });
+    },
+
+    async channelTurnoverDerivationAvailable() {
+      // A head request on the column the migration adds: cheap, and exact.
+      const { error } = await supabaseAdmin().from('bolagio_turnovers').select('reservation_id', { head: true, count: 'exact' }).limit(1);
+      if (!error) return true;
+      if (/reservation_id/.test(error.message ?? '') || error.code === '42703') return false;
+      throw error;
     },
 
     async turnoverEvents(turnoverId) {

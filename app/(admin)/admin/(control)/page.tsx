@@ -1,94 +1,99 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { adminPosture } from '@/lib/admin/config';
-import { loadCalendar, loadPerformance, loadReservationFreshness, loadSystemHealth, loadToday, loadUpcoming } from '@/lib/admin/queries';
-import { monthRange, periodLabel } from '@/lib/finance/periods';
+import { loadCalendar, loadCleaningBoard, loadPerformance, loadReservationFreshness, loadSystemHealth, loadToday } from '@/lib/admin/queries';
+import { addMonths, monthRange, periodLabel, ytd } from '@/lib/finance/periods';
 import { Money, Pct } from '@/components/admin/finance/primitives';
 import { HealthSectionCard } from '@/components/admin/health-section-card';
 import { cachedAttention } from '@/lib/admin/request-cache';
 import { countByLevel } from '@/lib/admin/attention';
-import { addDays, occupancyRatio, relationOn, windowOf } from '@/lib/admin/calendar';
-import { formatIsoDate, formatLongDay, formatRelative, formatStay, percent, pluralNights, propertyTodayIso } from '@/lib/admin/format';
+import { addDays, relationOn } from '@/lib/admin/calendar';
+import { tonightSnapshot, upcomingStays, windowStats } from '@/lib/admin/overview';
+import { compactUnitName, formatIsoDate, formatLongDay, formatRelative, formatStay, percent, pluralNights, propertyTodayIso } from '@/lib/admin/format';
 import { isBookingState, reservationClassPresentation, sourcePresentation } from '@/lib/admin/presentation';
 import { isPaidSide } from '@/lib/booking/states';
 import { PageHeader, Section, Metric, DegradedNotice, ErrorNotice, EmptyState, HealthBadge, BookingStateBadge } from '@/components/admin/primitives';
 import { RefreshControl } from '@/components/admin/shell/refresh-control';
 import { AttentionRow, AllClear } from '@/components/admin/attention/attention-list';
-import { BookingList } from '@/components/admin/bookings/booking-rows';
 
-export const metadata: Metadata = { title: 'Today' };
+export const metadata: Metadata = { title: 'Overview' };
 
 /**
- * The command centre. The first thing on it is what needs a person; then
- * today at the door; then where each residence stands; then what is coming.
- * Every number is derived from records. Nothing is estimated.
+ * The owner's first screen. What needs a person; then today at the door and
+ * where each apartment stands; then what is coming; then how the month is
+ * going; then whether the records behind all of it are current. Every number
+ * is derived from synchronised reservations. Nothing is estimated.
  */
 export default async function OverviewPage() {
   const today = propertyTodayIso();
   const posture = adminPosture();
-  const horizon = windowOf(today, 7);
-  const [attention, board, upcoming, calendar, health, month, sync] = await Promise.all([
+  const thisMonth = today.slice(0, 7);
+  const nextMonth = addMonths(today, 1).slice(0, 7);
+  const [attention, board, calendar, health, month, next, year, sync, cleaning] = await Promise.all([
     cachedAttention(),
     loadToday(today),
-    loadUpcoming(today, 8),
     loadCalendar(addDays(today, -1), addDays(today, 31), today),
     loadSystemHealth(),
-    loadPerformance(monthRange(today.slice(0, 7))),
+    loadPerformance(monthRange(thisMonth)),
+    loadPerformance(monthRange(nextMonth)),
+    loadPerformance(ytd(today)),
     loadReservationFreshness(),
+    loadCleaningBoard(),
   ]);
   const loadedAt = board.loadedAt;
 
   const chips: { label: string; tone: string }[] = [];
   if (posture.mode === 'preview') chips.push({ label: 'Preview data', tone: 'caution' });
   if (posture.mode === 'fixture') chips.push({ label: 'Development fixtures', tone: 'caution' });
-  chips.push(
-    posture.directBookingEnabled && !posture.directBookingPermitted
-      ? { label: 'Direct booking refused by configuration', tone: 'critical' }
-      : { label: posture.directBookingPermitted ? 'Direct booking enabled' : 'Direct booking disabled', tone: posture.directBookingPermitted ? 'positive' : 'neutral' }
-  );
-  if (posture.environment !== 'production') chips.push({ label: `Environment: ${posture.environment}`, tone: 'caution' });
-  if (posture.paypalMode !== 'live') chips.push({ label: posture.paypalMode === 'sandbox' ? 'PayPal sandbox' : 'PayPal unconfigured', tone: posture.paypalMode === 'sandbox' ? 'caution' : 'critical' });
-  if (posture.beds24Mode !== 'live') chips.push({ label: 'Beds24 mock', tone: 'caution' });
+  if (posture.directBookingEnabled && !posture.directBookingPermitted) chips.push({ label: 'Direct booking refused by configuration', tone: 'critical' });
+  else if (posture.directBookingPermitted) chips.push({ label: 'Direct booking enabled', tone: 'positive' });
+  // Online payment matters only while the website itself takes bookings.
+  if (posture.directBookingPermitted && posture.paypalMode !== 'live') chips.push({ label: posture.paypalMode === 'sandbox' ? 'PayPal sandbox' : 'Online payment not set up', tone: 'critical' });
+  if (posture.beds24Mode !== 'live') chips.push({ label: 'Booking system: test data', tone: 'caution' });
+  if (posture.environment !== 'production') chips.push({ label: `${posture.environment} deployment`, tone: 'muted' });
 
   const items = attention.ok ? attention.data.items : [];
   const counts = countByLevel(items);
   const urgent = items.filter((i) => i.level === 'critical' || i.level === 'high');
 
   const bookableUnits = calendar.ok ? calendar.data.units.filter((u) => u.isBookable) : [];
+  const bookableSlugs = bookableUnits.map((u) => u.slug);
   /*
-   * Occupancy counts every stay that ACTUALLY OCCUPIES a unit, from either
-   * record: a paid-side direct booking, and a channel reservation the import
-   * classified as a real stay. Cancelled and merely requested channel
-   * reservations are excluded by `occupies`, so a cancellation lowers
-   * occupancy the moment it is imported rather than flattering the number.
+   * Only stays that ACTUALLY OCCUPY a unit count, from either record: a
+   * paid-side direct booking, and a channel reservation the import
+   * classified as a real stay. Cancelled and merely requested reservations
+   * are excluded by `occupies`, so a cancellation lowers every figure the
+   * moment it is imported rather than flattering the number.
    */
   const occupying = calendar.ok
     ? calendar.data.reservations.filter(
-        (r) =>
-          bookableUnits.some((u) => u.slug === r.unitSlug) &&
-          (r.kind === 'reservation' ? r.occupies : isBookingState(r.status) && isPaidSide(r.status))
+        (r) => bookableSlugs.includes(r.unitSlug) && (r.kind === 'reservation' ? r.occupies : isBookingState(r.status) && isPaidSide(r.status))
       )
     : [];
-  const occupancy = calendar.ok && bookableUnits.length > 0 ? occupancyRatio(occupying, horizon, bookableUnits.length) : null;
-  const upcomingCount = calendar.ok
-    ? calendar.data.reservations.filter(
-        (r) => r.checkIn > today && (r.kind === 'reservation' ? r.occupies : r.status === 'confirmed')
-      ).length
-    : null;
+  const tonight = tonightSnapshot(bookableSlugs, occupying, today);
+  const week = windowStats(occupying, today, 7, bookableUnits.length);
+  const month30 = windowStats(occupying, today, 30, bookableUnits.length);
+  const upcoming = upcomingStays(occupying, today, 8);
+  const arrivalsToday = board.ok ? board.data.arrivals.length + board.data.channelArrivals.length : null;
+  const departuresToday = board.ok ? board.data.departures.length + board.data.channelDepartures.length : null;
+  const inHouse = board.ok ? board.data.inHouse.length + board.data.channelInHouse.length : null;
+  const nextCleaning = cleaning.ok ? cleaning.data.overdue[0] ?? cleaning.data.dueToday[0] ?? cleaning.data.upcoming[0] ?? null : null;
 
   return (
     <>
       <PageHeader
-        eyebrow={`Today · Bayreuth`}
+        eyebrow="Overview · Bayreuth"
         title={formatLongDay(today)}
         description={
-          <span className="inline-flex flex-wrap items-center gap-1.5">
-            {chips.map((c) => (
-              <span key={c.label} className="bc-badge ghost" data-tone={c.tone}>
-                {c.label}
-              </span>
-            ))}
-          </span>
+          chips.length > 0 ? (
+            <span className="inline-flex flex-wrap items-center gap-1.5">
+              {chips.map((c) => (
+                <span key={c.label} className="bc-badge ghost" data-tone={c.tone}>
+                  {c.label}
+                </span>
+              ))}
+            </span>
+          ) : undefined
         }
         actions={<RefreshControl loadedAt={loadedAt} every={60} />}
       />
@@ -111,7 +116,7 @@ export default async function OverviewPage() {
           )}
         </div>
         {!attention.ok ? (
-          <ErrorNotice title="The attention inbox could not be loaded.">{attention.error}</ErrorNotice>
+          <ErrorNotice title="The attention list could not be loaded.">{attention.error}</ErrorNotice>
         ) : items.length === 0 ? (
           <AllClear />
         ) : (
@@ -130,54 +135,98 @@ export default async function OverviewPage() {
         )}
       </section>
 
-      {/* ── Key figures ──────────────────────────────────────────── */}
-      <Section title="Key figures" meta="Derived from records only">
+      {/* ── Today ────────────────────────────────────────────────── */}
+      <Section title="Today" meta="Booked stays from every channel · a cancelled reservation is never an arrival" id="today">
         <div className="bc-metrics mt-4" style={{ ['--cols' as string]: 5 }}>
-          <Metric label="Arrivals today" value={board.ok ? board.data.arrivals.length + board.data.channelArrivals.length : ''} unavailable={!board.ok} note={board.ok && board.data.channelArrivals.length > 0 ? `${board.data.channelArrivals.length} via a channel` : undefined} />
-          <Metric label="Departures today" value={board.ok ? board.data.departures.length + board.data.channelDepartures.length : ''} unavailable={!board.ok} note={board.ok && board.data.channelDepartures.length > 0 ? `${board.data.channelDepartures.length} via a channel` : undefined} />
-          <Metric label="In house" value={board.ok ? board.data.inHouse.length + board.data.channelInHouse.length : ''} unavailable={!board.ok} note={board.ok ? 'Stays covering tonight, every channel' : undefined} />
-          <Metric label="Occupancy · 7 nights" value={percent(occupancy)} unavailable={!calendar.ok || bookableUnits.length === 0} note={bookableUnits.length > 0 ? `${bookableUnits.length} bookable ${bookableUnits.length === 1 ? 'unit' : 'units'}, every channel` : 'No bookable units'} />
-          <Metric label="Booked ahead" value={upcomingCount ?? ''} unavailable={upcomingCount === null} note="Next 31 days" />
+          <Metric label="Arrivals today" value={arrivalsToday ?? ''} unavailable={arrivalsToday === null} />
+          <Metric label="Departures today" value={departuresToday ?? ''} unavailable={departuresToday === null} />
+          <Metric label="Occupied tonight" value={calendar.ok ? tonight.occupiedUnits : ''} unavailable={!calendar.ok} note={inHouse !== null ? `${inHouse} ${inHouse === 1 ? 'stay' : 'stays'} in house` : undefined} />
+          <Metric label="Vacant tonight" value={calendar.ok ? tonight.vacantUnits : ''} unavailable={!calendar.ok} note={`of ${bookableUnits.length} bookable ${bookableUnits.length === 1 ? 'apartment' : 'apartments'}`} />
+          <Metric label="Same-day turnovers" value={calendar.ok ? tonight.sameDayTurnovers : ''} unavailable={!calendar.ok} note="one guest leaves, the next arrives" />
         </div>
+
+        {!calendar.ok ? (
+          <div className="mt-4">
+            <ErrorNotice title="Apartment status could not be loaded.">{calendar.error}</ErrorNotice>
+          </div>
+        ) : (
+          <div className="bc-rows mt-4">
+            {calendar.data.units.map((unit) => {
+              const stays = occupying.filter((r) => r.unitSlug === unit.slug);
+              const current = stays.find((r) => relationOn(r, today) === 'in_house');
+              const arriving = stays.find((r) => relationOn(r, today) === 'arrival');
+              const departing = stays.find((r) => relationOn(r, today) === 'departure');
+              const nextStay = stays.filter((r) => r.checkIn > today).sort((a, b) => a.checkIn.localeCompare(b.checkIn))[0];
+              const closed = calendar.data.closures.find((c) => c.unitSlug === unit.slug && today >= c.from && today < c.to);
+              const preparing = !unit.isBookable && unit.contentStatus !== 'available';
+              if (!unit.isBookable && preparing) return null;
+              let state: { label: string; tone: string; detail: string };
+              if (arriving && departing) state = { label: 'Turnover today', tone: 'progress', detail: `${departing.guestLabel ?? departing.reference} leaves · ${arriving.guestLabel ?? arriving.reference} arrives, ${pluralNights(arriving.nights)}` };
+              else if (arriving) state = { label: 'Arrival today', tone: 'progress', detail: `${arriving.guestLabel ?? arriving.reference}, ${pluralNights(arriving.nights)} until ${formatIsoDate(arriving.checkOut)}` };
+              else if (departing) state = { label: 'Departure today', tone: 'neutral', detail: `${departing.guestLabel ?? departing.reference} leaves${nextStay ? ` · next arrival ${formatIsoDate(nextStay.checkIn)}` : ' · nothing booked next'}` };
+              else if (current) state = { label: 'Occupied', tone: 'positive', detail: `${current.guestLabel ?? current.reference} until ${formatIsoDate(current.checkOut)}` };
+              else if (closed) state = { label: 'Closed at the channel', tone: 'neutral', detail: `Not for sale until ${formatIsoDate(closed.to)} — a closed night at Beds24` };
+              else state = { label: 'Vacant tonight', tone: 'muted', detail: nextStay ? `Next arrival ${formatIsoDate(nextStay.checkIn)} — ${nextStay.guestLabel ?? nextStay.reference}` : 'No booked stay in the next 31 days' };
+              return (
+                <div key={unit.slug} className="bc-row" style={{ gridTemplateColumns: 'minmax(120px, 180px) auto minmax(0,1fr) auto' }}>
+                  <div>
+                    <div style={{ fontWeight: 600 }} title={unit.displayName}>{compactUnitName(unit.displayName)}</div>
+                    <div className="bc-meta">{nextStay ? `Next: ${formatIsoDate(nextStay.checkIn)}` : 'No next arrival'}</div>
+                  </div>
+                  <span className="bc-badge" data-tone={state.tone}>
+                    {state.label}
+                  </span>
+                  <span className="bc-meta truncate">{state.detail}</span>
+                  <span className="bc-meta whitespace-nowrap">
+                    <Link href={`/admin/calendar?unit=${unit.slug}`}>Calendar →</Link>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {board.ok ? (
+          <div className="grid gap-6 lg:grid-cols-3 mt-2">
+            <Column title="Arriving" items={board.data.arrivals} channel={board.data.channelArrivals} empty="No arrivals today." />
+            <Column title="Leaving" items={board.data.departures} channel={board.data.channelDepartures} empty="No departures today." />
+            <Column title="Staying" items={board.data.inHouse} channel={board.data.channelInHouse} empty="Nobody in house tonight." />
+          </div>
+        ) : (
+          <div className="mt-4">
+            <ErrorNotice title="Today’s arrivals and departures could not be loaded.">{board.error}</ErrorNotice>
+          </div>
+        )}
       </Section>
 
-      {/* ── This month, and whether the board is current ─────────── */}
-      <div className="grid gap-x-10 lg:grid-cols-[minmax(0,7fr)_minmax(280px,5fr)]">
-        <Section
-          title={`This month · ${periodLabel(today.slice(0, 7))}`}
-          meta={<Link href="/admin/performance">Performance →</Link>}
-          id="month"
-        >
-          {!month.ok ? (
+      {/* ── Cleaning and sync, side by side ───────────────────────── */}
+      <div className="grid gap-x-10 lg:grid-cols-2">
+        <Section title="Cleaning" meta={<Link href="/admin/cleaning">Cleaning →</Link>} id="cleaning">
+          {!cleaning.ok ? (
             <div className="mt-4">
-              <ErrorNotice title="This month could not be loaded." tone="caution">{month.error}</ErrorNotice>
+              <ErrorNotice title="The cleaning board could not be read." tone="caution">{cleaning.error}</ErrorNotice>
             </div>
           ) : (
             <>
               <div className="bc-metrics mt-4" style={{ ['--cols' as string]: 3 }}>
-                <Metric label="Booking value" value={<Money cents={month.data.stayGrossCents} />} note="gross per night stayed, every channel" />
-                <Metric label="Occupancy" value={<Pct ratio={month.data.occupancy.value} digits={0} />} note={`${month.data.occupiedNights} of ${month.data.availableNights} room nights`} unavailable={month.data.occupancy.value === null} />
-                <Metric label="ADR" value={<Money cents={month.data.adr.value === null ? null : Math.round(month.data.adr.value)} />} note="gross, per occupied night" unavailable={month.data.adr.value === null} />
+                <Metric label="To clean" value={cleaning.data.counts.open + cleaning.data.channelTurnovers.length} note="open turnovers, 60 days" />
+                <Metric label="Overdue" value={cleaning.data.counts.overdue} note={cleaning.data.counts.overdue > 0 ? 'not done in time' : undefined} />
+                <Metric label="Same-day" value={cleaning.data.counts.sameDay + cleaning.data.channelTurnovers.filter((t) => t.sameDay).length} note="changeovers ahead" />
               </div>
-              {month.data.byChannel.length > 0 && (
-                <p className="bc-meta mt-3" style={{ fontSize: 12.5 }}>
-                  Channel split:{' '}
-                  {month.data.byChannel
-                    .filter((c) => c.nights > 0)
-                    .map((c) => `${sourcePresentation(c.source).label} ${c.share === null ? `${c.nights} nights` : percent(c.share)}`)
-                    .join(' · ') || 'no nights yet'}
-                </p>
-              )}
-              <p className="bc-meta mt-2" style={{ fontSize: 12 }}>
-                Gross booking value as Beds24 reports it — not payout, not net of commission. Received money is in Finance.
+              <p className="bc-meta mt-3" style={{ fontSize: 12.5 }}>
+                {nextCleaning
+                  ? `Next: ${compactUnitName(nextCleaning.unitName)}, check-out ${nextCleaning.departure === today ? 'today' : formatIsoDate(nextCleaning.departure)}${nextCleaning.nextArrival ? `, next guests ${nextCleaning.nextArrival === nextCleaning.departure ? 'the same day' : formatIsoDate(nextCleaning.nextArrival)}` : ''}.`
+                  : cleaning.data.channelTurnovers[0]
+                    ? `Next: ${compactUnitName(cleaning.data.channelTurnovers[0].departure.unitName)}, check-out ${formatIsoDate(cleaning.data.channelTurnovers[0].departure.checkOut)}.`
+                    : 'Nothing to clean in the next sixty days.'}
               </p>
             </>
           )}
         </Section>
-        <Section title="Beds24 sync" meta={<Link href="/admin/system">System →</Link>} id="sync">
+        <Section title="Booking sync" meta={<Link href="/admin/system">System →</Link>} id="sync">
           <div className="mt-4">
             {sync.ok ? (
-              <HealthSectionCard section={{ ...sync.data, title: 'Reservations' }} />
+              <HealthSectionCard section={{ ...sync.data, title: 'Reservations from the booking system' }} />
             ) : (
               <ErrorNotice title="Sync state could not be read." tone="caution">{sync.error}</ErrorNotice>
             )}
@@ -185,116 +234,125 @@ export default async function OverviewPage() {
         </Section>
       </div>
 
-      {/* ── Today ────────────────────────────────────────────────── */}
-      <Section
-        title="At the door today"
-        meta={<span>Real stays only — a held, unpaid direct attempt and a cancelled channel reservation are neither of them an arrival</span>}
-        id="today"
-      >
-        {!board.ok ? (
+      {/* ── Coming up ────────────────────────────────────────────── */}
+      <Section title="Coming up" meta={<Link href="/admin/reservations">All reservations →</Link>} id="upcoming">
+        <div className="bc-metrics mt-4" style={{ ['--cols' as string]: 6 }}>
+          <Metric label="Arrivals · 7 days" value={calendar.ok ? week.arrivals : ''} unavailable={!calendar.ok} />
+          <Metric label="Nights · 7 days" value={calendar.ok ? week.nights : ''} unavailable={!calendar.ok} />
+          <Metric label="Occupancy · 7 days" value={percent(week.occupancy)} unavailable={!calendar.ok || week.occupancy === null} />
+          <Metric label="Arrivals · 30 days" value={calendar.ok ? month30.arrivals : ''} unavailable={!calendar.ok} />
+          <Metric label="Nights · 30 days" value={calendar.ok ? month30.nights : ''} unavailable={!calendar.ok} />
+          <Metric label="Occupancy · 30 days" value={percent(month30.occupancy)} unavailable={!calendar.ok || month30.occupancy === null} />
+        </div>
+        {!calendar.ok ? null : upcoming.length === 0 ? (
           <div className="mt-4">
-            <ErrorNotice title="Today’s board could not be loaded.">{board.error}</ErrorNotice>
+            <EmptyState title="Nothing booked in the next 31 days.">Booked stays from Booking.com, Airbnb and the website appear here as they are imported.</EmptyState>
           </div>
         ) : (
-          <div className="grid gap-6 lg:grid-cols-3 mt-2">
-            <Column title="Arrivals" items={board.data.arrivals} channel={board.data.channelArrivals} empty="No arrivals today." />
-            <Column title="Departures" items={board.data.departures} channel={board.data.channelDepartures} empty="No departures today." />
-            <Column title="In house" items={board.data.inHouse} channel={board.data.channelInHouse} empty="Nobody in house tonight." />
-          </div>
-        )}
-      </Section>
-
-      {/* ── Portfolio ────────────────────────────────────────────── */}
-      <Section title="Residences" meta={calendar.ok && calendar.data.inventorySyncedAt ? <span>Channel cache synced {formatRelative(calendar.data.inventorySyncedAt)}</span> : undefined} id="portfolio">
-        {!calendar.ok ? (
-          <div className="mt-4">
-            <ErrorNotice title="Residence status could not be loaded.">{calendar.error}</ErrorNotice>
-          </div>
-        ) : (
-          <div className="bc-rows">
-            {calendar.data.units.map((unit) => {
-              const stays = occupying.filter((r) => r.unitSlug === unit.slug);
-              const current = stays.find((r) => relationOn(r, today) === 'in_house');
-              const arriving = stays.find((r) => relationOn(r, today) === 'arrival');
-              const departing = stays.find((r) => relationOn(r, today) === 'departure');
-              const next = stays.filter((r) => r.checkIn > today).sort((a, b) => a.checkIn.localeCompare(b.checkIn))[0];
-              const closed = calendar.data.closures.find((c) => c.unitSlug === unit.slug && today >= c.from && today < c.to);
-              const preparing = !unit.isBookable && unit.contentStatus !== 'available';
-              // Exceptions are a DIRECT-booking notion: an attempt that is not
-              // confirmed and still needs watching. A channel reservation has
-              // no such state and is never counted here.
-              const exceptions = calendar.data.reservations.filter(
-                (r) => r.kind === 'intent' && r.unitSlug === unit.slug && r.status !== 'confirmed' && r.checkOut >= today
-              );
-              let state: { label: string; tone: string; detail: string };
-              if (preparing) state = { label: 'In preparation', tone: 'muted', detail: 'Not offered for booking.' };
-              else if (arriving && departing) state = { label: 'Turnover today', tone: 'progress', detail: `${departing.guestLabel ?? departing.reference} leaves · ${arriving.guestLabel ?? arriving.reference} arrives, ${pluralNights(arriving.nights)}` };
-              else if (arriving) state = { label: 'Arrival today', tone: 'progress', detail: `${arriving.guestLabel ?? arriving.reference}, ${pluralNights(arriving.nights)} until ${formatIsoDate(arriving.checkOut)}` };
-              else if (departing) state = { label: 'Departure today', tone: 'neutral', detail: `${departing.guestLabel ?? departing.reference} leaves${next ? ` · next ${formatIsoDate(next.checkIn)}` : ''}` };
-              else if (current) state = { label: 'Occupied', tone: 'positive', detail: `${current.guestLabel ?? current.reference} until ${formatIsoDate(current.checkOut)}` };
-              else if (closed) state = { label: 'Closed at channel', tone: 'neutral', detail: `Cached availability closed until ${formatIsoDate(closed.to)} — an OTA reservation or a closed night` };
-              else state = { label: 'Available tonight', tone: 'muted', detail: next ? `Next arrival ${formatIsoDate(next.checkIn)} — ${next.guestLabel ?? next.reference}` : 'No booked stay in the next 31 days' };
-              return (
-                <div key={unit.slug} className="bc-row" style={{ gridTemplateColumns: 'minmax(140px, 200px) auto minmax(0,1fr) auto' }}>
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{unit.displayName}</div>
-                    <div className="bc-meta">{unit.isBookable ? 'Bookable' : preparing ? 'In preparation' : 'Not bookable'}</div>
+          <div className="bc-rows mt-4">
+            {upcoming.map((r) => {
+              const state = r.kind === 'reservation' ? reservationClassPresentation(r.status) : null;
+              const body = (
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate" style={{ fontWeight: 500 }}>
+                      {formatIsoDate(r.checkIn, 'long')} · {r.guestLabel ?? r.reference}
+                    </div>
+                    <div className="bc-meta truncate">
+                      {compactUnitName(calendar.data.units.find((u) => u.slug === r.unitSlug)?.displayName ?? r.unitSlug)} · {formatStay(r.checkIn, r.checkOut)} · {pluralNights(r.nights)} · {sourcePresentation(r.source).label}
+                    </div>
                   </div>
-                  <span className="bc-badge" data-tone={state.tone}>
-                    {state.label}
-                  </span>
-                  <span className="bc-meta truncate">{state.detail}</span>
-                  <span className="bc-meta whitespace-nowrap">
-                    {exceptions.length > 0 ? (
-                      <Link href={`/admin/bookings?unit=${unit.slug}&attention=1`} style={{ color: 'hsl(var(--bc-caution))' }}>
-                        {exceptions.length} {exceptions.length === 1 ? 'exception' : 'exceptions'}
-                      </Link>
-                    ) : (
-                      <Link href={`/admin/calendar?unit=${unit.slug}`}>Calendar →</Link>
-                    )}
-                  </span>
+                  {state ? (
+                    <span className="bc-badge" data-tone={state.tone}>
+                      {state.label}
+                    </span>
+                  ) : (
+                    <BookingStateBadge state={r.status} />
+                  )}
                 </div>
+              );
+              const href = r.href ?? `/admin/reservations?q=${encodeURIComponent(r.reference)}&when=all`;
+              return (
+                <Link key={`${r.kind}-${r.reference}`} href={href} className="bc-row-link">
+                  {body}
+                </Link>
               );
             })}
           </div>
         )}
       </Section>
 
-      {/* ── Upcoming ─────────────────────────────────────────────── */}
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <Section title="Upcoming" meta={<Link href="/admin/bookings?group=confirmed">All confirmed →</Link>} id="upcoming">
-          {!upcoming.ok ? (
-            <div className="mt-4">
-              <ErrorNotice title="Upcoming stays could not be loaded.">{upcoming.error}</ErrorNotice>
+      {/* ── Performance ──────────────────────────────────────────── */}
+      <Section title="Performance" meta={<Link href="/admin/performance">Performance →</Link>} id="month">
+        <div className="bc-metrics mt-4" style={{ ['--cols' as string]: 3 }}>
+          <Metric label={`Booked · ${periodLabel(thisMonth)}`} value={month.ok ? <Money cents={month.data.stayGrossCents} /> : ''} unavailable={!month.ok} note={month.ok ? `${month.data.occupiedNights} nights · gross booking value` : undefined} />
+          <Metric label={`Booked · ${periodLabel(nextMonth)}`} value={next.ok ? <Money cents={next.data.stayGrossCents} /> : ''} unavailable={!next.ok} note={next.ok ? `${next.data.occupiedNights} nights so far` : undefined} />
+          <Metric label={`Booked · ${today.slice(0, 4)} to date`} value={year.ok ? <Money cents={year.data.stayGrossCents} /> : ''} unavailable={!year.ok} note={year.ok ? `${year.data.occupiedNights} nights since 1 January` : undefined} />
+        </div>
+        {month.ok && (
+          <>
+            <div className="bc-metrics mt-3" style={{ ['--cols' as string]: 3 }}>
+              <Metric label="Occupancy this month" value={<Pct ratio={month.data.occupancy.value} digits={0} />} note={`${month.data.occupiedNights} of ${month.data.availableNights} apartment nights`} unavailable={month.data.occupancy.value === null} />
+              <Metric label="ADR this month" value={<Money cents={month.data.adr.value === null ? null : Math.round(month.data.adr.value)} />} note="gross per booked night" unavailable={month.data.adr.value === null} />
+              <Metric label="ADR this year" value={<Money cents={year.ok && year.data.adr.value !== null ? Math.round(year.data.adr.value) : null} />} note={year.ok && year.data.occupancy.value !== null ? `occupancy ${percent(year.data.occupancy.value)} year to date` : undefined} unavailable={!year.ok || year.data.adr.value === null} />
             </div>
-          ) : upcoming.data.length === 0 ? (
-            <EmptyState title="Nothing on the books yet.">Paid and confirmed stays from today onward appear here.</EmptyState>
-          ) : (
-            <BookingList items={upcoming.data} emphasis="dates" />
-          )}
-        </Section>
+            <div className="mt-3 grid gap-x-10 gap-y-1 md:grid-cols-2">
+              {month.data.byUnit.length > 0 && (
+                <p className="bc-meta" style={{ fontSize: 12.5 }}>
+                  By apartment: {month.data.byUnit.map((u) => `${compactUnitName(u.displayName)} ${formatEur(u.grossCents)} (${u.nights} nights)`).join(' · ')}
+                </p>
+              )}
+              {month.data.byChannel.filter((c) => c.nights > 0).length > 0 && (
+                <p className="bc-meta" style={{ fontSize: 12.5 }}>
+                  By channel: {month.data.byChannel.filter((c) => c.nights > 0).map((c) => `${sourcePresentation(c.source).label} ${c.share === null ? `${c.nights} nights` : percent(c.share)}`).join(' · ')}
+                </p>
+              )}
+            </div>
+          </>
+        )}
+        <p className="bc-meta mt-2" style={{ fontSize: 12 }}>
+          Booked gross value as the booking system states it, allocated to the nights of each stay — not payout, not net of commission, not profit. Money received is in Finance.
+        </p>
+      </Section>
 
-        <Section title="System" meta={<Link href="/admin/system">Detail →</Link>} id="health">
-          {!health.ok ? (
-            <div className="mt-4">
-              <ErrorNotice title="System health could not be loaded.">{health.error}</ErrorNotice>
-            </div>
-          ) : (
-            <div className="bc-rows">
-              {health.data
-                .filter((s) => ['database', 'beds24', 'paypal', 'payment_inbox', 'outbox', 'reconciliation'].includes(s.key))
-                .map((s) => (
-                  <div key={s.key} className="bc-row" style={{ gridTemplateColumns: 'minmax(0,1fr) auto', padding: '11px 0' }}>
-                    <span className="truncate">{s.title}</span>
-                    <HealthBadge status={s.status} />
-                  </div>
-                ))}
-            </div>
-          )}
-        </Section>
-      </div>
+      {/* ── Systems, quietly ─────────────────────────────────────── */}
+      <Section title="Systems" meta={<Link href="/admin/system">Detail →</Link>} id="health">
+        {!health.ok ? (
+          <div className="mt-4">
+            <ErrorNotice title="System health could not be loaded.">{health.error}</ErrorNotice>
+          </div>
+        ) : (
+          <div className="bc-rows">
+            {health.data
+              .filter((s) => ['database', 'beds24', 'reservations', 'schedulers', 'cleaning'].includes(s.key))
+              .map((s) => (
+                <div key={s.key} className="bc-row" style={{ gridTemplateColumns: 'minmax(0,1fr) auto', padding: '11px 0' }}>
+                  <span className="truncate">{SYSTEM_LABEL[s.key] ?? s.title}</span>
+                  <HealthBadge status={s.status} />
+                </div>
+              ))}
+          </div>
+        )}
+        {calendar.ok && calendar.data.inventorySyncedAt && (
+          <p className="bc-meta mt-2" style={{ fontSize: 12 }}>
+            Availability last synchronised {formatRelative(calendar.data.inventorySyncedAt)}.
+          </p>
+        )}
+      </Section>
     </>
   );
+}
+
+const SYSTEM_LABEL: Record<string, string> = {
+  database: 'Database',
+  beds24: 'Booking system (Beds24)',
+  reservations: 'Reservation import',
+  schedulers: 'Scheduled jobs',
+  cleaning: 'Cleaning derivation',
+};
+
+function formatEur(cents: number): string {
+  return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(cents / 100);
 }
 
 function Column({
@@ -305,7 +363,7 @@ function Column({
 }: {
   title: string;
   items: import('@/lib/admin/dto').BookingSummaryDto[];
-  /** Channel reservations. No BoLaGio record page, so they are rows rather than links. */
+  /** Channel reservations, each with its own detail page. */
   channel: import('@/lib/admin/dto').ReservationDto[];
   empty: string;
 }) {
@@ -328,7 +386,7 @@ function Column({
                     {b.guestLabel ?? b.reference}
                   </div>
                   <div className="bc-meta truncate">
-                    {b.unitName} · {formatStay(b.checkIn, b.checkOut)} · {b.adults + b.children} {b.adults + b.children === 1 ? 'guest' : 'guests'}
+                    {compactUnitName(b.unitName)} · {formatStay(b.checkIn, b.checkOut)} · {b.adults + b.children} {b.adults + b.children === 1 ? 'guest' : 'guests'}
                   </div>
                 </div>
                 <BookingStateBadge state={b.status} />
@@ -338,14 +396,14 @@ function Column({
           {channel.map((r) => {
             const state = reservationClassPresentation(r.statusClass);
             return (
-              <div key={`${r.provider}-${r.externalBookingId}`} className="bc-row-link" style={{ cursor: 'default' }}>
+              <Link key={`${r.provider}-${r.externalBookingId}`} href={`/admin/reservations/${r.id}`} className="bc-row-link">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="truncate" style={{ fontWeight: 500 }}>
-                      {r.guestLabel ?? r.externalBookingId}
+                      {r.guestLabel ?? r.channelReference ?? r.externalBookingId}
                     </div>
                     <div className="bc-meta truncate">
-                      {r.unitName} · {formatStay(r.checkIn, r.checkOut)} · {sourcePresentation(r.source).label}
+                      {compactUnitName(r.unitName)} · {formatStay(r.checkIn, r.checkOut)} · {r.guests !== null ? `${r.guests} ${r.guests === 1 ? 'guest' : 'guests'} · ` : ''}{sourcePresentation(r.source).label}
                     </div>
                   </div>
                   <span className="bc-badge" data-tone={state.tone}>
@@ -353,7 +411,7 @@ function Column({
                     {state.label}
                   </span>
                 </div>
-              </div>
+              </Link>
             );
           })}
         </div>

@@ -14,7 +14,7 @@ import {
 } from '@/lib/admin/reservation-filters';
 import { reservationClassPresentation, sourcePresentation } from '@/lib/admin/presentation';
 
-const WHEN_LABEL: Record<ReservationWhen, string> = { upcoming: 'Upcoming', past: 'Past', all: 'All' };
+const WHEN_LABEL: Record<ReservationWhen, string> = { upcoming: 'Upcoming', current: 'In house', past: 'Past', cancelled: 'Cancelled', all: 'All' };
 const SELECT = { width: 'auto', minWidth: 140, height: 32, fontSize: 12.5 } as const;
 
 /**

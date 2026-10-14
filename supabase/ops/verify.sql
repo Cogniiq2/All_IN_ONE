@@ -185,6 +185,22 @@ do $$ begin
 end $$;
 
 \echo ''
+\echo '── 20261014 channel turnovers (verified when applied) ──'
+do $$ begin
+  if to_regprocedure('bolagio_sync_channel_turnovers(integer,timestamptz)') is null then
+    raise notice 'info — 20261014120000_channel_turnovers not applied: its assertions skipped';
+    return;
+  end if;
+  perform pg_temp.v_assert(exists (select 1 from information_schema.columns where table_name = 'bolagio_turnovers' and column_name = 'reservation_id'), '20261014 bolagio_turnovers.reservation_id exists');
+  perform pg_temp.v_assert((select is_nullable from information_schema.columns where table_name = 'bolagio_turnovers' and column_name = 'intent_id') = 'YES', '20261014 intent_id is nullable');
+  perform pg_temp.v_assert(exists (select 1 from pg_constraint where conname = 'bolagio_turnovers_origin_check'), '20261014 exactly-one-origin check exists');
+  perform pg_temp.v_assert(exists (select 1 from pg_indexes where indexname = 'bolagio_turnovers_reservation_uq'), '20261014 one turnover per reservation');
+  perform pg_temp.v_assert(not exists (select 1 from bolagio_turnovers where (intent_id is null) = (reservation_id is null)), '20261014 every turnover has exactly one origin');
+  perform pg_temp.v_assert(not exists (select 1 from bolagio_turnovers t join bolagio_turnovers o on o.unit_id = t.unit_id and o.departure = t.departure and o.id <> t.id where t.reservation_id is not null and o.intent_id is not null and t.status <> 'void' and o.status <> 'void'), '20261014 no stay is derived twice');
+  perform pg_temp.v_assert(has_function_privilege('service_role', 'bolagio_sync_channel_turnovers(integer,timestamptz)', 'execute') and not has_function_privilege('anon', 'bolagio_sync_channel_turnovers(integer,timestamptz)', 'execute'), '20261014 bolagio_sync_channel_turnovers: service_role, not anon');
+end $$;
+
+\echo ''
 \echo '── Operational snapshot (informational) ────────────────────────────────'
 select * from bolagio_ops_queues order by 1,2;
 select job, ok, finished_at, error from bolagio_scheduler_status order by job;

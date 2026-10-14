@@ -528,6 +528,22 @@ export async function syncTurnovers(horizonDays = 60): Promise<TurnoverSyncRepor
   return { created: r.created ?? 0, updated: r.updated ?? 0, voided: r.voided ?? 0, reopened: r.reopened ?? 0 };
 }
 
+/**
+ * Derive turnovers from ACTIVE imported reservations (migration 20261014).
+ * Idempotent; emits no outbox event. Returns null — and nothing else
+ * changes — on a database that has not applied the migration yet, so the
+ * operations pass keeps working with the direct-booking turnovers alone.
+ */
+export async function syncChannelTurnovers(horizonDays = 60): Promise<TurnoverSyncReport | null> {
+  const { data, error } = await supabaseAdmin().rpc('bolagio_sync_channel_turnovers', { p_horizon_days: horizonDays });
+  if (error) {
+    if (error.code === '42883' || error.code === 'PGRST202' || /bolagio_sync_channel_turnovers/.test(error.message ?? '')) return null;
+    throw error;
+  }
+  const r = (data ?? {}) as Partial<TurnoverSyncReport>;
+  return { created: r.created ?? 0, updated: r.updated ?? 0, voided: r.voided ?? 0, reopened: r.reopened ?? 0 };
+}
+
 export interface GuestEventReport {
   prearrival: number;
   checkin: number;

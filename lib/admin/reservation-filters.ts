@@ -10,7 +10,7 @@ import type { ReservationQuery } from '@/lib/admin/rows';
 
 export const RESERVATION_SOURCES = ['booking_com', 'airbnb', 'direct', 'manual', 'unknown'] as const;
 export const RESERVATION_STATUS_CLASSES = ['active', 'cancelled', 'provisional', 'blocked', 'unknown'] as const;
-export const RESERVATION_WHEN = ['upcoming', 'past', 'all'] as const;
+export const RESERVATION_WHEN = ['upcoming', 'current', 'past', 'cancelled', 'all'] as const;
 
 export type ReservationWhen = (typeof RESERVATION_WHEN)[number];
 
@@ -23,7 +23,10 @@ export interface ReservationFilter {
   /** Stays touching [from, to) — the dates an operator means by "in this period". */
   from: string | null;
   to: string | null;
-  /** upcoming: not yet departed (default) · past: departed · all. Ignored when a date range is set. */
+  /**
+   * upcoming: booked, not yet departed (default) · current: in house tonight · past: departed · cancelled: the
+   * cancelled history · all. The date filters replace the time segment; a status filter replaces the implied class.
+   */
   when: ReservationWhen;
 }
 
@@ -63,21 +66,35 @@ export function hasActiveReservationFilter(filter: ReservationFilter): boolean {
 
 /** The row-source query for a filter. `unitId` is resolved from the slug by the caller. */
 export function reservationQueryOf(filter: ReservationFilter, today: string, unitId: string | null): ReservationQuery {
+  // "Upcoming" and "current" mean booked stays: a cancelled reservation is
+  // neither arriving nor in house. "Cancelled" is the history; "past" and
+  // "all" keep every class so a cancellation stays findable where it was.
+  const implied = filter.when === 'cancelled' ? ['cancelled'] : filter.when === 'upcoming' || filter.when === 'current' ? ['active'] : null;
   const query: ReservationQuery = {
     unitId,
     search: filter.q || null,
     sources: filter.source ? [filter.source] : null,
-    statusClasses: filter.status ? [filter.status] : null,
+    statusClasses: filter.status ? [filter.status] : implied,
     sort: 'check_in',
-    dir: filter.when === 'past' ? 'desc' : 'asc',
+    dir: filter.when === 'past' || filter.when === 'cancelled' ? 'desc' : 'asc',
     limit: 400,
   };
   if (filter.from || filter.to) {
     query.overlaps = { from: filter.from ?? '1970-01-01', to: filter.to ?? '9999-12-31' };
   } else if (filter.when === 'upcoming') {
     query.checkOutFrom = today;
+  } else if (filter.when === 'current') {
+    // In house tonight: arrived on or before today, leaving after today.
+    query.checkInTo = addDaysIso(today, 1);
+    query.checkOutFrom = addDaysIso(today, 1);
   } else if (filter.when === 'past') {
     query.checkOutTo = today;
   }
   return query;
+}
+
+function addDaysIso(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
 }

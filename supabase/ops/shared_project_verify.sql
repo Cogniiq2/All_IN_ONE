@@ -193,6 +193,19 @@ do $$ begin
 end $$;
 
 \echo ''
+\echo '── #14: channel turnovers (verified when applied) ──'
+do $$ begin
+  if to_regprocedure('bolagio_sync_channel_turnovers(integer,timestamptz)') is null then
+    raise notice 'info — #14 20261014120000_channel_turnovers not applied: its assertions skipped';
+    return;
+  end if;
+  perform pg_temp.v_assert(exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'bolagio_turnovers' and column_name = 'reservation_id'), '#14 bolagio_turnovers.reservation_id exists');
+  perform pg_temp.v_assert(exists (select 1 from pg_constraint where conname = 'bolagio_turnovers_origin_check' and conrelid = 'public.bolagio_turnovers'::regclass), '#14 origin check exists');
+  perform pg_temp.v_assert(not exists (select 1 from bolagio_turnovers where (intent_id is null) = (reservation_id is null)), '#14 every turnover has exactly one origin');
+  perform pg_temp.v_assert(has_function_privilege('service_role', 'bolagio_sync_channel_turnovers(integer,timestamptz)', 'execute') and not has_function_privilege('anon', 'bolagio_sync_channel_turnovers(integer,timestamptz)', 'execute') and not has_function_privilege('authenticated', 'bolagio_sync_channel_turnovers(integer,timestamptz)', 'execute'), '#14 bolagio_sync_channel_turnovers: service_role only');
+end $$;
+
+\echo ''
 \echo '── §A–§E shared-project invariants ─────────────────────────────────────'
 do $$
 declare r record; n int; bad text;

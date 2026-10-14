@@ -25,9 +25,9 @@ export default async function ReservationsPage({ searchParams }: { searchParams:
   return (
     <>
       <PageHeader
-        eyebrow="Overview"
+        eyebrow="Daily"
         title="Reservations"
-        description="What is booked at the channel manager, from every channel. Imported from Beds24 within seconds by webhook, and re-checked by the scheduled import."
+        description="Every reservation from Booking.com, Airbnb and the website, as the booking system holds it. New bookings and changes arrive within seconds; the hourly import re-checks everything. Search by guest name, Booking.com number or Beds24 booking id."
         actions={<RefreshControl loadedAt={result.loadedAt} />}
       />
 
@@ -56,7 +56,15 @@ export default async function ReservationsPage({ searchParams }: { searchParams:
           <div className="mt-5">
             <ReservationList
               items={result.data.items}
-              empty={hasActiveReservationFilter(filter) ? 'No reservation matches. Widen the filter, or clear it.' : 'No reservation ends today or later.'}
+              empty={
+                filter.when === 'current'
+                  ? 'Nobody is in house tonight.'
+                  : filter.when === 'cancelled'
+                    ? 'No cancelled reservation on record.'
+                    : hasActiveReservationFilter(filter)
+                      ? 'No reservation matches. Widen the filter, or clear it.'
+                      : 'No booked stay ends today or later.'
+              }
             />
           </div>
           <p className="bc-meta mt-3" style={{ fontSize: 12 }}>

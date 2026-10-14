@@ -86,7 +86,11 @@ export async function POST(request: NextRequest) {
         job: 'operations',
         startedAt: opsStarted,
         ok: true,
-        report: { ...operations.turnovers, ...prefixed('events_', { ...operations.guestEvents }) },
+        report: {
+          ...operations.turnovers,
+          ...(operations.channelTurnovers ? prefixed('channel_', { ...operations.channelTurnovers }) : { channel_derived: false }),
+          ...prefixed('events_', { ...operations.guestEvents }),
+        },
         worker: logger.correlationId,
       });
     } catch (cause) {

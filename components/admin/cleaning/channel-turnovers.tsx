@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import type { ChannelTurnover } from '@/lib/admin/cleaning';
 import type { ReservationDto } from '@/lib/admin/dto';
-import { formatIsoDate, pluralNights } from '@/lib/admin/format';
+import { compactUnitName, formatIsoDate, pluralNights } from '@/lib/admin/format';
 import { bedroomPackageLabel, sourcePresentation } from '@/lib/admin/presentation';
 import { EmptyState } from '@/components/admin/primitives';
 
@@ -30,7 +30,7 @@ export function ChannelTurnoverList({ items }: { items: ChannelTurnover[] }) {
             <div className="grid gap-2 md:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] md:gap-6">
               <div className="min-w-0">
                 <p className="truncate" style={{ fontWeight: 500 }}>
-                  {formatIsoDate(d.checkOut, 'long')} · {d.unitName}
+                  {formatIsoDate(d.checkOut, 'long')} · {compactUnitName(d.unitName)}
                 </p>
                 <p className="bc-meta truncate">
                   Out: <Link href={`/admin/reservations/${d.id}`}>{d.guestLabel ?? d.channelReference ?? d.externalBookingId}</Link> · {party(d)} · {sourcePresentation(d.source).label}

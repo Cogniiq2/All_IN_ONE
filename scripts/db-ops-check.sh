@@ -78,6 +78,16 @@ psql "$TEST" -Atc "select case when not exists (select 1 from information_schema
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20261012120000_booking_bedroom_package.sql >/dev/null
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20261012120000_booking_bedroom_package.sql >/dev/null 2>&1
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/ops/verify.sql 2>&1 | grep -E "FAILED|passed" | tail -1
+echo "── apply 20261014 (channel turnovers); roll it back and re-apply it twice ──"
+psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20261014120000_channel_turnovers.sql >/dev/null
+psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/ops/verify.sql 2>&1 | grep -E "20261014|FAILED|passed" | tail -2
+psql "$TEST" -1 -v ON_ERROR_STOP=1 -q -f supabase/ops/rollback_20261014.sql
+psql "$TEST" -Atc "select case when not exists (select 1 from information_schema.columns where column_name = 'reservation_id' and table_name = 'bolagio_turnovers') and to_regprocedure('bolagio_sync_channel_turnovers(integer,timestamptz)') is null and to_regclass('public.bolagio_turnovers') is not null then 'ok — 20261014 rolled back, turnovers intact' else 'ERROR: 20261014 rollback incomplete' end;"
+psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20261014120000_channel_turnovers.sql >/dev/null
+psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20261014120000_channel_turnovers.sql >/dev/null 2>&1
+psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/ops/verify.sql 2>&1 | grep -E "FAILED|passed" | tail -1
+# 20261014 references bolagio_reservations and bolagio_turnovers: roll it back before the older sections.
+psql "$TEST" -1 -v ON_ERROR_STOP=1 -q -f supabase/ops/rollback_20261014.sql
 # 20261012 adds a column to the intents table: roll it back before the older sections.
 psql "$TEST" -1 -v ON_ERROR_STOP=1 -q -f supabase/ops/rollback_20261012.sql
 # 20260927's views read the tables below: roll it back before any older section.
@@ -114,6 +124,7 @@ psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260923120000_reserva
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260926120000_booking_com_finance_statement.sql
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20260927120000_finance_ingestion_pipeline.sql >/dev/null
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20261012120000_booking_bedroom_package.sql >/dev/null
+psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20261014120000_channel_turnovers.sql >/dev/null
 echo "── verify again ──"
 psql "$TEST" -v ON_ERROR_STOP=1 -q -f supabase/ops/verify.sql 2>&1 | grep -E "FAILED|passed" | tail -1
 psql "$DATABASE_URL" -q -c "drop database if exists bolagio_ops_check;"

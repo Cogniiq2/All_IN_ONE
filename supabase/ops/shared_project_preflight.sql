@@ -29,6 +29,7 @@
 --   #11  20260926120000_booking_com_finance_statement
 --   #12  20260927120000_finance_ingestion_pipeline      ← the next one
 --   #13  20261012120000_booking_bedroom_package        ← after #12 (one column, two checks)
+--   #14  20261014120000_channel_turnovers              ← after #13 (one column, one function)
 --
 -- On ALL IN ONE (checked read-only 2026-09-26/27) #1–#11 are applied and #12
 -- is not. This script REQUIRES #1–#11 and reports #12 either way: it passes
@@ -95,7 +96,7 @@ end $$;
 -- (not even a temporary object) is created.
 do $$
 declare
-  r record; missing text := ''; gap text := ''; first_missing int := null; twelve boolean := false; thirteen boolean := false;
+  r record; missing text := ''; gap text := ''; first_missing int := null; twelve boolean := false; thirteen boolean := false; fourteen boolean := false;
 begin
   for r in
     select * from (values
@@ -114,7 +115,9 @@ begin
   (12, '20260927120000_finance_ingestion_pipeline',    to_regclass('public.bolagio_finance_ingestion_queue') is not null
                                                        and exists (select 1 from pg_trigger where tgname = 'bolagio_booking_intents_finance_enqueue')),
   (13, '20261012120000_booking_bedroom_package',       exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'bolagio_booking_intents' and column_name = 'beds24_offer_id')
-                                                       and exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'bolagio_reservations' and column_name = 'bedroom_package'))
+                                                       and exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'bolagio_reservations' and column_name = 'bedroom_package')),
+  (14, '20261014120000_channel_turnovers',             to_regprocedure('public.bolagio_sync_channel_turnovers(integer,timestamptz)') is not null
+                                                       and exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'bolagio_turnovers' and column_name = 'reservation_id'))
 ) as c(n, migration, applied)
     order by n
   loop
@@ -125,6 +128,7 @@ begin
     if r.applied and first_missing is not null then gap := gap || format(' #%s without #%s;', r.n, first_missing); end if;
     if r.n = 12 then twelve := r.applied; end if;
     if r.n = 13 then thirteen := r.applied; end if;
+    if r.n = 14 then fourteen := r.applied; end if;
   end loop;
   if gap <> '' then
     raise exception 'PREFLIGHT FAILED: the chain is out of order (%). Restore from backup or finish it by hand, in order.', gap;
@@ -143,6 +147,27 @@ begin
   else
     raise notice 'info — #13 bedroom package not applied: apply it after #12';
   end if;
+  if fourteen then
+    raise notice 'ok — #14 channel turnovers applied (re-applying it is idempotent)';
+  else
+    raise notice 'info — #14 channel turnovers not applied: apply it after #13';
+  end if;
+end $$;
+
+\echo ''
+\echo '── 3c. #14 prerequisites and names (20261014 channel turnovers) ───────'
+do $$ begin
+  if to_regclass('public.bolagio_turnovers') is null or to_regclass('public.bolagio_reservations') is null then
+    raise exception 'PREFLIGHT FAILED: #14 extends bolagio_turnovers (#5) and references bolagio_reservations (#8); one is missing';
+  end if;
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'bolagio_turnovers'
+               and column_name = 'reservation_id' and data_type <> 'uuid') then
+    raise exception 'PREFLIGHT FAILED: bolagio_turnovers.reservation_id exists with a type #14 did not create. Inspect it; do not apply #14 over it.';
+  end if;
+  if exists (select 1 from pg_constraint where conname = 'bolagio_turnovers_origin_check' and conrelid <> 'public.bolagio_turnovers'::regclass) then
+    raise exception 'PREFLIGHT FAILED: a #14 constraint name is used on another table';
+  end if;
+  raise notice 'ok — #14 prerequisites present and its names are free or its own';
 end $$;
 
 \echo ''
@@ -397,7 +422,9 @@ declare
     'bolagio_finance_enqueue_on_payment_event()',
     'bolagio_finance_enqueue_missing(boolean,integer)',
     'bolagio_finance_claim_ingestion(text,integer)',
-    'bolagio_finance_settle_ingestion(uuid,timestamp with time zone,boolean,text)'];
+    'bolagio_finance_settle_ingestion(uuid,timestamp with time zone,boolean,text)',
+    -- #14
+    'bolagio_sync_channel_turnovers(integer,timestamp with time zone)'];
   r record; collisions text := ''; n_rel int := 0; n_type int := 0; n_fn int := 0;
 begin
   for r in

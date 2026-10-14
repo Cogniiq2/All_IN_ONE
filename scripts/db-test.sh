@@ -65,7 +65,8 @@ for f in supabase/migrations/20260916120000_booking_foundation.sql \
          supabase/migrations/20260925120000_legal_compliance.sql \
          supabase/migrations/20260926120000_booking_com_finance_statement.sql \
          supabase/migrations/20260927120000_finance_ingestion_pipeline.sql \
-         supabase/migrations/20261012120000_booking_bedroom_package.sql; do
+         supabase/migrations/20261012120000_booking_bedroom_package.sql \
+         supabase/migrations/20261014120000_channel_turnovers.sql; do
   echo "   $f"
   psql "$TEST" -v ON_ERROR_STOP=1 -q -f "$f" 2>&1 | grep -vE "NOTICE|^$" || true
 done
@@ -88,6 +89,10 @@ psql "$TEST" -v ON_ERROR_STOP=1 -f tests/sql/finance-pipeline.sql 2>&1 \
 
 echo "── running the bedroom package tests ──"
 psql "$TEST" -v ON_ERROR_STOP=1 -f tests/sql/bedroom-package.sql 2>&1 \
+  | sed -n 's/^.*NOTICE:  //p; /════/p; s/^.*ERROR:/ERROR:/p'
+
+echo "── running the channel turnover tests ──"
+psql "$TEST" -v ON_ERROR_STOP=1 -f tests/sql/channel-turnovers.sql 2>&1 \
   | sed -n 's/^.*NOTICE:  //p; /════/p; s/^.*ERROR:/ERROR:/p'
 
 echo "── running the concurrent race ──"

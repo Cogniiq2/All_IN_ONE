@@ -1,7 +1,8 @@
 /**
- * The navigation, as data. Three groups, sixteen destinations, nothing that does
- * not exist yet. A module is added here when it has genuine value, not
- * before.
+ * The navigation, as data. Two groups: the owner's daily workflow first, in
+ * the order a day is run — what is happening, the calendar, the bookings,
+ * the cleaning, the money, the apartments — then everything an operator or
+ * developer may need but a day does not. Nothing here that does not exist.
  */
 
 export type NavIcon = 'overview' | 'calendar' | 'bookings' | 'reservations' | 'performance' | 'operations' | 'cleaning' | 'automations' | 'properties' | 'payments' | 'system' | 'finance' | 'inbox' | 'transactions' | 'taxes' | 'reports' | 'accountant';
@@ -23,40 +24,30 @@ const startsWith = (prefix: string) => (pathname: string) => pathname === prefix
 
 export const NAV_GROUPS: NavGroup[] = [
   {
-    label: 'Overview',
+    label: 'Daily',
     items: [
-      { href: '/admin', label: 'Today', icon: 'overview', match: (p) => p === '/admin' },
+      { href: '/admin', label: 'Overview', icon: 'overview', match: (p) => p === '/admin' },
       { href: '/admin/calendar', label: 'Calendar', icon: 'calendar', match: startsWith('/admin/calendar') },
       { href: '/admin/reservations', label: 'Reservations', icon: 'reservations', match: startsWith('/admin/reservations') },
-      { href: '/admin/bookings', label: 'Direct bookings', icon: 'bookings', match: startsWith('/admin/bookings') },
-      // Operating performance, deliberately in Overview and not in Finance:
-      // gross booking value from the channel manager is a different kind of
-      // truth from the reconciled, VAT-correct figures Finance owns.
-      { href: '/admin/performance', label: 'Performance', icon: 'performance', match: startsWith('/admin/performance') },
-    ],
-  },
-  {
-    label: 'Operations',
-    items: [
-      { href: '/admin/operations', label: 'Attention', icon: 'operations', match: startsWith('/admin/operations') },
       { href: '/admin/cleaning', label: 'Cleaning', icon: 'cleaning', match: startsWith('/admin/cleaning') },
-      { href: '/admin/automations', label: 'Automations', icon: 'automations', match: startsWith('/admin/automations') },
+      // Finance is a separate domain (docs/finance/architecture.md); its own
+      // layout carries the full section list.
+      { href: '/admin/finance', label: 'Finance', icon: 'finance', match: startsWith('/admin/finance') },
       { href: '/admin/properties', label: 'Properties', icon: 'properties', match: startsWith('/admin/properties') },
-      { href: '/admin/payments', label: 'Payments', icon: 'payments', match: startsWith('/admin/payments') },
-      { href: '/admin/system', label: 'System', icon: 'system', match: startsWith('/admin/system') },
     ],
   },
   {
-    // Finance is a separate domain (docs/finance/architecture.md). Six
-    // destinations here; the finance layout carries the full section list.
-    label: 'Finance',
+    label: 'More',
     items: [
-      { href: '/admin/finance', label: 'Finance', icon: 'finance', match: (p) => p === '/admin/finance' },
-      { href: '/admin/finance/inbox', label: 'Finance inbox', icon: 'inbox', match: startsWith('/admin/finance/inbox') },
-      { href: '/admin/finance/transactions', label: 'Transactions', icon: 'transactions', match: startsWith('/admin/finance/transactions') },
-      { href: '/admin/finance/taxes', label: 'VAT & taxes', icon: 'taxes', match: (p) => p.startsWith('/admin/finance/taxes') || p.startsWith('/admin/finance/vat') },
-      { href: '/admin/finance/profit-loss', label: 'Reports', icon: 'reports', match: (p) => ['/admin/finance/profit-loss', '/admin/finance/cash-flow', '/admin/finance/properties', '/admin/finance/revenue', '/admin/finance/expenses'].some((x) => p.startsWith(x)) },
-      { href: '/admin/finance/accountant', label: 'Accountant', icon: 'accountant', match: startsWith('/admin/finance/accountant') },
+      { href: '/admin/operations', label: 'Needs attention', icon: 'operations', match: startsWith('/admin/operations') },
+      // Operating performance, deliberately outside Finance: gross booking
+      // value from the channel manager is a different kind of truth from the
+      // reconciled, VAT-correct figures Finance owns.
+      { href: '/admin/performance', label: 'Performance', icon: 'performance', match: startsWith('/admin/performance') },
+      { href: '/admin/bookings', label: 'Direct bookings', icon: 'bookings', match: startsWith('/admin/bookings') },
+      { href: '/admin/payments', label: 'Payments', icon: 'payments', match: startsWith('/admin/payments') },
+      { href: '/admin/automations', label: 'Automations', icon: 'automations', match: startsWith('/admin/automations') },
+      { href: '/admin/system', label: 'System', icon: 'system', match: startsWith('/admin/system') },
     ],
   },
 ];

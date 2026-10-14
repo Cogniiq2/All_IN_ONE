@@ -288,7 +288,10 @@ export interface AuditRow {
 export interface TurnoverRow {
   id: string;
   unit_id: string;
-  intent_id: string;
+  /** The direct booking it came from; null for a turnover derived from an imported reservation. */
+  intent_id: string | null;
+  /** The imported reservation it came from (migration 20261014); null for a direct booking's turnover, or before that migration. */
+  reservation_id: string | null;
   departure: string;
   window_start: string;
   window_end: string;
@@ -402,6 +405,8 @@ export interface RowSource {
   /** The last run per scheduled job, from the heartbeat table. Empty when nothing has ever run. */
   schedulerStatus(): Promise<SchedulerStatusRow[]>;
   turnovers(query: { statuses?: readonly string[]; departureFrom?: string; departureTo?: string; intentId?: string; limit?: number }): Promise<TurnoverRow[]>;
+  /** Whether the database derives turnovers from imported reservations (migration 20261014). */
+  channelTurnoverDerivationAvailable(): Promise<boolean>;
   turnoverEvents(turnoverId: string): Promise<TurnoverEventRow[]>;
   messageDeliveries(query: { reference?: string; statuses?: readonly string[]; limit?: number }): Promise<MessageDeliveryRow[]>;
   /** Last observation per (provider, signal). Empty rows mean "never observed", never "healthy". */

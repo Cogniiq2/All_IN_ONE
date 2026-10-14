@@ -17,6 +17,7 @@
 #      privilege and row count is identical before and after — and the
 #      inventory diff contains only bolagio_ lines
 #   8  #13 (20261012 bedroom package): preflight/verify report it, it applies,
+#   9  #14 (20261014 channel turnovers): the same cycle,
 #      rolls back and re-applies cleanly, touching nothing outside bolagio_
 #   7  rollback_20260927 in one transaction → #1–#11 state again (preflight
 #      passes, verify refuses) → re-apply twice → verify passes → still no
@@ -243,6 +244,27 @@ done
 must_pass "the verify passes after the #13 rollback and two re-applies" supabase/ops/shared_project_verify.sql
 got="$(psql "$T" -Atc "select count(*) from bolagio_reservations")"
 [ "$got" = "1" ] && pass "BoLaGio data survived #13 apply, rollback and re-apply" || fail "BoLaGio data changed across #13 ($got reservations)"
+
+echo "── 9. #14 (20261014 channel turnovers): apply, verify, roll back, re-apply ──"
+SEP14=supabase/migrations/20261014120000_channel_turnovers.sql
+must_pass "the preflight passes before #14" supabase/ops/shared_project_preflight.sql
+grep -q "#14 channel turnovers not applied" "$WORK/out.txt" && pass "…and reports #14 not applied" || fail "it did not report #14 not applied"
+if psql "$T" -1 -v ON_ERROR_STOP=1 -q -f "$SEP14" > "$WORK/apply.txt" 2>&1; then pass "20261014 applied in one transaction"; else fail "20261014 did not apply"; cat "$WORK/apply.txt"; fi
+must_pass "the preflight passes after #14" supabase/ops/shared_project_preflight.sql
+grep -q "#14 channel turnovers applied" "$WORK/out.txt" && pass "…and reports #14 applied" || fail "it did not report #14 applied"
+must_pass "shared-project verify passes after #14" supabase/ops/shared_project_verify.sql
+grep -q "#14 origin check exists" "$WORK/out.txt" && pass "the #14 assertions ran" || fail "the #14 assertions did not run"
+fingerprint > "$WORK/fp_14.txt"
+diff -q "$WORK/fp_before.txt" "$WORK/fp_14.txt" >/dev/null && pass "#14 touched nothing outside bolagio_" || { fail "#14 changed a non-bolagio object"; diff "$WORK/fp_before.txt" "$WORK/fp_14.txt" | head; }
+if psql "$T" -1 -v ON_ERROR_STOP=1 -q -f supabase/ops/rollback_20261014.sql > "$WORK/rb.txt" 2>&1; then pass "rollback_20261014 ran in one transaction"; else fail "rollback_20261014 failed"; cat "$WORK/rb.txt"; fi
+must_pass "after the #14 rollback the preflight passes" supabase/ops/shared_project_preflight.sql
+grep -q "#14 channel turnovers not applied" "$WORK/out.txt" && pass "…and reports #14 not applied again" || fail "rollback left #14 detectable"
+for i in 1 2; do
+  psql "$T" -1 -v ON_ERROR_STOP=1 -q -f "$SEP14" > "$WORK/apply.txt" 2>&1 && pass "re-apply $i of 20261014" || { fail "re-apply $i of 20261014 failed"; cat "$WORK/apply.txt"; }
+done
+must_pass "the verify passes after the #14 rollback and two re-applies" supabase/ops/shared_project_verify.sql
+got="$(psql "$T" -Atc "select count(*) from bolagio_reservations")"
+[ "$got" = "1" ] && pass "BoLaGio data survived #14 apply, rollback and re-apply" || fail "BoLaGio data changed across #14 ($got reservations)"
 
 rm -rf "$WORK"
 psql "$DATABASE_URL" -q -c "drop database if exists $DB;" >/dev/null 2>&1 || true

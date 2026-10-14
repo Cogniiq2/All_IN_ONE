@@ -1,6 +1,7 @@
 import Link from 'next/link';
-import type { TurnoverAttention, TurnoverDto } from '@/lib/admin/dto';
-import { formatClock, formatIsoDate, weekdayShort } from '@/lib/admin/format';
+import type { TurnoverAttention, TurnoverDto, TurnoverStayDto } from '@/lib/admin/dto';
+import { compactUnitName, formatClock, formatIsoDate, weekdayShort } from '@/lib/admin/format';
+import { bedroomPackageLabel, sourcePresentation } from '@/lib/admin/presentation';
 import { Notice, When } from '@/components/admin/primitives';
 import { TurnoverControls } from '@/components/admin/cleaning/turnover-controls';
 
@@ -8,19 +9,39 @@ const ATTENTION: Record<Exclude<TurnoverAttention, null>, { label: string; tone:
   overdue: { label: 'Overdue', tone: 'critical' },
   due_today: { label: 'Today', tone: 'caution' },
   same_day: { label: 'Same-day changeover', tone: 'caution' },
-  unassigned: { label: 'Unassigned', tone: 'neutral' },
+  unassigned: { label: 'Nobody assigned', tone: 'neutral' },
 };
 
+/** Owner wording: a turnover is pending, being done, done, or no longer needed. */
 const STATUS: Record<string, { label: string; tone: string }> = {
-  required: { label: 'Required', tone: 'neutral' },
+  required: { label: 'Pending', tone: 'neutral' },
   in_progress: { label: 'In progress', tone: 'progress' },
   done: { label: 'Done', tone: 'positive' },
-  void: { label: 'Void', tone: 'muted' },
+  void: { label: 'No longer needed', tone: 'muted' },
 };
+
+function party(s: TurnoverStayDto): string {
+  if (s.adults !== null || s.children !== null) {
+    const a = s.adults ?? 0;
+    const c = s.children ?? 0;
+    return `${a} ${a === 1 ? 'adult' : 'adults'}${c > 0 ? `, ${c} ${c === 1 ? 'child' : 'children'}` : ''}`;
+  }
+  return s.guests === null ? 'party not stated' : `${s.guests} ${s.guests === 1 ? 'guest' : 'guests'}`;
+}
+
+function StayLine({ label, stay }: { label: string; stay: TurnoverStayDto }) {
+  return (
+    <span>
+      {label}: <Link href={`/admin/reservations/${stay.reservationId}`}>{stay.guestLabel ?? 'Guest name not provided'}</Link> · {party(stay)} ·{' '}
+      {sourcePresentation(stay.source).label}
+    </span>
+  );
+}
 
 export function TurnoverRow({ turnover, mayManage }: { turnover: TurnoverDto; mayManage: boolean }) {
   const status = STATUS[turnover.status] ?? { label: turnover.status, tone: 'neutral' };
   const attention = turnover.attention ? ATTENTION[turnover.attention] : null;
+  const setup = turnover.arriving ? bedroomPackageLabel(turnover.arriving.bedroomPackage) : null;
   return (
     <div className="bc-row" style={{ gridTemplateColumns: 'minmax(0,1fr)', padding: '12px 0' }}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
@@ -32,10 +53,12 @@ export function TurnoverRow({ turnover, mayManage }: { turnover: TurnoverDto; ma
             {attention.label}
           </span>
         )}
-        <span style={{ fontWeight: 600 }}>{turnover.unitName}</span>
+        <span style={{ fontWeight: 600 }}>{compactUnitName(turnover.unitName)}</span>
         <span className="bc-meta">
-          departs {weekdayShort(turnover.departure)} {formatIsoDate(turnover.departure)} · window {formatClock(turnover.windowStart)}–{formatClock(turnover.windowEnd)}
-          {turnover.nextArrival ? ` · next arrival ${turnover.nextArrival === turnover.departure ? 'same day' : formatIsoDate(turnover.nextArrival)}` : ' · no arrival scheduled'}
+          check-out {weekdayShort(turnover.departure)} {formatIsoDate(turnover.departure)} · clean {formatClock(turnover.windowStart)}–{formatClock(turnover.windowEnd)}
+          {turnover.nextArrival
+            ? ` · next check-in ${turnover.nextArrival === turnover.departure ? 'the same day' : formatIsoDate(turnover.nextArrival)}`
+            : ' · no next check-in booked yet'}
         </span>
         {turnover.reference && (
           <Link href={`/admin/bookings/${turnover.reference}`} className="bc-ref">
@@ -43,6 +66,17 @@ export function TurnoverRow({ turnover, mayManage }: { turnover: TurnoverDto; ma
           </Link>
         )}
       </div>
+      {(turnover.departing || turnover.arriving) && (
+        <div className="bc-meta mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+          {turnover.departing && <StayLine label="Leaving" stay={turnover.departing} />}
+          {turnover.arriving && (
+            <>
+              <StayLine label="Arriving" stay={turnover.arriving} />
+              <span>prepare {setup ?? 'bedroom setup not stated by the channel'}</span>
+            </>
+          )}
+        </div>
+      )}
       <div className="bc-meta mt-1 flex flex-wrap items-center gap-x-3">
         <span>{turnover.assignedTo ? `Assigned to ${turnover.assignedTo}` : 'Nobody assigned'}</span>
         {turnover.startedAt && (

@@ -24,9 +24,9 @@ to Beds24 or PayPal from a browser.
 | `/admin/performance` | Occupancy, ADR, RevPAR, average stay and gross booking value by channel, unit and month, from the reservation import. |
 | `/admin/bookings/[reference]` | One booking: facts, lifecycle, payment, channel state, reconciliation, cancellation, guest messages, technical detail. |
 | `/admin/operations` | The attention inbox, ordered by cost of ignoring. |
-| `/admin/cleaning` | The turnover board: overdue, today, upcoming, recently closed (direct bookings), plus channel departures paired with the next arrival — same-day changeovers, party and bedroom setup to prepare. Status and assignee changes. |
+| `/admin/cleaning` | The turnover board: one turnover per booked departure from every channel (migration 20261014) — overdue, today, upcoming, recently done — each with the departing and arriving guest, party, bedroom setup, same-day flag and a Pending / In progress / Done status. Departures the derivation has not reached yet are listed separately. |
 | `/admin/automations` | Guest-message delivery ledger, automation outbox, last-heard-from signals per provider. Requeue controls. |
-| `/admin/properties` | Unit registry, mapping ids, cache freshness, today's state. Read-only. |
+| `/admin/properties` | One card per apartment: tonight's state, current and next guest, booked revenue this month and year to date, ADR, next-60-day bookings and channel split, booking-system link freshness; ids and configuration folded away. Read-only. |
 | `/admin/payments` | Local payment records beside their bookings; recent webhook events. |
 | `/admin/system` | Measured health, queues, recent jobs/operations/outbox, operator audit. |
 | `/admin/finance` … | **Finance & Tax** (18 sections: overview, inbox, revenue, expenses, transactions, documents, VAT, taxes, P&L, cash flow, properties, reconciliation, Booking.com, minibar, invoices, imports, accountant, settings). Requires `finance.view`. See `docs/finance/architecture.md`. |
@@ -293,7 +293,7 @@ The System page reports only what can be measured from BoLaGio's own data:
 Reserved event names (`guest.prearrival_ready`, `guest.checkin_ready`,
 `cleaning.required`, `review.requested`) are not emitted and are not shown
 as if they were. Access codes, invoices and date changes are not built;
-channel stays get no cleaning work order (planning view only).
+channel stays get a turnover (Pending / Done) but no automation event — see docs/beds24-reservations.md §13.
 
 ---
 

@@ -49,7 +49,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Rec
   return (
     <>
       <PageHeader
-        eyebrow="Overview"
+        eyebrow="Daily"
         title="Calendar"
         description={`${formatIsoDate(start, 'long')} – ${formatIsoDate(addDays(end, -1), 'long')} · nights, half-open: a departure day is the next arrival’s.`}
         actions={<RefreshControl loadedAt={data.loadedAt} />}

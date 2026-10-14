@@ -1,12 +1,15 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { loadFinanceOverview } from '@/lib/finance/queries';
+import { loadFinanceOverview, loadImports } from '@/lib/finance/queries';
 import { loadFinanceHealth } from '@/lib/finance/queries';
+import { loadPerformance } from '@/lib/admin/queries';
 import { formatCents } from '@/lib/finance/money';
-import { periodLabel } from '@/lib/finance/periods';
-import { PageHeader, Section, ErrorNotice, Notice, HealthBadge } from '@/components/admin/primitives';
+import { addMonths, monthRange, periodLabel, ytd } from '@/lib/finance/periods';
+import { compactUnitName, percent, propertyTodayIso } from '@/lib/admin/format';
+import { sourcePresentation } from '@/lib/admin/presentation';
+import { PageHeader, Section, ErrorNotice, Notice, HealthBadge, Metric } from '@/components/admin/primitives';
 import { RefreshControl } from '@/components/admin/shell/refresh-control';
-import { FigureTile, PlainFigure, Money, Bars, Gauge, Provenance, LedgerRow } from '@/components/admin/finance/primitives';
+import { FigureTile, PlainFigure, Money, Pct, Bars, Gauge, Provenance, LedgerRow } from '@/components/admin/finance/primitives';
 import { InboxRow } from '@/components/admin/finance/inbox-row';
 
 export const metadata: Metadata = { title: 'Finance' };
@@ -18,7 +21,20 @@ export const metadata: Metadata = { title: 'Finance' };
  * provenance and links to the ledger that explains it.
  */
 export default async function FinanceOverviewPage() {
-  const [result, health] = await Promise.all([loadFinanceOverview(), loadFinanceHealth()]);
+  const today = propertyTodayIso();
+  const thisMonth = today.slice(0, 7);
+  const nextMonth = addMonths(today, 1).slice(0, 7);
+  const [result, health, month, next, year, imports] = await Promise.all([
+    loadFinanceOverview(),
+    loadFinanceHealth(),
+    loadPerformance(monthRange(thisMonth)),
+    loadPerformance(monthRange(nextMonth)),
+    loadPerformance(ytd(today)),
+    loadImports(),
+  ]);
+  const awaiting = imports.ok ? imports.data.batches.filter((b) => b.status === 'validated') : [];
+  const awaitingRows = awaiting.reduce((n, b) => n + b.valid_rows, 0);
+  const ledgerEmpty = result.ok && result.data.revenueYtd.cents === 0 && result.data.expensesYtd.cents === 0 && result.data.trend.every((m) => m.revenueCents === 0 && m.costsCents === 0);
 
   if (!result.ok) {
     return (
@@ -68,20 +84,77 @@ export default async function FinanceOverviewPage() {
         )}
       </section>
 
+      {/* ── Statements waiting for a decision ────────────────────── */}
+      {awaiting.length > 0 && (
+        <Notice tone="caution" title={`${awaiting.length} statement ${awaiting.length === 1 ? 'file is' : 'files are'} checked but not yet imported`}>
+          {awaitingRows} Booking.com settlement {awaitingRows === 1 ? 'line' : 'lines'} (gross, commission and payout per reservation) {awaitingRows === 1 ? 'is' : 'are'} parsed and valid, but nothing from{' '}
+          {awaiting.length === 1 ? 'it' : 'them'} is in any figure until an operator reviews the preview and presses “Import valid rows”. Importing is deliberate — it posts money to the
+          ledger — and can be reviewed line by line first.{' '}
+          {awaiting.map((b) => (
+            <Link key={b.id} href={`/admin/finance/imports/${b.id}`} className="link-quiet" style={{ marginRight: 10 }}>
+              Review and import {b.filename} →
+            </Link>
+          ))}
+        </Notice>
+      )}
+
+      {/* ── Booked, from reservations ────────────────────────────── */}
+      <Section
+        title="Booked revenue"
+        meta={<span>gross booking value from the synchronised reservations · every channel · cancelled stays excluded · not payout, not cash, not profit</span>}
+        id="booked"
+      >
+        <div className="bc-metrics mt-4" style={{ ['--cols' as string]: 3 }}>
+          <Metric label={`Booked · ${periodLabel(thisMonth)}`} value={month.ok ? <Money cents={month.data.stayGrossCents} /> : ''} unavailable={!month.ok} note={month.ok ? `${month.data.occupiedNights} booked nights` : undefined} />
+          <Metric label={`Booked · ${periodLabel(nextMonth)}`} value={next.ok ? <Money cents={next.data.stayGrossCents} /> : ''} unavailable={!next.ok} note={next.ok ? `${next.data.occupiedNights} booked nights so far` : undefined} />
+          <Metric label={`Booked · ${today.slice(0, 4)} to date`} value={year.ok ? <Money cents={year.data.stayGrossCents} /> : ''} unavailable={!year.ok} note={year.ok ? `${year.data.occupiedNights} booked nights since 1 January` : undefined} />
+        </div>
+        {month.ok && year.ok && (
+          <div className="bc-metrics mt-3" style={{ ['--cols' as string]: 4 }}>
+            <Metric label="ADR this month" value={<Money cents={month.data.adr.value === null ? null : Math.round(month.data.adr.value)} />} note="gross ÷ booked nights" unavailable={month.data.adr.value === null} />
+            <Metric label="Occupancy this month" value={<Pct ratio={month.data.occupancy.value} digits={0} />} note={`${month.data.occupiedNights} of ${month.data.availableNights} apartment nights`} unavailable={month.data.occupancy.value === null} />
+            <Metric label="ADR year to date" value={<Money cents={year.data.adr.value === null ? null : Math.round(year.data.adr.value)} />} note="gross ÷ booked nights" unavailable={year.data.adr.value === null} />
+            <Metric label="Occupancy year to date" value={<Pct ratio={year.data.occupancy.value} digits={0} />} note={`${year.data.occupiedNights} of ${year.data.availableNights} apartment nights`} unavailable={year.data.occupancy.value === null} />
+          </div>
+        )}
+        {year.ok && (
+          <div className="mt-3 grid gap-x-10 gap-y-1 md:grid-cols-2">
+            <p className="bc-meta" style={{ fontSize: 12.5 }}>
+              By apartment, year to date: {year.data.byUnit.map((u) => `${compactUnitName(u.displayName)} ${formatCents(u.grossCents)} · ${u.nights} nights · ${percent(u.occupancy.value)}`).join(' — ') || 'no booked night yet'}
+            </p>
+            <p className="bc-meta" style={{ fontSize: 12.5 }}>
+              By channel, year to date: {year.data.byChannel.filter((c) => c.nights > 0).map((c) => `${sourcePresentation(c.source).label} ${formatCents(c.grossCents)} (${c.share === null ? `${c.nights} nights` : percent(c.share)})`).join(' · ') || 'no booked night yet'}
+            </p>
+          </div>
+        )}
+        <p className="bc-meta mt-3" style={{ fontSize: 12 }}>
+          Definitions: booked revenue is the gross stay value Beds24 reports, allocated to the nights of each stay inside the period; ADR is that gross divided by booked nights; occupancy is booked nights divided by
+          the bookable apartments × nights in the period (two apartments, counted separately). Booked ≠ settled: what Booking.com actually pays out, after commission, is in the settlements below once the
+          statements are imported; what reaches the bank is in Transactions; profit needs the expenses too.
+        </p>
+      </Section>
+
+      {ledgerEmpty && (
+        <Notice tone="neutral" title="The accounting figures below are empty because no money has been posted yet">
+          Posted revenue, expenses, cash and the twelve-month trend come from imported Booking.com statements, bank statements and recorded expenses — none has been imported so far. They are not
+          wrong; they are waiting for their sources. The booked revenue above is live.
+        </Notice>
+      )}
+
       {/* ── Position ─────────────────────────────────────────────── */}
-      <Section title="Financial position" meta={<span>Profit is not cash. The four rows below are kept apart on purpose.</span>} id="position">
+      <Section title="Settled and posted" meta={<span>from imported statements and recorded expenses · profit is not cash, and the rows are kept apart on purpose</span>} id="position">
         <div className="grid gap-4 mt-4">
           <div className="bc-figures" style={{ ['--cols' as string]: 4 }}>
-            <FigureTile label="Revenue · month to date" figure={o.revenueMtd} note="net, posted facts" />
+            <FigureTile label="Posted revenue · month to date" figure={o.revenueMtd} note="net, from imported settlements" />
             <FigureTile label="Expenses · month to date" figure={o.expensesMtd} note="net, excl. company taxes" />
             <FigureTile label="Operating result · MTD" figure={o.operatingMtd} note="revenue − expenses" />
             <FigureTile label="Committed · next 30 days" figure={o.committedRevenueNext30} />
           </div>
           <div className="bc-figures" style={{ ['--cols' as string]: 4 }}>
-            <FigureTile label="Revenue · year to date" figure={o.revenueYtd} note="net" />
+            <FigureTile label="Posted revenue · year to date" figure={o.revenueYtd} note="net, from imported settlements" />
             <FigureTile label="Expenses · year to date" figure={o.expensesYtd} note="net" />
             <FigureTile label="Operating result · YTD" figure={o.operatingYtd} note="before depreciation and taxes" />
-            <PlainFigure label="Estimated tax reserve required" cents={o.taxReserve.requiredCents} provenance={o.taxReserve.containsEstimates ? 'estimated' : 'reviewed'} note={<Link href="/admin/finance/taxes#reserve" className="link-quiet">by tax type →</Link>} href="/admin/finance/taxes#reserve" />
+            <PlainFigure label="Estimated tax reserve required" cents={o.taxReserve.requiredCents} provenance={o.taxReserve.containsEstimates ? 'estimated' : 'reviewed'} note="by tax type →" href="/admin/finance/taxes#reserve" />
           </div>
           <div className="bc-figures" style={{ ['--cols' as string]: 4 }}>
             <FigureTile label="Cash" figure={o.cash} />

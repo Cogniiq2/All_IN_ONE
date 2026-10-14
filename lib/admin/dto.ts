@@ -396,7 +396,16 @@ export type TurnoverAttention = 'overdue' | 'due_today' | 'same_day' | 'unassign
 
 export interface TurnoverDto {
   id: string;
+  /** The direct booking's reference; null for a turnover derived from an imported reservation. */
   reference: string | null;
+  /** Where the turnover came from: this website's own booking, or a stay imported from the channel manager. */
+  origin: 'direct' | 'channel';
+  /** The imported reservation it came from, when `origin` is `channel`. */
+  reservationId: string | null;
+  /** The departing stay's guest, channel and party, when the reservation import knows them. */
+  departing: TurnoverStayDto | null;
+  /** The arriving stay the room must be ready for, when one is booked. */
+  arriving: TurnoverStayDto | null;
   unitSlug: string;
   unitName: string;
   departure: IsoDate;
@@ -414,6 +423,20 @@ export interface TurnoverDto {
   updatedAt: string;
   /** The most pressing reason an operator should look, derived from the clock. */
   attention: TurnoverAttention;
+}
+
+/** What housekeeping needs to know about a stay on either side of a turnover. No contact details. */
+export interface TurnoverStayDto {
+  reservationId: string;
+  guestLabel: string | null;
+  source: string;
+  adults: number | null;
+  children: number | null;
+  guests: number | null;
+  bedroomPackage: 'one_bedroom' | 'two_bedroom' | null;
+  checkIn: IsoDate;
+  checkOut: IsoDate;
+  nights: number;
 }
 
 export interface TurnoverEventDto {

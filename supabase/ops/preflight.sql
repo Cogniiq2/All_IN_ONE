@@ -64,6 +64,10 @@ select 'finance_ingestion_pipeline (20260927120000)' as migration,
 select 'booking_bedroom_package (20261012120000)' as migration,
        case when exists (select 1 from information_schema.columns where table_name = 'bolagio_booking_intents' and column_name = 'bedroom_package')
             then 'applied' else 'not applied' end as actual;
+select 'channel_turnovers (20261014120000)' as migration,
+       case when to_regprocedure('bolagio_sync_channel_turnovers(integer,timestamptz)') is not null
+             and exists (select 1 from information_schema.columns where table_name = 'bolagio_turnovers' and column_name = 'reservation_id')
+            then 'applied' else 'not applied' end as actual;
 
 \echo ''
 \echo '── 4. Supabase migration history (if the CLI has been used) ────────────'
