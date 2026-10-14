@@ -50,6 +50,7 @@ import { ageMs, guestListLabel } from '@/lib/admin/format';
 import { PAGE_SIZE, statesFor, type BookingListFilter } from '@/lib/admin/filters';
 import { AdminUnconfiguredError, rowSource } from '@/lib/admin/source';
 import type { IntentRow, JobRow, OperationRow, OutboxRow, PaymentEventRow, ReservationDetailRow, ReservationQuery, ReservationRow, ReservationSyncHealthRow, SchedulerStatusRow, UnitRow } from '@/lib/admin/rows';
+import { bookingFreshness, type BookingFreshness } from '@/lib/admin/freshness';
 import { buildCleaningBoard, OPEN_TURNOVER_STATUSES, toTurnoverDto, toTurnoverEventDto, type CleaningBoard } from '@/lib/admin/cleaning';
 import { buildAutomationsBoard, integrationSignals, type AutomationsBoard } from '@/lib/admin/automations';
 import { propertyTodayIso } from '@/lib/admin/format';
@@ -1397,6 +1398,31 @@ export async function loadReservationFreshness(now: Date = new Date()): Promise<
     const [sync, schedulers] = await Promise.all([reservationSyncHealthOf(source, now), source.schedulerStatus().catch(() => [] as SchedulerStatusRow[])]);
     return reservationFreshnessSection(sync, schedulers.find((r) => r.job === 'reservation_sync') ?? null, now);
   });
+}
+
+/**
+ * How current the bookings are, in the owner's words: the newest moment the
+ * reservations were confirmed against Beds24 (a processed webhook or a
+ * successful hourly import), and a plain warning when they may not be.
+ */
+export async function loadBookingFreshness(now: Date = new Date()): Promise<BookingFreshness> {
+  try {
+    const source = await rowSource();
+    const [sync, schedulers] = await Promise.all([reservationSyncHealthOf(source, now), source.schedulerStatus().catch(() => null)]);
+    if (!sync || !schedulers) return bookingFreshness(null, now);
+    const last = schedulers.find((r) => r.job === 'reservation_sync') ?? null;
+    return bookingFreshness(
+      {
+        lastImport: last ? { finishedAt: last.finished_at, ok: last.ok } : null,
+        lastWebhookAt: sync.lastWebhookAt,
+        staleUpcoming: sync.staleActive,
+        failedRefreshes: sync.failedWebhooks,
+      },
+      now
+    );
+  } catch {
+    return bookingFreshness(null, now);
+  }
 }
 
 /** Reservation freshness for alerts and the overview; `null` when it could not be read. */

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
-import { loadReservations } from '@/lib/admin/queries';
+import { loadBookingFreshness, loadReservations } from '@/lib/admin/queries';
+import { FreshnessBanner } from '@/components/admin/freshness-banner';
 import { cachedUnits } from '@/lib/admin/request-cache';
 import { hasActiveReservationFilter, parseReservationFilter, reservationQueryOf } from '@/lib/admin/reservation-filters';
 import { sourcePresentation } from '@/lib/admin/presentation';
@@ -19,7 +20,7 @@ export const metadata: Metadata = { title: 'Reservations' };
 export default async function ReservationsPage({ searchParams }: { searchParams: Record<string, string | string[] | undefined> }) {
   const filter = parseReservationFilter(searchParams);
   const today = propertyTodayIso();
-  const [units, result] = await Promise.all([cachedUnits(), loadReservations(reservationQueryOf(filter, today, null), filter.unit)]);
+  const [units, result, freshness] = await Promise.all([cachedUnits(), loadReservations(reservationQueryOf(filter, today, null), filter.unit), loadBookingFreshness()]);
   const unitOptions = units.ok ? units.data.map((u) => ({ slug: u.slug, name: u.displayName })) : [];
 
   return (
@@ -30,6 +31,8 @@ export default async function ReservationsPage({ searchParams }: { searchParams:
         description="Every reservation from Booking.com, Airbnb and the website, as the booking system holds it. New bookings and changes arrive within seconds; the hourly import re-checks everything. Search by guest name, Booking.com number or Beds24 booking id."
         actions={<RefreshControl loadedAt={result.loadedAt} />}
       />
+
+      <FreshnessBanner freshness={freshness} />
 
       <ReservationFilterBar filter={filter} units={unitOptions} />
 

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { loadCalendar } from '@/lib/admin/queries';
+import { loadBookingFreshness, loadCalendar } from '@/lib/admin/queries';
+import { FreshnessBanner } from '@/components/admin/freshness-banner';
 import { addDays, startOfWeek } from '@/lib/admin/calendar';
 import { compactUnitName, formatIsoDate, formatRelative, propertyTodayIso } from '@/lib/admin/format';
 import { isIsoDate } from '@/lib/booking/stay-rules';
@@ -31,7 +32,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Rec
   const end = addDays(start, density);
   const unit = (first('unit') ?? '').slice(0, 60) || null;
 
-  const data = await loadCalendar(start, end, today);
+  const [data, freshness] = await Promise.all([loadCalendar(start, end, today), loadBookingFreshness()]);
 
   const href = (patch: { start?: string; days?: number; unit?: string | null }) => {
     const p = new URLSearchParams();
@@ -54,6 +55,8 @@ export default async function CalendarPage({ searchParams }: { searchParams: Rec
         description={`${formatIsoDate(start, 'long')} – ${formatIsoDate(addDays(end, -1), 'long')} · nights, half-open: a departure day is the next arrival’s.`}
         actions={<RefreshControl loadedAt={data.loadedAt} />}
       />
+
+      <FreshnessBanner freshness={freshness} />
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <Link href={href({ start: density === 14 ? startOfWeek(today) : addDays(today, -3) })} className="bc-btn sm">

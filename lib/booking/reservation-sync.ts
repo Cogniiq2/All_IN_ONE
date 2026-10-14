@@ -89,6 +89,14 @@ export interface ReservationSyncReport {
    * `from` to continue. `''` when the range was covered.
    */
   resumeFrom: string;
+  /**
+   * The exact task an interrupted explicit run stopped at (`<window start>|<unit>`),
+   * `''` when the range was covered. Pass it back as `resumeKey` with the
+   * same `from`/`to`: unlike `resumeFrom`, it cannot redo a unit already
+   * covered in the window where the budget ran out, so a long backfill always
+   * advances.
+   */
+  resumeKey: string;
   /** Outbound requests this run spent (Beds24 and database), and the ceiling it kept under. */
   subrequests: number;
   budget: number;
@@ -111,6 +119,8 @@ export interface ReservationSyncOptions {
   resume?: boolean;
   /** Outbound-request ceiling for this run. Default `reservationSyncBudget()`. */
   budget?: number;
+  /** Explicit runs only: continue from this task key (a previous run's `resumeKey`). */
+  resumeKey?: string;
 }
 
 /**
@@ -207,13 +217,14 @@ export async function syncReservations(
   // The order this run works in: near-term first (scheduled runs only), then
   // the rotation from the cursor to the end of the cycle.
   const hot = options.resume ? tasks.filter((t) => t.to >= addDays(today, -7) && t.from <= addDays(today, HOT_DAYS_AHEAD)) : [];
-  const start = options.resume ? Math.max(0, tasks.findIndex((t) => t.key >= cursor)) : 0;
+  const explicitStart = !options.resume && options.resumeKey ? tasks.findIndex((t) => t.key >= (options.resumeKey as string)) : 0;
+  const start = options.resume ? Math.max(0, tasks.findIndex((t) => t.key >= cursor)) : explicitStart === -1 ? tasks.length : explicitStart;
   const rotation = options.resume && tasks.findIndex((t) => t.key >= cursor) === -1 ? tasks : tasks.slice(start);
 
   const report: ReservationSyncReport = {
     fetched: 0, inserted: 0, updated: 0, skipped: 0, malformed: 0, failed: 0,
     units: units.length, requests: 0, windowFrom: from, windowTo: to, truncated: false,
-    tasks: tasks.length, tasksDone: 0, tasksFailed: 0, tasksRemaining: 0, cycleComplete: false, cursor, resumeFrom: '', subrequests: 0, budget, failedUnits: '',
+    tasks: tasks.length, tasksDone: 0, tasksFailed: 0, tasksRemaining: 0, cycleComplete: false, cursor, resumeFrom: '', resumeKey: '', subrequests: 0, budget, failedUnits: '',
   };
   const failedUnits = new Set<string>();
   const done = new Set<string>();
@@ -322,6 +333,7 @@ export async function syncReservations(
   if (!options.resume && !report.cycleComplete) {
     // Rotation order is by window start, so every window before this one is covered.
     report.resumeFrom = rotation[next].from;
+    report.resumeKey = rotation[next].key;
   }
   report.failedUnits = Array.from(failedUnits).sort().join(',');
 

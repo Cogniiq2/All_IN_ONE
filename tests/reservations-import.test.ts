@@ -976,3 +976,109 @@ describe('aligned windows', () => {
     expect(a[a.length - 1].to).toBe('2028-03-25');
   });
 });
+
+/* ── Fully automatic operation (2026-10-14) ─────────────────────────────── */
+
+import { buildPerformance } from '@/lib/admin/performance';
+
+describe('automatic operation: backfill, updates, finance', () => {
+  const UNITS = [
+    { slug: 'schulstrasse-i', display_name: 'Apartment I' },
+    { slug: 'schulstrasse-ii', display_name: 'Apartment II' },
+  ];
+  const perf = (from: string, to: string) =>
+    buildPerformance(
+      reservationRows().map((r) => ({
+        unit_slug: (r.external_room_id === '731146' ? 'schulstrasse-ii' : 'schulstrasse-i') as string,
+        source: r.source as string,
+        status_class: r.status_class as string,
+        check_in: r.check_in as string,
+        check_out: r.check_out as string,
+        total_amount_cents: r.total_amount_cents as number | null,
+        currency: (r.currency as string | null) ?? null,
+        booked_at: (r.booked_at as string | null) ?? null,
+      })),
+      UNITS,
+      { from, to }
+    );
+
+  it('a historical backfill imports past, current and future stays across years, and keeps them', async () => {
+    h.bookings.push(
+      booking({ id: 81000001, arrival: '2019-07-01', departure: '2019-07-04', price: 300 }),
+      booking({ id: 81000002, roomId: 731146, propertyId: 354658, arrival: '2024-02-10', departure: '2024-02-12', price: 200, status: 'cancelled' }),
+      booking({ id: 81000003, arrival: '2026-10-10', departure: '2026-10-12', price: 250 }),
+      booking({ id: 81000004, roomId: 731146, propertyId: 354658, arrival: '2027-08-01', departure: '2027-08-05', price: 900 })
+    );
+    const report = await syncReservations(createLogger(), { from: '2015-01-01', to: '2028-04-30', budget: 1000 });
+    expect(report.cycleComplete).toBe(true);
+    expect(report.inserted).toBe(4);
+    const ids = reservationRows().map((r) => r.external_booking_id).sort();
+    expect(ids).toEqual(['81000001', '81000002', '81000003', '81000004']);
+    // The scheduled horizon no longer reaches 2019, and the row stays.
+    h.bookings.splice(0, 1);
+    await syncReservations(createLogger(), { from: '2025-10-14', to: '2028-04-14', budget: 1000 });
+    expect(reservationRows().find((r) => r.external_booking_id === '81000001')).toBeTruthy();
+  });
+
+  it('a long backfill cut short by its request budget resumes where it stopped, without duplicates', async () => {
+    h.bookings.push(
+      booking({ id: 82000001, arrival: '2016-03-01', departure: '2016-03-03' }),
+      booking({ id: 82000002, arrival: '2027-03-01', departure: '2027-03-03' })
+    );
+    const first = await syncReservations(createLogger(), { from: '2015-01-01', to: '2028-04-30', budget: 14 });
+    expect(first.cycleComplete).toBe(false);
+    expect(first.resumeFrom).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(first.resumeKey).toMatch(/^\d{4}-\d{2}-\d{2}\|schulstrasse-/);
+    let next = first;
+    for (let i = 0; i < 120 && !next.cycleComplete; i++) {
+      next = await syncReservations(createLogger(), { from: '2015-01-01', to: '2028-04-30', budget: 14, resumeKey: next.resumeKey });
+    }
+    expect(next.cycleComplete).toBe(true);
+    // Re-running the whole range is harmless.
+    await syncReservations(createLogger(), { from: '2015-01-01', to: '2028-04-30', budget: 1000 });
+    expect(reservationRows().map((r) => r.external_booking_id).sort()).toEqual(['82000001', '82000002']);
+  });
+
+  it('a new booking, then a price change, a date change and a party change all arrive on the next pass', async () => {
+    const run = () => syncReservations(createLogger(), { from: '2026-09-01', to: '2026-12-31', budget: 1000 });
+    await run();
+    expect(reservationRows()).toHaveLength(0);
+    h.bookings.push(booking({ id: 83000001, arrival: '2026-11-01', departure: '2026-11-03', price: 400, numAdult: 2, numChild: 0 }));
+    expect((await run()).inserted).toBe(1);
+    h.bookings.length = 0;
+    h.bookings.push(booking({ id: 83000001, arrival: '2026-11-02', departure: '2026-11-05', price: 555.5, numAdult: 3, numChild: 1 }));
+    const second = await run();
+    expect(second.updated).toBe(1);
+    const [row] = reservationRows();
+    expect(row).toMatchObject({ check_in: '2026-11-02', check_out: '2026-11-05', total_amount_cents: 55550, adults: 3, children: 1, status_class: 'active' });
+    expect(reservationRows()).toHaveLength(1);
+  });
+
+  it('booked revenue, nights, ADR and occupancy recalculate from the synchronised rows, and a cancellation drops out', async () => {
+    const run = () => syncReservations(createLogger(), { from: '2026-09-01', to: '2026-12-31', budget: 1000 });
+    h.bookings.push(
+      booking({ id: 84000001, arrival: '2026-11-01', departure: '2026-11-03', price: 400 }),
+      booking({ id: 84000002, roomId: 731146, propertyId: 354658, arrival: '2026-11-10', departure: '2026-11-14', price: 800 })
+    );
+    await run();
+    const before = perf('2026-11-01', '2026-12-01');
+    expect(before.stayGrossCents).toBe(120000);
+    expect(before.occupiedNights).toBe(6);
+    expect(before.adr.value).toBeCloseTo(20000, 5);
+    expect(before.occupancy.value).toBeCloseTo(6 / 60, 5);
+
+    // The channel cancels one stay: the next pass marks it, the figures drop it.
+    h.bookings.length = 0;
+    h.bookings.push(
+      booking({ id: 84000001, arrival: '2026-11-01', departure: '2026-11-03', price: 400 }),
+      booking({ id: 84000002, roomId: 731146, propertyId: 354658, arrival: '2026-11-10', departure: '2026-11-14', price: 800, status: 'cancelled' })
+    );
+    await run();
+    const after = perf('2026-11-01', '2026-12-01');
+    expect(reservationRows()).toHaveLength(2);
+    expect(after.stayGrossCents).toBe(40000);
+    expect(after.occupiedNights).toBe(2);
+    expect(after.cancelledStays).toBe(1);
+    expect(after.byUnit.find((u) => u.slug === 'schulstrasse-ii')?.grossCents).toBe(0);
+  });
+});

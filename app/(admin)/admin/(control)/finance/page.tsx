@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { loadFinanceOverview, loadImports } from '@/lib/finance/queries';
 import { loadFinanceHealth } from '@/lib/finance/queries';
-import { loadPerformance } from '@/lib/admin/queries';
+import { loadBookingFreshness, loadPerformance } from '@/lib/admin/queries';
+import { payoutFreshness } from '@/lib/admin/freshness';
 import { formatCents } from '@/lib/finance/money';
 import { addMonths, monthRange, periodLabel, ytd } from '@/lib/finance/periods';
 import { compactUnitName, percent, propertyTodayIso } from '@/lib/admin/format';
@@ -24,16 +25,19 @@ export default async function FinanceOverviewPage() {
   const today = propertyTodayIso();
   const thisMonth = today.slice(0, 7);
   const nextMonth = addMonths(today, 1).slice(0, 7);
-  const [result, health, month, next, year, imports] = await Promise.all([
+  const [result, health, month, next, year, imports, freshness] = await Promise.all([
     loadFinanceOverview(),
     loadFinanceHealth(),
     loadPerformance(monthRange(thisMonth)),
     loadPerformance(monthRange(nextMonth)),
     loadPerformance(ytd(today)),
     loadImports(),
+    loadBookingFreshness(),
   ]);
   const awaiting = imports.ok ? imports.data.batches.filter((b) => b.status === 'validated') : [];
   const awaitingRows = awaiting.reduce((n, b) => n + b.valid_rows, 0);
+  const lastStatement = imports.ok ? imports.data.batches.filter((b) => b.source_type === 'booking_com_finance_statement' && b.status === 'imported').map((b) => b.imported_at ?? b.created_at).sort().at(-1) ?? null : null;
+  const payouts = payoutFreshness(lastStatement, awaiting.length, new Date());
   const ledgerEmpty = result.ok && result.data.revenueYtd.cents === 0 && result.data.expensesYtd.cents === 0 && result.data.trend.every((m) => m.revenueCents === 0 && m.costsCents === 0);
 
   if (!result.ok) {
@@ -83,6 +87,24 @@ export default async function FinanceOverviewPage() {
           </div>
         )}
       </section>
+
+      {/* ── How current each layer is ─────────────────────────────── */}
+      <div className="mb-5 flex flex-wrap items-center gap-2" role="status" style={{ fontSize: 12.5 }}>
+        <span className="bc-badge ghost" data-tone={freshness.state === 'current' ? 'positive' : freshness.state === 'delayed' ? 'caution' : 'critical'}>
+          <i className="bc-glyph" data-glyph={freshness.state === 'current' ? 'check' : 'alert'} aria-hidden="true" />
+          {freshness.state === 'current' ? 'Booking performance current' : 'Booking performance may be out of date'} · {freshness.headline.replace('Bookings updated', 'updated')}
+        </span>
+        <span className="bc-badge ghost" data-tone={payouts.updatedAt ? 'neutral' : 'caution'}>
+          <i className="bc-glyph" data-glyph={payouts.updatedAt ? 'clock' : 'dash'} aria-hidden="true" />
+          {payouts.headline}
+        </span>
+        <span className="bc-badge ghost" data-tone="muted">Bank: not connected</span>
+      </div>
+      {freshness.warning && (
+        <div className="mb-5">
+          <Notice tone="caution" title="Booked figures may be out of date">{freshness.warning}</Notice>
+        </div>
+      )}
 
       {/* ── Statements waiting for a decision ────────────────────── */}
       {awaiting.length > 0 && (

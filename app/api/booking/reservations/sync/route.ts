@@ -4,7 +4,7 @@
  * Import what is actually booked at Beds24 into `bolagio_reservations`.
  *
  *   x-bolagio-signature: BOOKING_SYNC_SECRET
- *   { unitSlug?, from?, to? }   // omit everything for the scheduled case
+ *   { unitSlug?, from?, to?, resumeKey? }   // omit everything for the scheduled case
  *
  * ── Read-only ────────────────────────────────────────────────────────────
  * Every provider call behind this route is a GET. Nothing is created,
@@ -53,11 +53,14 @@ export async function POST(request: NextRequest) {
     let unitSlug: string | undefined;
     let from: string | undefined;
     let to: string | undefined;
+    let resumeKey: string | undefined;
     try {
       const body = (await request.json()) as Record<string, unknown>;
       if (typeof body.unitSlug === 'string' && /^[a-z0-9-]{2,64}$/.test(body.unitSlug)) unitSlug = body.unitSlug;
       if (isIsoDate(body.from)) from = body.from;
       if (isIsoDate(body.to)) to = body.to;
+      // `<window start>|<unit slug>` from a previous explicit run's report.
+      if (typeof body.resumeKey === 'string' && /^\d{4}-\d{2}-\d{2}\|[a-z0-9-]{2,64}$/.test(body.resumeKey)) resumeKey = body.resumeKey;
     } catch {
       // An empty body means "the default horizon, every mapped unit", which
       // is the normal scheduled case.
@@ -74,7 +77,7 @@ export async function POST(request: NextRequest) {
       // refreshes the near-term windows first. Explicit ranges are one-off
       // re-imports and never move the rotation.
       const scheduled = !unitSlug && !from && !to;
-      const report = await syncReservations(logger, { unitSlug, from, to, resume: scheduled });
+      const report = await syncReservations(logger, { unitSlug, from, to, resume: scheduled, resumeKey: scheduled ? undefined : resumeKey });
       await recordSchedulerRun({
         job: 'reservation_sync',
         startedAt: started,
@@ -102,6 +105,7 @@ export async function POST(request: NextRequest) {
           // The explicit run carries the scheduled cursor forward unchanged.
           cursor: report.cursor,
           resumeFrom: report.resumeFrom,
+          resumeKey: report.resumeKey,
           failedUnits: report.failedUnits,
           subrequests: report.subrequests,
           budget: report.budget,

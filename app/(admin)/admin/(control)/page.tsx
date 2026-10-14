@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { adminPosture } from '@/lib/admin/config';
-import { loadCalendar, loadCleaningBoard, loadPerformance, loadReservationFreshness, loadSystemHealth, loadToday } from '@/lib/admin/queries';
+import { loadBookingFreshness, loadCalendar, loadCleaningBoard, loadPerformance, loadReservationFreshness, loadSystemHealth, loadToday } from '@/lib/admin/queries';
+import { FreshnessBanner } from '@/components/admin/freshness-banner';
 import { addMonths, monthRange, periodLabel, ytd } from '@/lib/finance/periods';
 import { Money, Pct } from '@/components/admin/finance/primitives';
 import { HealthSectionCard } from '@/components/admin/health-section-card';
@@ -29,7 +30,7 @@ export default async function OverviewPage() {
   const posture = adminPosture();
   const thisMonth = today.slice(0, 7);
   const nextMonth = addMonths(today, 1).slice(0, 7);
-  const [attention, board, calendar, health, month, next, year, sync, cleaning] = await Promise.all([
+  const [attention, board, calendar, health, month, next, year, sync, cleaning, freshness] = await Promise.all([
     cachedAttention(),
     loadToday(today),
     loadCalendar(addDays(today, -1), addDays(today, 31), today),
@@ -39,6 +40,7 @@ export default async function OverviewPage() {
     loadPerformance(ytd(today)),
     loadReservationFreshness(),
     loadCleaningBoard(),
+    loadBookingFreshness(),
   ]);
   const loadedAt = board.loadedAt;
 
@@ -97,6 +99,8 @@ export default async function OverviewPage() {
         }
         actions={<RefreshControl loadedAt={loadedAt} every={60} />}
       />
+
+      <FreshnessBanner freshness={freshness} />
 
       {/* ── Attention ────────────────────────────────────────────── */}
       <section aria-labelledby="attention-title">

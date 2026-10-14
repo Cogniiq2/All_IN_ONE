@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import { currentOperator } from '@/lib/admin/auth';
 import { can } from '@/lib/admin/permissions';
-import { loadCleaningBoard } from '@/lib/admin/queries';
+import { loadBookingFreshness, loadCleaningBoard } from '@/lib/admin/queries';
+import { FreshnessBanner } from '@/components/admin/freshness-banner';
 import { formatIsoDate, formatLongDay } from '@/lib/admin/format';
 import { PageHeader, Section, ErrorNotice, Metric, Notice } from '@/components/admin/primitives';
 import { ChannelTurnoverList } from '@/components/admin/cleaning/channel-turnovers';
@@ -17,7 +18,7 @@ export const metadata: Metadata = { title: 'Cleaning' };
  * today second, then what is coming.
  */
 export default async function CleaningPage() {
-  const [board, operator] = await Promise.all([loadCleaningBoard(), currentOperator()]);
+  const [board, operator, freshness] = await Promise.all([loadCleaningBoard(), currentOperator(), loadBookingFreshness()]);
   const mayManage = can(operator?.role, 'manage_cleaning') && !operator?.preview;
 
   if (!board.ok) {
@@ -41,6 +42,8 @@ export default async function CleaningPage() {
         description={`${formatLongDay(b.today)} · one turnover per departure, from every channel, for the next sixty days. Mark each one done when the apartment is ready.`}
         actions={<RefreshControl loadedAt={board.loadedAt} every={120} />}
       />
+
+      <FreshnessBanner freshness={freshness} extra="Cleaning follows within three minutes of each change." />
 
       <div className="bc-metrics" style={{ ['--cols' as string]: 4 }}>
         <Metric label="To clean" value={toClean} note={nextDate ? `next check-out ${nextDate === b.today ? 'today' : formatIsoDate(nextDate)}` : 'nothing open in sixty days'} />
