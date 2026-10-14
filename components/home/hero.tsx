@@ -8,8 +8,8 @@ import { ArrowRight } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
 import { apartments } from '@/lib/content/apartments';
 import { brand } from '@/lib/content/brand';
-import { heroImage, REFERENCE_IMAGE_LABEL } from '@/lib/content/media';
-import { Wordmark } from '@/components/brand/logo';
+import { brandArt, heroImage, REFERENCE_IMAGE_LABEL } from '@/lib/content/media';
+import { BrandArtMask, Wordmark } from '@/components/brand/logo';
 import { CtaLink, label } from '@/components/ui-kit/cta';
 import { BookingTrustBadge } from '@/components/ui-kit/booking-trust';
 import { hasBookingTrust } from '@/lib/content/booking-trust';
@@ -17,10 +17,11 @@ import { hasBookingTrust } from '@/lib/content/booking-trust';
 /**
  * The signature entrance.
  *
- * B · L · G resolves into the BoLaGio wordmark while the hero composition
- * settles. It runs once, takes about 1.4s, and blocks nothing: the headline
- * and both CTAs animate in on their own schedule and are interactive
- * immediately. Under prefers-reduced-motion the wordmark is simply present.
+ * The stacked B / L / G monogram resolves into the BoLaGio wordmark — both the
+ * logo artwork itself — while the hero composition settles. It runs once,
+ * takes about 1.4s, and blocks nothing: the headline and both CTAs animate in
+ * on their own schedule and are interactive immediately. Under
+ * prefers-reduced-motion the wordmark is simply present.
  */
 function BrandEntrance() {
   const reduce = useReducedMotion();
@@ -30,56 +31,29 @@ function BrandEntrance() {
   }
 
   return (
-    <span className="relative inline-flex items-center" style={{ minHeight: '1.15em' }}>
+    <span className="relative inline-flex items-center" style={{ minHeight: 64, color: 'hsl(var(--on-dark))' }}>
+      <span className="sr-only">{brand.name}</span>
       {/* Monogram — leads, then hands over */}
-      <motion.span
-        aria-hidden="true"
-        className="absolute left-0 top-0 inline-flex items-center"
-        initial={{ opacity: 1 }}
-        animate={{ opacity: 0 }}
-        transition={{ delay: 0.92, duration: 0.34, ease: 'easeOut' }}
-        style={{
-          fontFamily: 'var(--font-serif), Georgia, serif',
-          fontSize: '44px',
-          fontWeight: 500,
-          color: 'hsl(var(--on-dark))',
-          gap: '0.42em',
-          lineHeight: 1.15,
-        }}
-      >
-        {brand.monogram.map((letter, i) => (
-          <motion.span
-            key={letter}
-            className="inline-flex items-center"
-            style={{ gap: '0.42em' }}
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 + i * 0.11, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-          >
-            {letter}
-            {i < brand.monogram.length - 1 && (
-              <span
-                style={{
-                  width: '3px',
-                  height: '3px',
-                  background: 'hsl(var(--on-dark-gold))',
-                  transform: 'rotate(45deg)',
-                  display: 'inline-block',
-                }}
-              />
-            )}
-          </motion.span>
-        ))}
-      </motion.span>
+      <span aria-hidden="true" className="absolute left-0 top-1/2 inline-flex -translate-y-1/2">
+        <motion.span
+          className="inline-flex"
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: [0, 1, 1, 0], y: [14, 0, 0, 0] }}
+          transition={{ duration: 1.26, times: [0, 0.4, 0.73, 1], ease: [0.22, 1, 0.36, 1] }}
+        >
+          <BrandArtMask art={brandArt.monogram} height={64} />
+        </motion.span>
+      </span>
 
       {/* Wordmark — arrives as the monogram leaves */}
       <motion.span
+        aria-hidden="true"
         className="inline-flex"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 1.02, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
       >
-        <Wordmark size="xl" invert />
+        <BrandArtMask art={brandArt.wordmark} height={64} />
       </motion.span>
     </span>
   );

@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import { adminPosture } from '@/lib/admin/config';
 import { LoginForm } from '@/components/admin/auth/login-form';
 import { PreviewFlag } from '@/components/admin/shell/preview-flag';
+import { BrandArtMask } from '@/components/brand/logo';
+import { brandArt } from '@/lib/content/media';
 
 export const metadata: Metadata = { title: 'Sign in' };
 
@@ -34,7 +36,8 @@ export default function LoginPage({ searchParams }: { searchParams: Record<strin
       <aside className="bc-login-side" aria-hidden="true">
         <div>
           <div className="bc-brand-word">
-            B<span>o</span>L<span>a</span>G<span>io</span>
+            <span className="sr-only">BoLaGio</span>
+            <BrandArtMask art={brandArt.wordmark} height="1.36em" />
           </div>
           <div className="bc-brand-control">Control</div>
           <div className="bc-brand-sub">Residence Operations</div>

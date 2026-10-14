@@ -5,6 +5,8 @@ import { SidebarNav } from '@/components/admin/shell/sidebar-nav';
 import { MobileBar } from '@/components/admin/shell/mobile-bar';
 import { OperatorCard } from '@/components/admin/shell/operator-card';
 import { CommandPalette } from '@/components/admin/shell/command-palette';
+import { BrandArtMask } from '@/components/brand/logo';
+import { brandArt } from '@/lib/content/media';
 
 /**
  * The application shell: a graphite rail on the left of a bone working
@@ -32,7 +34,8 @@ export function AdminShell({
       <aside className="bc-sidebar" aria-label="BoLaGio Control">
         <div className="bc-sidebar-brand">
           <div className="bc-brand-word">
-            B<span>o</span>L<span>a</span>G<span>io</span>
+            <span className="sr-only">BoLaGio</span>
+            <BrandArtMask art={brandArt.wordmark} height="1.36em" />
           </div>
           <div className="bc-brand-control">Control</div>
           <div className="bc-brand-sub">Residence Operations</div>

@@ -230,8 +230,11 @@
   color: hsl(var(--bc-nav-text));
 }
 
-.bc-brand-word span {
-  color: hsl(var(--bc-nav-text) / 0.62);
+/* The wordmark is the logo artwork (a mask painted in currentColor); the
+   sidebar sets its colour and size, the art keeps its own proportions. */
+.bc-brand-word {
+  display: inline-flex;
+  align-items: center;
 }
 
 .bc-brand-control {
@@ -541,9 +544,6 @@
   font-size: 18px;
 }
 
-.bc-topbar .bc-brand-word span {
-  color: hsl(var(--bc-ink) / 0.55);
-}
 
 .bc-topbar-control {
   font-size: 9px;

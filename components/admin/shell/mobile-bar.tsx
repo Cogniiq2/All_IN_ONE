@@ -4,6 +4,8 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { useState, type ReactNode } from 'react';
 import { SidebarNav } from '@/components/admin/shell/sidebar-nav';
 import { PreviewFlag } from '@/components/admin/shell/preview-flag';
+import { BrandArtMask } from '@/components/brand/logo';
+import { brandArt } from '@/lib/content/media';
 
 /**
  * The compact top bar for phones and tablets, with a slide-over navigation.
@@ -20,7 +22,8 @@ export function MobileBar({ attentionCount, footer, preview }: { attentionCount:
     <header className="bc-topbar">
       <div className="flex min-w-0 items-baseline gap-2">
         <span className="bc-brand-word">
-          B<span>o</span>L<span>a</span>G<span>io</span>
+          <span className="sr-only">BoLaGio</span>
+            <BrandArtMask art={brandArt.wordmark} height="1.36em" />
         </span>
         <span className="bc-topbar-control">Control</span>
         {preview && <PreviewFlag compact />}
@@ -42,7 +45,8 @@ export function MobileBar({ attentionCount, footer, preview }: { attentionCount:
               <div className="bc-sidebar-brand flex items-start justify-between">
                 <div>
                   <div className="bc-brand-word">
-                    B<span>o</span>L<span>a</span>G<span>io</span>
+                    <span className="sr-only">BoLaGio</span>
+            <BrandArtMask art={brandArt.wordmark} height="1.36em" />
                   </div>
                   <div className="bc-brand-control">Control</div>
                 </div>

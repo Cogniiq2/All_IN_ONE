@@ -42,7 +42,7 @@ app/                      App Router routes. Each route: page.tsx (server, metad
                           Never linked from the public site. See docs/admin-control.md.
     (control)/finance/    Finance & Tax operating system (docs/finance/*.md)
   globals.css             Design tokens (HSL custom properties) + base layer
-  sitemap.ts, robots.ts, icon.tsx, apple-icon.tsx, opengraph-image.tsx, not-found.tsx
+  sitemap.ts, robots.ts, icon.png, apple-icon.png, opengraph-image.tsx, not-found.tsx
   _archive/               Private folder — NOT routed, not compiled into the site
 middleware.ts             Session gate + noindex/no-store headers for /admin only
 components/

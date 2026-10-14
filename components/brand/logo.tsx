@@ -1,32 +1,27 @@
 'use client';
 
 /**
- * BoLaGio brand marks.
+ * BoLaGio brand marks — the logo artwork itself.
  *
- * The identity is typographic rather than pictorial: the name already carries
- * three capitals, so the wordmark simply lets them read. Capitals sit at full
- * ink, the connecting lowercase at reduced weight — Bo · La · Gio resolves
- * visually without ever stating what the letters stand for. That story is the
- * family's to tell, and is deliberately not invented here.
+ * The wordmark ("BoLaGio") and the stacked B / L / G monogram are drawn from
+ * the brand master, not imitated in a web font: `brandArt` holds them as
+ * transparent masks and each mark paints its mask in the ink of the surface
+ * it sits on (`currentColor`), so the same art reads on light pages and on
+ * dark photography. The accessible name is the single visually-hidden
+ * "BoLaGio"; the artwork is decorative.
  */
 
+import type { CSSProperties } from 'react';
 import { brand } from '@/lib/content/brand';
+import { brandArt, type BrandArt } from '@/lib/content/media';
 
 type Size = 'sm' | 'md' | 'lg' | 'xl';
 
-const WORDMARK_SIZE: Record<Size, string> = {
-  sm: '17px',
-  md: '21px',
-  lg: '30px',
-  xl: '44px',
-};
+/** Rendered height of the wordmark art, descender included. */
+const WORDMARK_HEIGHT: Record<Size, number> = { sm: 24, md: 30, lg: 42, xl: 64 };
 
-const MONOGRAM_SIZE: Record<Size, string> = {
-  sm: '13px',
-  md: '16px',
-  lg: '22px',
-  xl: '34px',
-};
+/** Rendered height of the stacked monogram. */
+const MONOGRAM_HEIGHT: Record<Size, number> = { sm: 28, md: 36, lg: 56, xl: 88 };
 
 interface MarkProps {
   size?: Size;
@@ -35,76 +30,50 @@ interface MarkProps {
   className?: string;
 }
 
-/**
- * The full wordmark. `aria-hidden` on the decorative spans; the accessible
- * name comes from the single visually-hidden string so screen readers hear
- * "BoLaGio" once, not three fragments.
- */
-export function Wordmark({ size = 'md', invert = false, className = '' }: MarkProps) {
-  const ink = invert ? 'hsl(var(--on-dark))' : 'hsl(var(--foreground))';
-  const soft = invert ? 'hsl(var(--on-dark) / 0.72)' : 'hsl(var(--foreground) / 0.66)';
-
+/** A logo mask painted in the current text colour, at a fixed height. */
+export function BrandArtMask({ art, height, className = '', style }: { art: BrandArt; height: number | string; className?: string; style?: CSSProperties }) {
+  const mask = `url(${art.src}) center / contain no-repeat`;
   return (
-    <span className={`inline-flex items-baseline ${className}`}>
+    <span
+      aria-hidden="true"
+      className={`inline-block shrink-0 ${className}`}
+      style={{
+        height,
+        aspectRatio: `${art.width} / ${art.height}`,
+        backgroundColor: 'currentColor',
+        WebkitMask: mask,
+        mask,
+        ...style,
+      }}
+    />
+  );
+}
+
+/** The BoLaGio wordmark. */
+export function Wordmark({ size = 'md', invert = false, className = '' }: MarkProps) {
+  return (
+    <span
+      className={`inline-flex items-center ${className}`}
+      style={{ color: invert ? 'hsl(var(--on-dark))' : 'hsl(var(--foreground))', lineHeight: 0 }}
+    >
       <span className="sr-only">{brand.name}</span>
-      <span
-        aria-hidden="true"
-        style={{
-          fontFamily: 'var(--font-serif), Georgia, serif',
-          fontSize: WORDMARK_SIZE[size],
-          fontWeight: 500,
-          letterSpacing: '-0.012em',
-          lineHeight: 1,
-          color: ink,
-          whiteSpace: 'nowrap',
-        }}
-      >
-        B<span style={{ color: soft }}>o</span>
-        L<span style={{ color: soft }}>a</span>
-        G<span style={{ color: soft }}>io</span>
-      </span>
+      <BrandArtMask art={brandArt.wordmark} height={WORDMARK_HEIGHT[size]} />
     </span>
   );
 }
 
 /**
- * The restrained B · L · G monogram. Used as a quiet mark — favicon, footer,
- * section dividers, and the hero entrance.
+ * The stacked B / L / G monogram. Used as a quiet mark — footer, section
+ * dividers, the hero entrance.
  */
 export function Monogram({ size = 'md', invert = false, className = '' }: MarkProps) {
-  const ink = invert ? 'hsl(var(--on-dark))' : 'hsl(var(--foreground))';
-  const dot = invert ? 'hsl(var(--on-dark-gold))' : 'hsl(var(--champagne-dark))';
-
   return (
     <span
       className={`inline-flex items-center ${className}`}
-      style={{
-        fontFamily: 'var(--font-serif), Georgia, serif',
-        fontSize: MONOGRAM_SIZE[size],
-        fontWeight: 500,
-        letterSpacing: '0.06em',
-        lineHeight: 1,
-        color: ink,
-        gap: '0.42em',
-      }}
+      style={{ color: invert ? 'hsl(var(--on-dark))' : 'hsl(var(--foreground))', lineHeight: 0 }}
     >
       <span className="sr-only">{brand.name}</span>
-      {brand.monogram.map((letter, i) => (
-        <span key={letter} aria-hidden="true" className="inline-flex items-center" style={{ gap: '0.42em' }}>
-          {letter}
-          {i < brand.monogram.length - 1 && (
-            <span
-              style={{
-                width: '3px',
-                height: '3px',
-                background: dot,
-                transform: 'rotate(45deg)',
-                display: 'inline-block',
-              }}
-            />
-          )}
-        </span>
-      ))}
+      <BrandArtMask art={brandArt.monogram} height={MONOGRAM_HEIGHT[size]} />
     </span>
   );
 }
@@ -121,7 +90,7 @@ export function LogoLockup({
   const soft = invert ? 'hsl(var(--on-dark-muted))' : 'hsl(var(--muted-foreground))';
 
   return (
-    <span className={`inline-flex flex-col ${className}`} style={{ gap: '4px' }}>
+    <span className={`inline-flex flex-col ${className}`} style={{ gap: '5px' }}>
       <Wordmark size={size} invert={invert} />
       {descriptor && (
         <span

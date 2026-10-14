@@ -1,4 +1,5 @@
 import { ImageResponse } from 'next/og';
+import { OG_MONOGRAM, OG_WORDMARK } from '@/lib/content/brand-art.generated';
 
 /**
  * Share image, built from the brand system.
@@ -26,13 +27,8 @@ export default function OpengraphImage() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 22 }}>
-          <div style={{ display: 'flex', gap: 18, fontSize: 30, color: '#F5F2EA', fontWeight: 600 }}>
-            <span>B</span>
-            <span style={{ color: '#C9A76A' }}>·</span>
-            <span>L</span>
-            <span style={{ color: '#C9A76A' }}>·</span>
-            <span>G</span>
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element -- ImageResponse renders plain <img> */}
+          <img src={OG_MONOGRAM.src} width={OG_MONOGRAM.width * 0.75} height={OG_MONOGRAM.height * 0.75} alt="" />
           <div style={{ display: 'flex', width: 56, height: 1, background: '#C9A76A' }} />
           <div
             style={{
@@ -47,17 +43,8 @@ export default function OpengraphImage() {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 26 }}>
-          <div
-            style={{
-              display: 'flex',
-              fontSize: 86,
-              fontWeight: 600,
-              color: '#F5F2EA',
-              letterSpacing: '-0.03em',
-            }}
-          >
-            BoLaGio
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element -- ImageResponse renders plain <img> */}
+          <img src={OG_WORDMARK.src} width={OG_WORDMARK.width * 0.8} height={OG_WORDMARK.height * 0.8} alt="BoLaGio" />
           <div
             style={{
               display: 'flex',

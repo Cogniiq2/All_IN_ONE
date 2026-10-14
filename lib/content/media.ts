@@ -96,3 +96,24 @@ export const heroImage = living;
  * vocabulary above is still the right one on the day that happens.
  */
 export const tempGalleries: Record<string, TempImage[]> = {};
+
+/**
+ * The BoLaGio logo artwork, cut from the brand master
+ * (assets/brand/bolagio-logo-source.jpg) as transparent masks: white ink,
+ * alpha carrying the letterforms. Components tint them with the colour token
+ * of their surface (`components/brand/logo.tsx`), so one asset serves light
+ * pages and dark photography alike.
+ */
+export interface BrandArt {
+  src: string;
+  /** Intrinsic pixels; the aspect ratio is what layout uses. */
+  width: number;
+  height: number;
+}
+
+export const brandArt = {
+  /** "BoLaGio", including the G's descending tail. */
+  wordmark: { src: '/images/brand/bolagio-wordmark.png', width: 851, height: 234 },
+  /** The stacked B / L / G monogram. */
+  monogram: { src: '/images/brand/bolagio-monogram.png', width: 299, height: 356 },
+} as const satisfies Record<string, BrandArt>;
