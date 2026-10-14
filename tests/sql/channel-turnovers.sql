@@ -59,6 +59,30 @@ begin
   r := bolagio_sync_channel_turnovers(60, '2027-05-01T10:00:00Z');
   perform t_assert((r->>'created')::int = 1 and (select count(*) from bolagio_turnovers) = 2, 'active again reopens the same row');
 
+  -- The channel moves ct-2's check-out after it was cleaned: the done turnover reopens, on the new day.
+  update bolagio_reservations set check_out = date '2027-05-16' where external_booking_id = 'ct-2';
+  r := bolagio_sync_channel_turnovers(60, '2027-05-01T10:00:00Z');
+  perform t_assert((r->>'reopened')::int = 1 and (r->>'updated')::int = 1, 'a moved check-out reopens the done turnover');
+  select tv.* into v from bolagio_turnovers tv join bolagio_reservations s on s.id = tv.reservation_id where s.external_booking_id = 'ct-2';
+  perform t_assert(v.departure = date '2027-05-16' and v.status = 'required' and v.done_at is null, 'ct-2: moved to 16 May, pending again, done mark cleared');
+  perform t_assert(v.window_start = timestamptz '2027-05-16 11:00+02', 'ct-2: the window moved with the check-out');
+  perform t_assert((select count(*) from bolagio_turnovers) = 2, 'moving a stay updates the row, never adds one');
+
+  -- Horizon: a departure beyond it is left for a later pass, and taken once it is inside.
+  insert into bolagio_reservations (unit_id, provider, external_booking_id, provider_status, status_class, check_in, check_out, source)
+  select id, 'beds24', 'ct-h', 'confirmed', 'active', date '2027-07-28', date '2027-08-01', 'booking_com' from bolagio_units where slug = 'schulstrasse-ii';
+  r := bolagio_sync_channel_turnovers(60, '2027-05-01T10:00:00Z');
+  perform t_assert((r->>'created')::int = 0, 'a departure 92 days out is outside a 60-day horizon');
+  r := bolagio_sync_channel_turnovers(120, '2027-05-01T10:00:00Z');
+  perform t_assert((r->>'created')::int = 1, 'inside a 120-day horizon it is derived');
+  r := bolagio_sync_channel_turnovers(120, '2027-05-01T10:00:00Z');
+  perform t_assert((r->>'created')::int = 0 and (r->>'updated')::int = 0, 'and only once');
+  -- A departure before yesterday is history, not work.
+  insert into bolagio_reservations (unit_id, provider, external_booking_id, provider_status, status_class, check_in, check_out, source)
+  select id, 'beds24', 'ct-old', 'confirmed', 'active', date '2027-04-20', date '2027-04-25', 'booking_com' from bolagio_units where slug = 'schulstrasse-ii';
+  r := bolagio_sync_channel_turnovers(60, '2027-05-01T10:00:00Z');
+  perform t_assert((r->>'created')::int = 0, 'a past departure gets no turnover');
+
   -- A direct booking appears in both tables: one turnover, from the intent.
   a := t_intent('BLG-CT0001', 'schulstrasse-ii', '2027-06-01', '2027-06-03');
   perform bolagio_acquire_lock(a);
@@ -94,7 +118,7 @@ begin
   end;
   raise notice 'ok — a turnover must come from an intent or a reservation, never neither';
 
-  delete from bolagio_turnover_events; delete from bolagio_turnovers; delete from bolagio_reservations where external_booking_id in ('ct-1','ct-2','ct-3','ct-4','b-ct');
+  delete from bolagio_turnover_events; delete from bolagio_turnovers; delete from bolagio_reservations where external_booking_id in ('ct-1','ct-2','ct-3','ct-4','ct-h','ct-old','b-ct');
   delete from bolagio_booking_intents where id = a; delete from bolagio_outbox_events;
 end $$;
 

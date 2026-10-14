@@ -130,3 +130,20 @@ describe('channel-derived turnovers', () => {
     expect(nextStayAfter('schulstrasse-ii', '2026-09-22', stays)?.id).toBe('r-other');
   });
 });
+
+/* ── The channel derivation's "not applied" fallback ────────────────────── */
+
+import { isMissingFunctionError } from '@/lib/booking/commands';
+
+describe('isMissingFunctionError', () => {
+  it('only an absent function reads as "migration not applied"', () => {
+    expect(isMissingFunctionError({ code: '42883' })).toBe(true);
+    expect(isMissingFunctionError({ code: 'PGRST202' })).toBe(true);
+  });
+  it('a permission or any other failure is never swallowed, even when it names the function', () => {
+    expect(isMissingFunctionError({ code: '42501' })).toBe(false);
+    expect(isMissingFunctionError({ code: '23505' })).toBe(false);
+    expect(isMissingFunctionError({ code: null })).toBe(false);
+    expect(isMissingFunctionError(null)).toBe(false);
+  });
+});

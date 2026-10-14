@@ -529,6 +529,16 @@ export async function syncTurnovers(horizonDays = 60): Promise<TurnoverSyncRepor
 }
 
 /**
+ * True only when the database (42883) or PostgREST (PGRST202) says the
+ * function does not exist. Matching on the function's NAME is not enough:
+ * "permission denied for function bolagio_sync_channel_turnovers" names it
+ * too, and must not be swallowed as "not applied".
+ */
+export function isMissingFunctionError(error: { code?: string | null } | null | undefined): boolean {
+  return error?.code === '42883' || error?.code === 'PGRST202';
+}
+
+/**
  * Derive turnovers from ACTIVE imported reservations (migration 20261014).
  * Idempotent; emits no outbox event. Returns null — and nothing else
  * changes — on a database that has not applied the migration yet, so the
@@ -537,7 +547,10 @@ export async function syncTurnovers(horizonDays = 60): Promise<TurnoverSyncRepor
 export async function syncChannelTurnovers(horizonDays = 60): Promise<TurnoverSyncReport | null> {
   const { data, error } = await supabaseAdmin().rpc('bolagio_sync_channel_turnovers', { p_horizon_days: horizonDays });
   if (error) {
-    if (error.code === '42883' || error.code === 'PGRST202' || /bolagio_sync_channel_turnovers/.test(error.message ?? '')) return null;
+    if (isMissingFunctionError(error)) return null;
+    // Anything else — a permission, a constraint, a timeout — is a real
+    // failure and must fail the operations pass visibly, never read as
+    // "migration not applied".
     throw error;
   }
   const r = (data ?? {}) as Partial<TurnoverSyncReport>;
