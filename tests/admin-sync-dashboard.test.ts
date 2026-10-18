@@ -82,7 +82,7 @@ describe('the freshness section', () => {
 describe('reservation filters', () => {
   it('parse only known values, defaulting to upcoming', () => {
     const f = parseReservationFilter({ q: 'Müller', source: 'booking_com', status: 'nonsense', unit: 'schulstrasse-ii', from: '2026-11-01', to: 'x' });
-    expect(f).toEqual({ q: 'Müller', unit: 'schulstrasse-ii', source: 'booking_com', status: null, from: '2026-11-01', to: null, when: 'upcoming' });
+    expect(f).toEqual({ q: 'Müller', unit: 'schulstrasse-ii', source: 'booking_com', status: null, show: null, from: '2026-11-01', to: null, when: 'upcoming', booked: 'any', bookedFrom: null, bookedTo: null, order: 'arrival' });
     expect(reservationFilterToParams(f).toString()).toBe('q=M%C3%BCller&unit=schulstrasse-ii&source=booking_com&from=2026-11-01');
   });
 

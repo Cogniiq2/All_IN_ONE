@@ -1,81 +1,71 @@
 import type { Metadata } from 'next';
-import { loadBookingFreshness, loadReservations } from '@/lib/admin/queries';
+import { loadBookingFreshness } from '@/lib/admin/queries';
 import { FreshnessBanner } from '@/components/admin/freshness-banner';
-import { cachedUnits } from '@/lib/admin/request-cache';
-import { hasActiveReservationFilter, parseReservationFilter, reservationQueryOf } from '@/lib/admin/reservation-filters';
-import { sourcePresentation } from '@/lib/admin/presentation';
-import { propertyTodayIso } from '@/lib/admin/format';
-import { PageHeader, ErrorNotice, Metric } from '@/components/admin/primitives';
+import { effectiveShow, hasActiveReservationFilter, parseReservationFilter } from '@/lib/admin/reservation-filters';
+import { loadReservationExplorer } from '@/lib/admin/reservation-explorer';
+import { PageHeader, ErrorNotice } from '@/components/admin/primitives';
 import { RefreshControl } from '@/components/admin/shell/refresh-control';
-import { ReservationFilterBar } from '@/components/admin/reservations/reservation-filter-bar';
+import { ReservationExplorer } from '@/components/admin/reservations/reservation-explorer';
+import { ReservationOverview } from '@/components/admin/reservations/reservation-overview';
 import { ReservationList } from '@/components/admin/reservations/reservation-rows';
 
 export const metadata: Metadata = { title: 'Reservations' };
 
 /**
  * Every reservation Beds24 holds — Booking.com, Airbnb, direct, manual —
- * imported read-only, searchable, history included. Beds24 is the source of
- * truth; this page is its normalised copy and says how fresh it is.
+ * imported read-only. The explorer asks four plain questions (staying when,
+ * booked when, which apartment, what to show), answers with a sentence and
+ * five figures, and saves exactly that view as a PDF.
  */
 export default async function ReservationsPage({ searchParams }: { searchParams: Record<string, string | string[] | undefined> }) {
   const filter = parseReservationFilter(searchParams);
-  const today = propertyTodayIso();
-  const [units, result, freshness] = await Promise.all([cachedUnits(), loadReservations(reservationQueryOf(filter, today, null), filter.unit), loadBookingFreshness()]);
-  const unitOptions = units.ok ? units.data.map((u) => ({ slug: u.slug, name: u.displayName })) : [];
+  const [view, freshness] = await Promise.all([loadReservationExplorer(filter), loadBookingFreshness()]);
+  const { result } = view;
+
+  const empty =
+    filter.q
+      ? `Nothing matches “${filter.q}”. Check the spelling, or search by the Booking.com number.`
+      : filter.when === 'current' && effectiveShow(filter) === 'booked'
+        ? 'Nobody is staying tonight.'
+        : effectiveShow(filter) === 'cancelled'
+          ? 'No cancelled booking for this selection.'
+          : hasActiveReservationFilter(filter)
+            ? 'No booking for this selection. Choose a wider period, or start over.'
+            : 'No booked stay from today on.';
 
   return (
     <>
       <PageHeader
         eyebrow="Daily"
         title="Reservations"
-        description="Every reservation from Booking.com, Airbnb and the website, as the booking system holds it. New bookings and changes arrive within seconds; the hourly import re-checks everything. Search by guest name, Booking.com number or Beds24 booking id."
+        description="Every booking from Booking.com, Airbnb and the website. Choose a period, an apartment or a booking date — the list, the figures and the PDF follow."
         actions={<RefreshControl loadedAt={result.loadedAt} />}
       />
 
       <FreshnessBanner freshness={freshness} />
 
-      <ReservationFilterBar filter={filter} units={unitOptions} />
-
-      {!result.ok ? (
-        <div className="mt-5">
-          <ErrorNotice title="Reservations could not be loaded.">{result.error}</ErrorNotice>
-        </div>
-      ) : (
-        <>
-          <div className="bc-metrics mt-5" style={{ ['--cols' as string]: 3 }}>
-            <Metric label="Matching" value={result.data.total} note={result.data.total > result.data.items.length ? `first ${result.data.items.length} shown` : undefined} />
-            <Metric label="Booked" value={result.data.counts.active} />
-            <Metric label="Cancelled" value={result.data.counts.cancelled} />
-          </div>
-          {Object.keys(result.data.counts.bySource).length > 0 && (
-            <p className="bc-meta mt-3" style={{ fontSize: 12.5 }}>
-              By channel:{' '}
-              {Object.entries(result.data.counts.bySource)
-                .sort((a, b) => b[1] - a[1])
-                .map(([source, n]) => `${sourcePresentation(source).label} ${n}`)
-                .join(' · ')}
-            </p>
-          )}
-          <div className="mt-5">
-            <ReservationList
-              items={result.data.items}
-              empty={
-                filter.when === 'current'
-                  ? 'Nobody is in house tonight.'
-                  : filter.when === 'cancelled'
-                    ? 'No cancelled reservation on record.'
-                    : hasActiveReservationFilter(filter)
-                      ? 'No reservation matches. Widen the filter, or clear it.'
-                      : 'No booked stay ends today or later.'
-              }
+      <ReservationExplorer filter={filter} units={view.units}>
+        {!result.ok || !view.summary ? (
+          <ErrorNotice title="Reservations could not be loaded.">{result.ok ? null : result.error}</ErrorNotice>
+        ) : (
+          <>
+            <ReservationOverview
+              description={view.description}
+              summary={view.summary}
+              total={result.data.total}
+              shown={result.data.items.length}
+              currency={result.data.items.find((r) => r.currency)?.currency ?? 'EUR'}
             />
-          </div>
-          <p className="bc-meta mt-3" style={{ fontSize: 12 }}>
-            Amounts are gross as Beds24 states them — not payout, not net of commission, not accounting revenue. Payouts and
-            commission are in Finance, from the channel statements.
-          </p>
-        </>
-      )}
+            <div className="mt-6">
+              <ReservationList items={result.data.items} empty={empty} />
+            </div>
+            <p className="bc-meta mt-3" style={{ fontSize: 12 }}>
+              Amounts are gross as Beds24 states them — not payout, not net of commission, not accounting revenue. Payouts and commission are in
+              Finance, from the channel statements.
+            </p>
+          </>
+        )}
+      </ReservationExplorer>
     </>
   );
 }

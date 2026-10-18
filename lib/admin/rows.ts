@@ -166,7 +166,11 @@ export interface ReservationQuery {
   statusClasses?: readonly string[] | null;
   /** Guest name, OTA reference or Beds24 booking id. */
   search?: string | null;
-  sort?: 'check_in' | 'check_out' | 'last_synced_at';
+  /** Booked at or after this instant (ISO timestamp). */
+  bookedFrom?: string | null;
+  /** Booked before this instant (ISO timestamp, exclusive). */
+  bookedTo?: string | null;
+  sort?: 'check_in' | 'check_out' | 'last_synced_at' | 'booked_at';
   dir?: 'asc' | 'desc';
   offset?: number;
   limit?: number;

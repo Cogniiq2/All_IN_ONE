@@ -415,6 +415,8 @@ export function fixtureRowSource(): RowSource {
         if (query.checkOutFrom && row.check_out < query.checkOutFrom) return false;
         if (query.checkOutTo && row.check_out >= query.checkOutTo) return false;
         if (query.overlaps && !(row.check_in < query.overlaps.to && row.check_out > query.overlaps.from)) return false;
+        if (query.bookedFrom && (!row.booked_at || row.booked_at < query.bookedFrom)) return false;
+        if (query.bookedTo && (!row.booked_at || row.booked_at >= query.bookedTo)) return false;
         if (query.search) {
           const q = query.search.toLowerCase();
           const hay = [row.guest_first_name, row.guest_last_name, row.channel_reference].map((v) => (v ?? '').toLowerCase());
@@ -424,7 +426,7 @@ export function fixtureRowSource(): RowSource {
       });
       const sort = query.sort ?? 'check_in';
       const dir = query.dir === 'desc' ? -1 : 1;
-      rows = rows.sort((a, b) => (a[sort] === b[sort] ? 0 : (a[sort] > b[sort] ? 1 : -1) * dir));
+      rows = rows.sort((a, b) => (a[sort] === b[sort] ? 0 : ((a[sort] ?? '') > (b[sort] ?? '') ? 1 : -1) * dir));
       const offset = query.offset ?? 0;
       const limit = query.limit ?? 200;
       return { rows: rows.slice(offset, offset + limit).map((r) => ({ ...r })), total: rows.length };

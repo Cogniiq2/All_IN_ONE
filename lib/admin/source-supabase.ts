@@ -238,6 +238,8 @@ export function supabaseRowSource(): RowSource {
       if (query.checkInTo) q = q.lt('check_in', query.checkInTo);
       if (query.checkOutFrom) q = q.gte('check_out', query.checkOutFrom);
       if (query.checkOutTo) q = q.lt('check_out', query.checkOutTo);
+      if (query.bookedFrom) q = q.gte('booked_at', query.bookedFrom);
+      if (query.bookedTo) q = q.lt('booked_at', query.bookedTo);
       // Half-open overlap: a stay touches the window when it starts before the
       // window ends and ends after the window starts. A departure on the first
       // day of the window is not an occupied night and does not overlap.

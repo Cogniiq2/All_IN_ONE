@@ -1,8 +1,8 @@
 import Link from 'next/link';
 import type { ReservationDto } from '@/lib/admin/dto';
-import { formatIsoDate, formatMoney, formatStay, pluralNights } from '@/lib/admin/format';
+import { compactUnitName, formatIsoDate, formatMoney, formatStay, pluralNights, propertyTodayIso } from '@/lib/admin/format';
 import { bedroomPackageLabel, reservationClassPresentation, sourcePresentation } from '@/lib/admin/presentation';
-import { Badge, Dash, EmptyState, When } from '@/components/admin/primitives';
+import { Badge, Dash, EmptyState } from '@/components/admin/primitives';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -37,6 +37,13 @@ function partyLabel(r: ReservationDto): string | null {
   return r.guests === null ? null : String(r.guests);
 }
 
+/** The property-local day the guest booked: "3 Oct 2026". */
+export function bookedOnLabel(r: ReservationDto): string | null {
+  if (!r.bookedAt) return null;
+  const d = new Date(r.bookedAt);
+  return Number.isNaN(d.getTime()) ? null : formatIsoDate(propertyTodayIso(d), 'long');
+}
+
 function guestCount(r: ReservationDto): string | null {
   if (r.guests === null) return null;
   return `${r.guests} ${r.guests === 1 ? 'guest' : 'guests'}`;
@@ -68,7 +75,7 @@ export function ReservationTable({ items }: { items: ReservationDto[] }) {
           <tr>
             <th scope="col">Booking</th>
             <th scope="col">Guest</th>
-            <th scope="col">Property</th>
+            <th scope="col">Apartment</th>
             <th scope="col">Stay</th>
             <th scope="col" className="num">
               Nights
@@ -77,9 +84,9 @@ export function ReservationTable({ items }: { items: ReservationDto[] }) {
             <th scope="col">Channel</th>
             <th scope="col">Status</th>
             <th scope="col" className="num">
-              Gross (provider)
+              <span title="Gross as the provider states it">Gross</span>
             </th>
-            <th scope="col">Synced</th>
+            <th scope="col">Booked on</th>
           </tr>
         </thead>
         <tbody>
@@ -94,7 +101,7 @@ export function ReservationTable({ items }: { items: ReservationDto[] }) {
                   {r.directReference && <span className="bc-meta block">BoLaGio {r.directReference}</span>}
                 </td>
                 <td className="truncate" style={{ maxWidth: 160 }}>{r.guestLabel ?? <Dash />}</td>
-                <td className="truncate" style={{ maxWidth: 200 }} title={r.unitName}>{r.unitName}</td>
+                <td className="truncate" style={{ maxWidth: 200 }} title={r.unitName}>{compactUnitName(r.unitName)}</td>
                 <td style={{ whiteSpace: 'nowrap' }}>{formatStay(r.checkIn, r.checkOut)}</td>
                 <td className="num">{r.nights}</td>
                 <td>
@@ -106,9 +113,7 @@ export function ReservationTable({ items }: { items: ReservationDto[] }) {
                   <Badge p={state} title={`Channel manager status: ${r.providerStatus}`} />
                 </td>
                 <td className="num">{r.totalCents === null ? <Dash /> : formatMoney(r.totalCents, r.currency ?? 'EUR')}</td>
-                <td>
-                  <When value={r.lastSyncedAt} relative />
-                </td>
+                <td className="dim" title={bookedOnLabel(r) ?? undefined}>{r.bookedAt ? bookedOnLabel(r)?.replace(/ \d{4}$/, '') : <Dash />}</td>
               </tr>
             );
           })}
@@ -133,7 +138,7 @@ export function ReservationCards({ items }: { items: ReservationDto[] }) {
                   {r.guestLabel ?? r.channelReference ?? r.externalBookingId}
                 </div>
                 <div className="bc-meta truncate">
-                  {r.unitName} · {formatStay(r.checkIn, r.checkOut)} · {pluralNights(r.nights)}
+                  {compactUnitName(r.unitName)} · {formatStay(r.checkIn, r.checkOut)} · {pluralNights(r.nights)}
                   {guests ? ` · ${guests}` : ''}
                   {bedroomPackageLabel(r.bedroomPackage) ? ` · ${bedroomPackageLabel(r.bedroomPackage)}` : ''}
                 </div>
@@ -141,6 +146,7 @@ export function ReservationCards({ items }: { items: ReservationDto[] }) {
                   {channelLabel(r)}
                   {r.totalCents === null ? '' : ` · ${formatMoney(r.totalCents, r.currency ?? 'EUR')} gross (provider)`}
                 </div>
+                {bookedOnLabel(r) && <div className="bc-meta truncate">Booked {bookedOnLabel(r)}</div>}
               </div>
               <Badge p={state} title={`Channel manager status: ${r.providerStatus}`} />
             </div>
