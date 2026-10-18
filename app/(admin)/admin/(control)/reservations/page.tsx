@@ -3,11 +3,11 @@ import { loadBookingFreshness } from '@/lib/admin/queries';
 import { FreshnessBanner } from '@/components/admin/freshness-banner';
 import { effectiveShow, hasActiveReservationFilter, parseReservationFilter } from '@/lib/admin/reservation-filters';
 import { loadReservationExplorer } from '@/lib/admin/reservation-explorer';
-import { PageHeader, ErrorNotice } from '@/components/admin/primitives';
+import { PageHeader, ErrorNotice, EmptyState } from '@/components/admin/primitives';
 import { RefreshControl } from '@/components/admin/shell/refresh-control';
 import { ReservationExplorer } from '@/components/admin/reservations/reservation-explorer';
 import { ReservationOverview } from '@/components/admin/reservations/reservation-overview';
-import { ReservationList } from '@/components/admin/reservations/reservation-rows';
+import { ReservationTimeline } from '@/components/admin/reservations/reservation-timeline';
 
 export const metadata: Metadata = { title: 'Reservations' };
 
@@ -44,7 +44,7 @@ export default async function ReservationsPage({ searchParams }: { searchParams:
 
       <FreshnessBanner freshness={freshness} />
 
-      <ReservationExplorer filter={filter} units={view.units}>
+      <ReservationExplorer filter={filter} units={view.units} description={view.description} count={result.ok ? result.data.total : null}>
         {!result.ok || !view.summary ? (
           <ErrorNotice title="Reservations could not be loaded.">{result.ok ? null : result.error}</ErrorNotice>
         ) : (
@@ -56,9 +56,13 @@ export default async function ReservationsPage({ searchParams }: { searchParams:
               shown={result.data.items.length}
               currency={result.data.items.find((r) => r.currency)?.currency ?? 'EUR'}
             />
-            <div className="mt-6">
-              <ReservationList items={result.data.items} empty={empty} />
-            </div>
+            {result.data.items.length === 0 ? (
+              <div className="bx-empty">
+                <EmptyState title={empty} />
+              </div>
+            ) : (
+              <ReservationTimeline items={result.data.items} today={view.today} order={filter.order} />
+            )}
             <p className="bc-meta mt-3" style={{ fontSize: 12 }}>
               Amounts are gross as Beds24 states them — not payout, not net of commission, not accounting revenue. Payouts and commission are in
               Finance, from the channel statements.

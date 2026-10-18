@@ -10,7 +10,7 @@ import {
   reservationQueryOf,
   stayWindow,
 } from '@/lib/admin/reservation-filters';
-import { summariseReservations } from '@/lib/admin/reservation-summary';
+import { groupReservationsByMonth, stayMoment, summariseReservations } from '@/lib/admin/reservation-summary';
 import { PdfDocument, encodeWinAnsi, fitText, textWidth } from '@/lib/admin/pdf/document';
 import { buildReservationsReport, reportFileName } from '@/lib/admin/pdf/reservations-report';
 
@@ -206,5 +206,39 @@ describe('reservations report', () => {
     const raw = latin1(buildReservationsReport({ description: 'Nothing.', items: [], total: 0, summary: summariseReservations([]), generatedAt }));
     expect(raw).toContain('No reservation matches this selection.');
     expect(reportFileName(new Date('2026-10-18T22:30:00Z'))).toBe('bolagio-reservations-2026-10-19.pdf');
+  });
+});
+
+describe('the list as people read it', () => {
+  it('cuts the rows into month chapters without reordering them', () => {
+    const items = [
+      res({ id: 'a', checkIn: '2026-10-30', checkOut: '2026-11-02', nights: 3 }),
+      res({ id: 'b', checkIn: '2026-11-04', checkOut: '2026-11-06', nights: 2 }),
+      res({ id: 'c', checkIn: '2026-11-10', checkOut: '2026-11-12', nights: 2, statusClass: 'cancelled', occupies: false }),
+    ];
+    const groups = groupReservationsByMonth(items, 'arrival');
+    expect(groups.map((g) => [g.label, g.items.map((r) => r.id), g.stays, g.nights])).toEqual([
+      ['October 2026', ['a'], 1, 3],
+      ['November 2026', ['b', 'c'], 1, 2],
+    ]);
+  });
+
+  it('groups by the Bayreuth booking month when sorted by booking date', () => {
+    const groups = groupReservationsByMonth(
+      [res({ id: 'late', bookedAt: '2026-09-30T22:30:00Z' }), res({ id: 'none', bookedAt: null })],
+      'booked'
+    );
+    expect(groups.map((g) => g.label)).toEqual(['October 2026', 'Booking date not stated']);
+  });
+
+  it('marks where a booked stay is relative to today', () => {
+    const t = '2026-10-18';
+    const n = '2026-10-19';
+    expect(stayMoment({ checkIn: '2026-10-16', checkOut: '2026-10-21', occupies: true }, t, n)).toBe('in_house');
+    expect(stayMoment({ checkIn: t, checkOut: '2026-10-21', occupies: true }, t, n)).toBe('arrives_today');
+    expect(stayMoment({ checkIn: n, checkOut: '2026-10-21', occupies: true }, t, n)).toBe('arrives_tomorrow');
+    expect(stayMoment({ checkIn: '2026-10-15', checkOut: t, occupies: true }, t, n)).toBe('leaves_today');
+    expect(stayMoment({ checkIn: '2026-10-16', checkOut: '2026-10-21', occupies: false }, t, n)).toBeNull();
+    expect(stayMoment({ checkIn: '2026-11-01', checkOut: '2026-11-03', occupies: true }, t, n)).toBeNull();
   });
 });

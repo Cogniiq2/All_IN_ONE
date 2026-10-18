@@ -60,3 +60,64 @@ export function summariseReservations(items: ReservationDto[]): ReservationSumma
       .sort((a, b) => b.stays - a.stays),
   };
 }
+
+/* ── The list, as people read it ───────────────────────────────────────── */
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+export interface ReservationMonthGroup {
+  /** `2026-11` */
+  key: string;
+  /** `November 2026` */
+  label: string;
+  items: ReservationDto[];
+  /** Booked stays in the group and their nights; cancellations are not counted. */
+  stays: number;
+  nights: number;
+}
+
+/** The property-local (Europe/Berlin) calendar day of an instant. */
+function berlinDay(instant: string): string | null {
+  const d = new Date(instant);
+  if (Number.isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
+/**
+ * Consecutive rows that share a month, in the order the list already has —
+ * by arrival month, or by booking month when sorted by booking date. The
+ * order of the rows is never changed, only cut into chapters.
+ */
+export function groupReservationsByMonth(items: ReservationDto[], by: 'arrival' | 'booked'): ReservationMonthGroup[] {
+  const groups: ReservationMonthGroup[] = [];
+  for (const r of items) {
+    const day = by === 'booked' ? (r.bookedAt ? berlinDay(r.bookedAt) : null) : r.checkIn;
+    const key = day ? day.slice(0, 7) : 'unknown';
+    let group = groups[groups.length - 1];
+    if (!group || group.key !== key) {
+      const label = day ? `${MONTH_NAMES[Number(key.slice(5, 7)) - 1]} ${key.slice(0, 4)}` : 'Booking date not stated';
+      group = { key, label, items: [], stays: 0, nights: 0 };
+      groups.push(group);
+    }
+    group.items.push(r);
+    if (r.occupies) {
+      group.stays += 1;
+      group.nights += r.nights;
+    }
+  }
+  return groups;
+}
+
+export type StayMoment = 'in_house' | 'arrives_today' | 'arrives_tomorrow' | 'leaves_today' | null;
+
+/** Where a booked stay is relative to today, for the one-word marker on its row. */
+export function stayMoment(r: Pick<ReservationDto, 'checkIn' | 'checkOut' | 'occupies'>, today: string, tomorrow: string): StayMoment {
+  if (!r.occupies) return null;
+  if (r.checkOut === today) return 'leaves_today';
+  if (r.checkIn === today) return 'arrives_today';
+  if (r.checkIn < today && r.checkOut > today) return 'in_house';
+  if (r.checkIn === tomorrow) return 'arrives_tomorrow';
+  return null;
+}
