@@ -34,6 +34,13 @@ export function stayTaxPolicyFrom(rows: readonly PolicyRow[], on: string): { pol
   };
 }
 
+/** Company setting `cleaning_cost_per_stay_cents`: the expected net cleaning cost of one stay. Null when not set. */
+export function cleaningPerStayFrom(rows: readonly PolicyRow[], on: string): number | null {
+  const v = policyAt(rows, 'cleaning_cost_per_stay_cents', on);
+  const n = v === null ? NaN : Number(v);
+  return Number.isInteger(n) && n >= 0 ? n : null;
+}
+
 /** Beds24 states the commission in euros as text ("41.66"). Zero and nonsense mean "not stated". */
 export function commissionCentsFromBeds24(text: string | null): number | null {
   if (text === null || text === undefined) return null;

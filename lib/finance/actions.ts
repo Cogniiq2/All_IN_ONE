@@ -456,7 +456,7 @@ export async function setPolicyAction(fd: FormData): Promise<ActionResult> {
   const g = await gate('finance.configure');
   if (!g.ok) return g;
   const key = str(fd, 'key', 60), value = str(fd, 'value', 60), from = str(fd, 'effective_from', 10);
-  const allowed: Record<string, RegExp> = { vat_filing_frequency: /^(monthly|quarterly|annual_only)$/, dauerfristverlaengerung: /^(true|false)$/, fiscal_year_start_month: /^([1-9]|1[0-2])$/, vat_annual_return_month: /^([1-9]|1[0-2])$/, tax_reserve_policy: /^[a-z_]{3,40}$/, local_levy_enabled: /^(true|false)$/, small_business_scheme: /^(true|false)$/, ota_payment_fee_vat: /^(reverse_charge|exempt)$/, cancellation_charge_vat: /^(taxable|undecided)$/, default_shared_cost_allocation: /^(manual|revenue_share|occupied_nights|floor_area|equal_units|custom)$/ };
+  const allowed: Record<string, RegExp> = { vat_filing_frequency: /^(monthly|quarterly|annual_only)$/, dauerfristverlaengerung: /^(true|false)$/, fiscal_year_start_month: /^([1-9]|1[0-2])$/, vat_annual_return_month: /^([1-9]|1[0-2])$/, tax_reserve_policy: /^[a-z_]{3,40}$/, local_levy_enabled: /^(true|false)$/, small_business_scheme: /^(true|false)$/, ota_payment_fee_vat: /^(reverse_charge|exempt)$/, cancellation_charge_vat: /^(taxable|undecided)$/, cleaning_cost_per_stay_cents: /^\d{1,6}$/, default_shared_cost_allocation: /^(manual|revenue_share|occupied_nights|floor_area|equal_units|custom)$/ };
   if (!allowed[key] || !allowed[key].test(value) || !isIsoDate(from)) return { ok: false, reason: 'invalid' };
   try {
     await commands.insertPolicy({ key, value, effective_from: from, source_reference: str(fd, 'source_reference', 300) || null, set_by: g.actor });

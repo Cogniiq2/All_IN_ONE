@@ -69,3 +69,23 @@ with it.
 `/admin/finance/revenue` — by channel, by unit, nights, ADR, occupancy, refunds, with drill-downs to
 transactions and to `/admin/finance/properties`. Nights and occupancy come from the booking core's
 paid-side stays, never from the ledger.
+
+## Income (19 Oct 2026)
+
+`/admin/finance/revenue` ("Income") leads with one figure, computed by `lib/finance/income.ts` from the
+same stay-tax engine as the VAT return:
+
+```
+income = stays without VAT + minibar without VAT − Booking.com commission and fee − cleaning
+```
+
+- **Stays**: every sold stay whose check-out falls in the range (Beds24 price, or the Booking.com statement
+  when imported), VAT taken out — VAT is the Finanzamt's, not income.
+- **Minibar**: `minibar_sales` lines in the books (net).
+- **Booking.com**: commission and payment fee from the statement, else Beds24 (since 17 Oct 2026); the
+  reverse-charge VAT is owed and deducted, so it is no cost — except on an exempt long stay.
+- **Cleaning**: cleaning invoices booked in the range; if none, the company setting
+  `cleaning_cost_per_stay_cents` × stays (labelled *expected*); if neither, *not known* — never zero.
+
+Unknown parts are named on the page with the step that fills them; the figure is marked provisional until
+every part is known. The ledger's own revenue view stays below, folded ("In the books").

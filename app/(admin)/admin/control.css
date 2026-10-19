@@ -5171,3 +5171,130 @@ details[open] > summary .fx-chevron,
     transition: none;
   }
 }
+
+/* ── Income ── */
+
+.fx-term[data-part='unknown'] .fx-term-value,
+.fx-term[data-part='partial'] .fx-term-sub,
+.fx-term[data-part='unknown'] .fx-term-sub {
+  color: hsl(var(--bc-caution));
+}
+
+.fx-term[data-part='expected'] .fx-term-value {
+  font-style: italic;
+}
+
+.fx-gaps {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 16px 18px 16px 34px;
+  border-radius: var(--radius-md);
+  border: 1px solid hsl(var(--bc-caution) / 0.22);
+  background: hsl(var(--bc-caution-soft) / 0.7);
+  list-style: disc;
+  font-size: 13px;
+  line-height: 1.5;
+  color: hsl(var(--bc-text-2));
+  animation: bc-rise var(--dur-slow) var(--ease-out) 120ms both;
+}
+
+.fx-gaps .fx-gaps-links {
+  list-style: none;
+  margin-left: -16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  padding-top: 4px;
+}
+
+.fx-units {
+  margin-top: 22px;
+}
+
+.fx-units-head,
+.fx-unit {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  align-items: baseline;
+}
+
+.fx-units-head {
+  padding-bottom: 8px;
+  border-bottom: 1px solid hsl(var(--bc-line-strong));
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: hsl(var(--bc-text-3));
+}
+
+.fx-units-head span:not(:first-child),
+.fx-unit > span:not(:first-child),
+.fx-unit > strong {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.fx-unit {
+  padding: 14px 0;
+  border-bottom: 1px solid hsl(var(--bc-line) / 0.8);
+  font-size: 13.5px;
+  color: hsl(var(--bc-text-2));
+  animation: bx-row-in var(--dur-slow) var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 50ms);
+}
+
+.fx-unit-name {
+  display: grid;
+  gap: 2px;
+  font-weight: 500;
+  color: hsl(var(--bc-ink));
+}
+
+.fx-unit-name small {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: hsl(var(--bc-text-3));
+}
+
+.fx-unit > strong {
+  font-family: var(--font-serif), 'Playfair Display', Georgia, serif;
+  font-size: 17px;
+  font-weight: 500;
+  color: hsl(var(--bc-ink));
+}
+
+@media (max-width: 720px) {
+  .fx-units-head {
+    display: none;
+  }
+  .fx-unit {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 12px;
+  }
+  .fx-unit > span:not(:first-child)::before {
+    content: attr(data-label) ' ';
+    color: hsl(var(--bc-text-3));
+    font-size: 12px;
+  }
+  .fx-unit > span:not(:first-child),
+  .fx-unit > strong {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+  .fx-unit-name {
+    grid-column: 1 / -1;
+  }
+}
+
+.fx-books {
+  margin-top: 28px;
+}
+
+.fx-books-body {
+  padding: 4px 18px 18px;
+  border-top: 1px solid hsl(var(--bc-line) / 0.8);
+}

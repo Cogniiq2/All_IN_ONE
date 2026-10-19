@@ -17,6 +17,7 @@ import 'server-only';
  */
 
 import { failed, ok, type QueryResult } from '@/lib/admin/dto';
+import { compactUnitName } from '@/lib/admin/format';
 import { adminPosture } from '@/lib/admin/config';
 import { AdminUnconfiguredError, financeRowSource } from '@/lib/finance/source';
 import { calendarPolicyFrom, financeConfig } from '@/lib/finance/config';
@@ -25,7 +26,8 @@ import type { FinanceConfigSnapshot } from '@/lib/finance/config-shape';
 import { addDays, berlinToday, monthKey, monthKeysBetween, mtd, periodLabel, periodRange, yearOf, yearRange, ytd, type DateRange, type IsoDate } from '@/lib/finance/periods';
 import { computeVatPosition, type VatPosition } from '@/lib/finance/tax/vat';
 import { buildVatReturn, computeStayTax, type StayTax, type StayTaxPolicy, type VatReturn } from '@/lib/finance/tax/stay-tax';
-import { otherVatFromLedger, stayTaxInputsFrom, stayTaxPolicyFrom } from '@/lib/finance/tax/stay-tax-inputs';
+import { cleaningPerStayFrom, otherVatFromLedger, stayTaxInputsFrom, stayTaxPolicyFrom } from '@/lib/finance/tax/stay-tax-inputs';
+import { buildIncome, type IncomeReport } from '@/lib/finance/income';
 import { estimateCompanyTaxes, type CompanyTaxEstimate, type TaxAdjustment } from '@/lib/finance/tax/company';
 import { computeFreeCash, computeReserve, governingStage, type FreeCashReport, type ReserveReport, type TaxLiabilityInput, type TaxStage } from '@/lib/finance/tax/reserve';
 import { calculatedDeadlines, mergeDeadlines, urgencyOf, vatPeriodKeyFor, vatPeriodKeysBetween, type Deadline } from '@/lib/finance/tax/calendar';
@@ -828,5 +830,52 @@ export async function loadStayTax(reservationId: string, today: IsoDate = berlin
     const { policy } = stayTaxPolicyFrom(policyRows, today);
     const { inputs } = stayTaxInputsFrom([reservation], settlements, units);
     return { tax: computeStayTax(inputs[0], today, policy), policy };
+  });
+}
+
+/* ── Income: stays + minibar − platform − cleaning ──────────────────── */
+
+export interface IncomeScreen {
+  range: DateRange;
+  income: IncomeReport;
+  stays: StayTax[];
+}
+
+/**
+ * Income for the stays that ended in the range — from the stay-tax engine
+ * (Beds24 and Booking.com statements), the minibar sales and cleaning
+ * invoices in the books, and the expected cleaning cost per stay when no
+ * invoice is booked. Read-only.
+ */
+export async function loadIncome(range: DateRange, today: IsoDate = berlinToday()): Promise<QueryResult<IncomeScreen>> {
+  return guard(async () => {
+    const source = await financeRowSource();
+    const [policyRows, reservations, settlements, units, lines] = await Promise.all([
+      source.policy(),
+      source.stayTaxReservations(range.from, range.to),
+      source.otaSettlements({ from: range.from, to: range.to, basis: 'checkout' }),
+      source.units(),
+      source.linesByFilter({ from: range.from, to: range.to }),
+    ]);
+    const { policy } = stayTaxPolicyFrom(policyRows, today);
+    const stays = stayTaxInputsFrom(reservations, settlements, units).inputs.map((i) => computeStayTax(i, today, policy));
+    const unitByReservation = new Map(reservations.map((r) => [r.id, r.unit_id]));
+    const name = unitNamer(units);
+    const posted = lines.filter((l) => l.transaction.status !== 'reversed' && l.transaction.status !== 'reversal');
+    const minibar = posted.filter((l) => l.category === 'minibar_sales');
+    const cleaningLines = posted.filter((l) => l.category === 'cleaning' && ['expense', 'fee'].includes(l.transaction.kind));
+    const income = buildIncome({
+      stays,
+      unitOf: (id) => {
+        const unitId = unitByReservation.get(id) ?? null;
+        return { id: unitId, name: compactUnitName(name(unitId)) };
+      },
+      minibarNetCents: minibar.reduce((a, l) => a + l.net_cents, 0),
+      minibarCogsCents: -posted.filter((l) => l.category === 'minibar_cogs').reduce((a, l) => a + l.net_cents, 0),
+      minibarItems: minibar.reduce((a, l) => a + (l.quantity ?? 0), 0),
+      cleaningActualNetCents: cleaningLines.length > 0 ? cleaningLines.reduce((a, l) => a + l.net_cents, 0) : null,
+      cleaningPerStayCents: cleaningPerStayFrom(policyRows, today),
+    });
+    return { range, income, stays };
   });
 }

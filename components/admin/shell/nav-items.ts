@@ -71,7 +71,7 @@ export const FINANCE_GROUPS: Array<{ label: string; sections: Array<{ href: stri
   {
     label: 'Income',
     sections: [
-      { href: '/admin/finance/revenue', label: 'Revenue' },
+      { href: '/admin/finance/revenue', label: 'Income' },
       { href: '/admin/finance/booking-com', label: 'Booking.com payouts' },
       { href: '/admin/finance/invoices', label: 'Invoices' },
       { href: '/admin/finance/minibar', label: 'Minibar' },

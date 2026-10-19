@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { loadRevenue } from '@/lib/finance/queries';
+import { loadIncome, loadRevenue } from '@/lib/finance/queries';
+import { IncomeView } from '@/components/admin/finance/income-view';
 import { presetsFor, rangeOf, type Params } from '@/lib/finance/params';
 import { categoryLabel } from '@/lib/finance/categories';
 import { CHANNEL_LABEL, KIND_LABEL } from '@/lib/finance/presentation';
@@ -8,22 +9,29 @@ import { PageHeader, Section, ErrorNotice, EmptyState } from '@/components/admin
 import { Money, Pct, RangeForm, PlainFigure, StateBadge, DateCell } from '@/components/admin/finance/primitives';
 import { ExportButton } from '@/components/admin/finance/controls';
 
-export const metadata: Metadata = { title: 'Revenue' };
+export const metadata: Metadata = { title: 'Income' };
 
 /**
- * Source-driven revenue: gross guest revenue by category, channel and unit,
- * kept apart from commission and from cash receipts. Every line links to
- * the transaction it came from.
+ * Income first — stays (net of VAT) + minibar − platform − cleaning, from
+ * the stay-tax engine and the books — then, folded, the ledger's own view:
+ * revenue lines by category, channel and unit, each linked to its entry.
  */
 export default async function RevenuePage({ searchParams }: { searchParams: Params }) {
   const range = rangeOf(searchParams, 'mtd');
-  const result = await loadRevenue(range);
+  const [result, income] = await Promise.all([loadRevenue(range), loadIncome(range)]);
   return (
     <>
-      <PageHeader eyebrow="Money · Income" title="Revenue" description="What was earned, net of VAT, by the service date (check-out). Commission and payouts are separate facts and never netted into this figure." actions={<ExportButton kind="revenue_ledger" from={range.from} to={range.to} label="Export revenue ledger" />} />
+      <PageHeader eyebrow="Money · Income" title="Income" description="What the apartments earned for the stays that ended in the period: the guests' payments without the VAT, plus the minibar, minus Booking.com's commission and the cleaning." actions={<ExportButton kind="revenue_ledger" from={range.from} to={range.to} label="Export revenue ledger" />} />
       <RangeForm action="/admin/finance/revenue" from={range.from} to={range.to} presets={presetsFor()} />
+      {!income.ok ? <ErrorNotice title="Income could not be calculated.">{income.error}</ErrorNotice> : <IncomeView report={income.data.income} stays={income.data.stays} />}
       {!result.ok ? <ErrorNotice title="Revenue could not be loaded.">{result.error}</ErrorNotice> : (
-        <>
+        <details className="fx-explain fx-books">
+          <summary>
+            In the books — {result.data.lines.length} {result.data.lines.length === 1 ? 'entry' : 'entries'}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+          </summary>
+          <div className="fx-books-body">
+          <p className="bc-meta mb-4">The accounting entries for the same period: Booking.com stays appear here once their statement is imported, minibar sales once recorded. Income above does not wait for them.</p>
           <div className="bc-figures" style={{ ['--cols' as string]: 5 }}>
             <PlainFigure label="Revenue net" cents={result.data.totals.netCents} provenance="actual" note={`${result.data.lines.length} lines`} />
             <PlainFigure label="VAT collected" cents={result.data.totals.vatCents} provenance="calculated" note="output VAT on these lines" href="/admin/finance/vat" />
@@ -82,7 +90,8 @@ export default async function RevenuePage({ searchParams }: { searchParams: Para
             )}
             {result.data.lines.length > 300 && <p className="bc-meta mt-2">Showing 300 of {result.data.lines.length}; use the Transactions filters or the export for the full list.</p>}
           </Section>
-        </>
+          </div>
+        </details>
       )}
     </>
   );
