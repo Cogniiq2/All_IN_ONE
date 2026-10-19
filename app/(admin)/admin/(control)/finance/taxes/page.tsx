@@ -20,7 +20,7 @@ export const metadata: Metadata = { title: 'Taxes' };
 export default async function TaxesPage({ searchParams }: { searchParams: Params }) {
   const year = yearOfParams(searchParams);
   const [result, operator] = await Promise.all([loadTaxes(year), currentOperator()]);
-  if (!result.ok) return <><PageHeader eyebrow="Finance" title="Taxes" /><ErrorNotice title="Taxes could not be loaded.">{result.error}</ErrorNotice></>;
+  if (!result.ok) return <><PageHeader eyebrow="Money · Tax" title="Company taxes" /><ErrorNotice title="Taxes could not be loaded.">{result.error}</ErrorNotice></>;
   const t = result.data;
   const e = t.estimate;
   const mayTax = can(operator?.role, 'finance.tax_review') && !operator?.preview;
@@ -29,8 +29,8 @@ export default async function TaxesPage({ searchParams }: { searchParams: Params
   return (
     <>
       <PageHeader
-        eyebrow="Finance · Körperschaftsteuer · Solidaritätszuschlag · Gewerbesteuer"
-        title={`Taxes ${year}`}
+        eyebrow="Money · Tax"
+        title={`Company taxes ${year}`}
         description={<span className="inline-flex flex-wrap items-center gap-1.5"><Provenance value="estimated" /><span className="bc-meta">rules {e.rulesVersion} · Hebesatz {t.hebesatz ? `${t.hebesatz.rateBp / 100} %` : '—'}{t.hebesatz?.reviewRequired ? ' (unconfirmed placeholder)' : ''}</span></span>}
         actions={<span className="flex flex-wrap gap-2"><ExportButton kind="tax_estimate" from={`${year}-01-01`} to={`${year + 1}-01-01`} label="Export tax estimate" /><ExportButton kind="tax_adjustments" from={`${year}-01-01`} to={`${year + 1}-01-01`} label="Adjustments" /></span>}
       />

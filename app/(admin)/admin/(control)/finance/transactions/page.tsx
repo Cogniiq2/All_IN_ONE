@@ -37,7 +37,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
 
   return (
     <>
-      <PageHeader eyebrow="Finance" title="Transactions" description="Every economic fact — revenue, expense, refund, commission, fee — with its tax, document, payment and reconciliation state. Money never changes here; corrections are reversals." actions={<RefreshControl loadedAt={result.loadedAt} />} />
+      <PageHeader eyebrow="Money · Reports" title="All entries" description="Every entry in the books — income, costs, refunds, commission, fees — with its tax, receipt and payment state. An entry is never edited; a correction is a reversing entry." actions={<RefreshControl loadedAt={result.loadedAt} />} />
 
       <form action="/admin/finance/transactions" className="bc-panel mb-5" style={{ padding: 12 }} role="search">
         <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>

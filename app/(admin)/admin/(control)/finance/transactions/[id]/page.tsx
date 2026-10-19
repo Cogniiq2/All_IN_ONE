@@ -25,7 +25,7 @@ export const metadata: Metadata = { title: 'Transaction' };
 export default async function TransactionPage({ params }: { params: { id: string } }) {
   if (!isUuid(params.id) && !/^tx-\d{3}$/.test(params.id)) notFound();
   const [result, operator] = await Promise.all([loadTransaction(params.id), currentOperator()]);
-  if (!result.ok) return <><PageHeader eyebrow="Finance" title="Transaction" /><ErrorNotice title="The transaction could not be loaded.">{result.error}</ErrorNotice></>;
+  if (!result.ok) return <><PageHeader eyebrow="Money · Reports" title="Transaction" /><ErrorNotice title="The transaction could not be loaded.">{result.error}</ErrorNotice></>;
   if (!result.data) notFound();
   const d = result.data;
   const t = d.transaction;

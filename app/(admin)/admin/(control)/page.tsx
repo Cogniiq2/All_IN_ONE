@@ -1,19 +1,19 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { adminPosture } from '@/lib/admin/config';
-import { loadBookingFreshness, loadCalendar, loadCleaningBoard, loadPerformance, loadReservationFreshness, loadSystemHealth, loadToday } from '@/lib/admin/queries';
+import { loadBookingFreshness, loadCalendar, loadCleaningBoard, loadPerformance, loadReservationFreshness, loadToday } from '@/lib/admin/queries';
 import { FreshnessBanner } from '@/components/admin/freshness-banner';
-import { addMonths, monthRange, periodLabel, ytd } from '@/lib/finance/periods';
+import { addMonths, monthRange, periodLabel } from '@/lib/finance/periods';
 import { Money, Pct } from '@/components/admin/finance/primitives';
 import { HealthSectionCard } from '@/components/admin/health-section-card';
 import { cachedAttention } from '@/lib/admin/request-cache';
 import { countByLevel } from '@/lib/admin/attention';
 import { addDays, relationOn } from '@/lib/admin/calendar';
 import { tonightSnapshot, upcomingStays, windowStats } from '@/lib/admin/overview';
-import { compactUnitName, formatIsoDate, formatLongDay, formatRelative, formatStay, percent, pluralNights, propertyTodayIso } from '@/lib/admin/format';
+import { compactUnitName, formatIsoDate, formatLongDay, formatStay, percent, pluralNights, propertyTodayIso } from '@/lib/admin/format';
 import { isBookingState, reservationClassPresentation, sourcePresentation } from '@/lib/admin/presentation';
 import { isPaidSide } from '@/lib/booking/states';
-import { PageHeader, Section, Metric, DegradedNotice, ErrorNotice, EmptyState, HealthBadge, BookingStateBadge } from '@/components/admin/primitives';
+import { PageHeader, Section, Metric, DegradedNotice, ErrorNotice, EmptyState, BookingStateBadge } from '@/components/admin/primitives';
 import { RefreshControl } from '@/components/admin/shell/refresh-control';
 import { AttentionRow, AllClear } from '@/components/admin/attention/attention-list';
 
@@ -30,14 +30,12 @@ export default async function OverviewPage() {
   const posture = adminPosture();
   const thisMonth = today.slice(0, 7);
   const nextMonth = addMonths(today, 1).slice(0, 7);
-  const [attention, board, calendar, health, month, next, year, sync, cleaning, freshness] = await Promise.all([
+  const [attention, board, calendar, month, next, sync, cleaning, freshness] = await Promise.all([
     cachedAttention(),
     loadToday(today),
     loadCalendar(addDays(today, -1), addDays(today, 31), today),
-    loadSystemHealth(),
     loadPerformance(monthRange(thisMonth)),
     loadPerformance(monthRange(nextMonth)),
-    loadPerformance(ytd(today)),
     loadReservationFreshness(),
     loadCleaningBoard(),
     loadBookingFreshness(),
@@ -84,7 +82,7 @@ export default async function OverviewPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Overview · Bayreuth"
+        eyebrow="Today · Bayreuth"
         title={formatLongDay(today)}
         description={
           chips.length > 0 ? (
@@ -286,78 +284,22 @@ export default async function OverviewPage() {
         )}
       </Section>
 
-      {/* ── Performance ──────────────────────────────────────────── */}
-      <Section title="Performance" meta={<Link href="/admin/performance">Performance →</Link>} id="month">
+      {/* ── This month: three figures; the detail lives under Apartments → Performance. ── */}
+      <Section title="This month" meta={<Link href="/admin/performance">Performance →</Link>} id="month">
         <div className="bc-metrics mt-4" style={{ ['--cols' as string]: 3 }}>
           <Metric label={`Booked · ${periodLabel(thisMonth)}`} value={month.ok ? <Money cents={month.data.stayGrossCents} /> : ''} unavailable={!month.ok} note={month.ok ? `${month.data.occupiedNights} nights · gross booking value` : undefined} />
+          <Metric label="Occupancy" value={month.ok ? <Pct ratio={month.data.occupancy.value} digits={0} /> : ''} unavailable={!month.ok || month.data.occupancy.value === null} note={month.ok ? `${month.data.occupiedNights} of ${month.data.availableNights} apartment nights` : undefined} />
           <Metric label={`Booked · ${periodLabel(nextMonth)}`} value={next.ok ? <Money cents={next.data.stayGrossCents} /> : ''} unavailable={!next.ok} note={next.ok ? `${next.data.occupiedNights} nights so far` : undefined} />
-          <Metric label={`Booked · ${today.slice(0, 4)} to date`} value={year.ok ? <Money cents={year.data.stayGrossCents} /> : ''} unavailable={!year.ok} note={year.ok ? `${year.data.occupiedNights} nights since 1 January` : undefined} />
         </div>
-        {month.ok && (
-          <>
-            <div className="bc-metrics mt-3" style={{ ['--cols' as string]: 3 }}>
-              <Metric label="Occupancy this month" value={<Pct ratio={month.data.occupancy.value} digits={0} />} note={`${month.data.occupiedNights} of ${month.data.availableNights} apartment nights`} unavailable={month.data.occupancy.value === null} />
-              <Metric label="ADR this month" value={<Money cents={month.data.adr.value === null ? null : Math.round(month.data.adr.value)} />} note="gross per booked night" unavailable={month.data.adr.value === null} />
-              <Metric label="ADR this year" value={<Money cents={year.ok && year.data.adr.value !== null ? Math.round(year.data.adr.value) : null} />} note={year.ok && year.data.occupancy.value !== null ? `occupancy ${percent(year.data.occupancy.value)} year to date` : undefined} unavailable={!year.ok || year.data.adr.value === null} />
-            </div>
-            <div className="mt-3 grid gap-x-10 gap-y-1 md:grid-cols-2">
-              {month.data.byUnit.length > 0 && (
-                <p className="bc-meta" style={{ fontSize: 12.5 }}>
-                  By apartment: {month.data.byUnit.map((u) => `${compactUnitName(u.displayName)} ${formatEur(u.grossCents)} (${u.nights} nights)`).join(' · ')}
-                </p>
-              )}
-              {month.data.byChannel.filter((c) => c.nights > 0).length > 0 && (
-                <p className="bc-meta" style={{ fontSize: 12.5 }}>
-                  By channel: {month.data.byChannel.filter((c) => c.nights > 0).map((c) => `${sourcePresentation(c.source).label} ${c.share === null ? `${c.nights} nights` : percent(c.share)}`).join(' · ')}
-                </p>
-              )}
-            </div>
-          </>
-        )}
         <p className="bc-meta mt-2" style={{ fontSize: 12 }}>
-          Booked gross value as the booking system states it, allocated to the nights of each stay — not payout, not net of commission, not profit. Money received is in Finance.
+          Gross booking value as the booking system states it — not payout and not profit. What the money and VAT are is under Money.
         </p>
       </Section>
 
-      {/* ── Systems, quietly ─────────────────────────────────────── */}
-      <Section title="Systems" meta={<Link href="/admin/system">Detail →</Link>} id="health">
-        {!health.ok ? (
-          <div className="mt-4">
-            <ErrorNotice title="System health could not be loaded.">{health.error}</ErrorNotice>
-          </div>
-        ) : (
-          <div className="bc-rows">
-            {health.data
-              .filter((s) => ['database', 'beds24', 'reservations', 'schedulers', 'cleaning'].includes(s.key))
-              .map((s) => (
-                <div key={s.key} className="bc-row" style={{ gridTemplateColumns: 'minmax(0,1fr) auto', padding: '11px 0' }}>
-                  <span className="truncate">{SYSTEM_LABEL[s.key] ?? s.title}</span>
-                  <HealthBadge status={s.status} />
-                </div>
-              ))}
-          </div>
-        )}
-        {calendar.ok && calendar.data.inventorySyncedAt && (
-          <p className="bc-meta mt-2" style={{ fontSize: 12 }}>
-            Availability last synchronised {formatRelative(calendar.data.inventorySyncedAt)}.
-          </p>
-        )}
-      </Section>
     </>
   );
 }
 
-const SYSTEM_LABEL: Record<string, string> = {
-  database: 'Database',
-  beds24: 'Booking system (Beds24)',
-  reservations: 'Reservation import',
-  schedulers: 'Scheduled jobs',
-  cleaning: 'Cleaning derivation',
-};
-
-function formatEur(cents: number): string {
-  return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(cents / 100);
-}
 
 function Column({
   title,

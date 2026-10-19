@@ -40,7 +40,7 @@ export default async function SystemPage() {
 
   return (
     <>
-      <PageHeader eyebrow="Operations" title="System" description="What is measured, what is configured, and what nothing measures yet." actions={<RefreshControl loadedAt={health.loadedAt} every={120} />} />
+      <PageHeader eyebrow="Behind the scenes" title="System" description="What is measured, what is configured, and what nothing measures yet." actions={<RefreshControl loadedAt={health.loadedAt} every={120} />} />
 
       <Section title="Alerts" meta={<span>the same list the internal health endpoint serves</span>} id="alerts">
         {!alerts.ok ? (

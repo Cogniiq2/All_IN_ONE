@@ -12,14 +12,14 @@ export const metadata: Metadata = { title: 'Invoices' };
 
 export default async function InvoicesPage() {
   const [result, operator] = await Promise.all([loadInvoices(), currentOperator()]);
-  if (!result.ok) return <><PageHeader eyebrow="Finance" title="Invoices" /><ErrorNotice title="Invoices could not be loaded.">{result.error}</ErrorNotice></>;
+  if (!result.ok) return <><PageHeader eyebrow="Money · Income" title="Invoices" /><ErrorNotice title="Invoices could not be loaded.">{result.error}</ErrorNotice></>;
   const inv = result.data;
   const mayEdit = can(operator?.role, 'finance.edit') && !operator?.preview;
   const cfg = inv.config;
   const ready = cfg.issuerLegalName && cfg.issuerAddress && cfg.issuerTaxIdConfigured && cfg.invoiceSeries && cfg.smallBusinessScheme === false;
   return (
     <>
-      <PageHeader eyebrow="Finance · § 14 UStG" title="Guest invoices" description="Drafts are free; issuing draws a gapless number and freezes the document. Issue fails closed while any § 14 requirement is unmet. Nothing is sent from here." />
+      <PageHeader eyebrow="Money · Income" title="Guest invoices" description="Drafts are free; issuing draws a gapless number and freezes the document. Issue fails closed while any § 14 requirement is unmet. Nothing is sent from here." />
       <div className="mb-5">
         <Notice tone={ready ? 'positive' : 'caution'} title={ready ? 'Issuer configured.' : 'Issuing is blocked by configuration.'}>
           {cfg.issuerLegalName ?? 'no legal name'} · {cfg.issuerAddress ? 'address set' : 'no address'} · {cfg.issuerTaxIdConfigured ? `${cfg.issuerTaxIdKind === 'ust_idnr' ? 'USt-IdNr' : 'Steuernummer'} ${cfg.issuerTaxIdMasked}` : 'no tax id'} · series {cfg.invoiceSeries ?? 'not set'} · § 19: {cfg.smallBusinessScheme === false ? 'regular taxation' : cfg.smallBusinessScheme === true ? 'small business (invoices would need the § 19 notice)' : 'undecided'}. Set INVOICE_ISSUER_LEGAL_NAME, INVOICE_ISSUER_ADDRESS, INVOICE_ISSUER_TAX_ID, INVOICE_SERIES and INVOICE_SMALL_BUSINESS on the deployment.

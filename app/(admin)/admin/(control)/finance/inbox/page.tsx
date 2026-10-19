@@ -8,7 +8,7 @@ import { RunReconciliationButton } from '@/components/admin/finance/controls';
 import { LEVEL_LABEL } from '@/lib/admin/attention';
 import { formatCents } from '@/lib/finance/money';
 
-export const metadata: Metadata = { title: 'Finance inbox' };
+export const metadata: Metadata = { title: 'To do' };
 
 /**
  * The one list to work: every finance exception, with why, impact and the
@@ -19,7 +19,7 @@ export default async function FinanceInboxPage() {
   const result = await loadFinanceInbox();
   return (
     <>
-      <PageHeader eyebrow="Finance" title="Finance inbox" description="Exceptions only. Everything deterministic has already been done; what is listed here needs a person." actions={<RefreshControl loadedAt={result.loadedAt} />} />
+      <PageHeader eyebrow="Money · Overview" title="To do" description="Exceptions only. Everything deterministic has already been done; what is listed here needs a person." actions={<RefreshControl loadedAt={result.loadedAt} />} />
       {!result.ok ? <ErrorNotice title="The inbox could not be loaded.">{result.error}</ErrorNotice> : result.data.items.length === 0 ? (
         <Notice tone="positive" icon="check">Nothing waits. Documents complete, money matched, tax codes classified.</Notice>
       ) : (

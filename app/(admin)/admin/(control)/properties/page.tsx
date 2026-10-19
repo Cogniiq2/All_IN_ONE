@@ -12,6 +12,8 @@ import { PageHeader, ErrorNotice, KeyValue, Notice, When, Dash, Metric } from '@
 import { Money } from '@/components/admin/finance/primitives';
 import { RefreshControl } from '@/components/admin/shell/refresh-control';
 import { CopyButton } from '@/components/admin/copy-button';
+import { PageTabs } from '@/components/admin/shell/page-tabs';
+import { APARTMENT_TABS } from '@/components/admin/shell/nav-items';
 
 export const metadata: Metadata = { title: 'Properties' };
 
@@ -34,9 +36,10 @@ export default async function PropertiesPage() {
 
   return (
     <>
+      <PageTabs tabs={APARTMENT_TABS} label="Apartments" />
       <PageHeader
-        eyebrow="Daily"
-        title="Properties"
+        eyebrow="Apartments"
+        title="Apartments"
         description="Each apartment as it stands today, with its bookings for the next sixty days and its booked revenue. Booking-system ids are listed under each card for reference; they are changed by migration, not here."
         actions={<RefreshControl loadedAt={units.loadedAt} />}
       />

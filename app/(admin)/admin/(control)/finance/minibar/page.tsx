@@ -14,14 +14,14 @@ export const metadata: Metadata = { title: 'Minibar' };
 export default async function MinibarPage({ searchParams }: { searchParams: Params }) {
   const range = rangeOf(searchParams, 'mtd');
   const [result, operator] = await Promise.all([loadMinibar(range), currentOperator()]);
-  if (!result.ok) return <><PageHeader eyebrow="Finance" title="Minibar" /><ErrorNotice title="Minibar could not be loaded.">{result.error}</ErrorNotice></>;
+  if (!result.ok) return <><PageHeader eyebrow="Money · Income" title="Minibar" /><ErrorNotice title="Minibar could not be loaded.">{result.error}</ErrorNotice></>;
   const m = result.data;
   const name = unitNamer(m.units);
   const mayEdit = can(operator?.role, 'finance.edit') && !operator?.preview;
   const mayConfigure = can(operator?.role, 'finance.configure') && !operator?.preview;
   return (
     <>
-      <PageHeader eyebrow="Finance · revenue and stock" title="Minibar" description="A real revenue and cost domain: each product has its own tax code (beverages 19 %, food items 7 % — never assumed), a sale posts revenue and COGS and reduces stock, and a mistake is corrected by a movement, never an edit." />
+      <PageHeader eyebrow="Money · Income" title="Minibar" description="A real revenue and cost domain: each product has its own tax code (beverages 19 %, food items 7 % — never assumed), a sale posts revenue and COGS and reduces stock, and a mistake is corrected by a movement, never an edit." />
       <RangeForm action="/admin/finance/minibar" from={range.from} to={range.to} presets={presetsFor()} />
       <div className="bc-figures" style={{ ['--cols' as string]: 6 }}>
         <PlainFigure label="Minibar revenue net" cents={m.metrics.revenueNetCents} provenance="actual" href={`/admin/finance/transactions?category=minibar_sales&from=${range.from}&to=${range.to}`} />

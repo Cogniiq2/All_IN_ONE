@@ -21,14 +21,14 @@ const EXPORT_KINDS: ExportKind[] = ['transaction_ledger', 'revenue_ledger', 'exp
 
 export default async function AccountantPage() {
   const [result, operator] = await Promise.all([loadAccountant(), currentOperator()]);
-  if (!result.ok) return <><PageHeader eyebrow="Finance" title="Accountant" /><ErrorNotice title="The accountant view could not be loaded.">{result.error}</ErrorNotice></>;
+  if (!result.ok) return <><PageHeader eyebrow="Money · Tax" title="For the accountant" /><ErrorNotice title="The accountant view could not be loaded.">{result.error}</ErrorNotice></>;
   const a = result.data;
   const mayReview = can(operator?.role, 'finance.review') && !operator?.preview;
   const mayTax = can(operator?.role, 'finance.tax_review') && !operator?.preview;
   const mayExport = can(operator?.role, 'finance.export') && !operator?.preview;
   return (
     <>
-      <PageHeader eyebrow="Finance · accounting preparation" title="Accountant" description="Per month: what is complete, what is not, and whether the period may be handed over. A period cannot become ready while lines are unclassified, documents are missing or money mismatches. Locking is the accountant path." />
+      <PageHeader eyebrow="Money · Tax" title="For the accountant" description="Per month: what is complete, what is not, and whether the period may be handed over. A period cannot become ready while lines are unclassified, documents are missing or money mismatches. Locking is the accountant path." />
       <Section title="Periods" meta="last twelve months" id="periods">
         <div className="bc-table-wrap mt-2">
           <table className="bc-table">

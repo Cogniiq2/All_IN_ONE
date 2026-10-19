@@ -15,7 +15,7 @@ export default async function ImportsPage() {
   const mayEdit = can(operator?.role, 'finance.edit') && !operator?.preview;
   return (
     <>
-      <PageHeader eyebrow="Finance · banking foundation" title="Imports" description="Statements come in as files: staged, validated row by row, previewed, then posted through the same commands as everything else. The same bytes are never imported twice. A future Open-Banking feed plugs into the same contract." />
+      <PageHeader eyebrow="Money · Setup" title="Uploads" description="Booking.com statements and bank statements come in as files: checked row by row, previewed, then — only when you press Import — written into the books. The same file is never imported twice." />
       <div className="grid gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div>
           {!result.ok ? <ErrorNotice title="Imports could not be loaded.">{result.error}</ErrorNotice> : (

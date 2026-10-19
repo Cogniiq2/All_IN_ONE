@@ -13,7 +13,7 @@ export default async function NewExpensePage() {
   return (
     <>
       <BackLink href="/admin/finance/expenses">Expenses</BackLink>
-      <PageHeader eyebrow="Finance" title="Post an expense" description="One supplier invoice, split into as many lines as the invoice needs — per unit, per category, per rate. The rule engine suggests; you decide; the reason is recorded." />
+      <PageHeader eyebrow="Money · Costs" title="Post an expense" description="One supplier invoice, split into as many lines as the invoice needs — per unit, per category, per rate. The rule engine suggests; you decide; the reason is recorded." />
       {!settings.ok ? <ErrorNotice title="The form could not be prepared.">{settings.error}</ErrorNotice> : !may ? (
         <Notice tone="caution">{operator?.preview ? 'Preview data is read-only.' : 'Your role can read finance but not post expenses.'}</Notice>
       ) : (

@@ -23,7 +23,7 @@ export default async function AutomationsPage() {
 
   return (
     <>
-      <PageHeader eyebrow="Operations" title="Automations" description="Guest messages, automation events and what the platform last said. Delivered means a provider confirmed it; nothing else counts." actions={<RefreshControl loadedAt={board.loadedAt} every={60} />} />
+      <PageHeader eyebrow="Behind the scenes" title="Automations" description="Guest messages, automation events and what the platform last said. Delivered means a provider confirmed it; nothing else counts." actions={<RefreshControl loadedAt={board.loadedAt} every={60} />} />
 
       {!board.ok ? (
         <ErrorNotice title="The delivery ledger could not be loaded.">{board.error}</ErrorNotice>

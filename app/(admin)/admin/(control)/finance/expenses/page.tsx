@@ -18,7 +18,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Par
   const mayEdit = can(operator?.role, 'finance.edit') && !operator?.preview;
   return (
     <>
-      <PageHeader eyebrow="Finance" title="Expenses" description="What was spent, net, by service date. Input VAT counts only where its deductibility is decided; a document is expected on every supplier invoice." actions={<span className="flex flex-wrap gap-2">{mayEdit && <Link href="/admin/finance/expenses/new" className="bc-btn sm primary">Post an expense</Link>}<ExportButton kind="expense_ledger" from={range.from} to={range.to} label="Export" /></span>} />
+      <PageHeader eyebrow="Money · Costs" title="Expenses" description="What was spent, net, by service date. Input VAT counts only where its deductibility is decided; a document is expected on every supplier invoice." actions={<span className="flex flex-wrap gap-2">{mayEdit && <Link href="/admin/finance/expenses/new" className="bc-btn sm primary">Post an expense</Link>}<ExportButton kind="expense_ledger" from={range.from} to={range.to} label="Export" /></span>} />
       <RangeForm action="/admin/finance/expenses" from={range.from} to={range.to} presets={presetsFor()} />
       {!result.ok ? <ErrorNotice title="Expenses could not be loaded.">{result.error}</ErrorNotice> : (
         <>

@@ -22,8 +22,8 @@ export default async function OperationsPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Operations"
-        title="Needs attention"
+        eyebrow="Signals"
+        title="Needs you"
         description={
           items.length === 0
             ? 'Every exception the system can detect, ordered by what it would cost to ignore.'

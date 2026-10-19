@@ -12,12 +12,12 @@ export const metadata: Metadata = { title: 'Cash flow' };
 export default async function CashFlowPage({ searchParams }: { searchParams: Params }) {
   const months = Math.min(24, Math.max(3, Number.parseInt(one(searchParams, 'months', 3) ?? '6', 10) || 6));
   const result = await loadCashFlow(months);
-  if (!result.ok) return <><PageHeader eyebrow="Finance" title="Cash flow" /><ErrorNotice title="Cash flow could not be built.">{result.error}</ErrorNotice></>;
+  if (!result.ok) return <><PageHeader eyebrow="Money · Reports" title="Cash flow" /><ErrorNotice title="Cash flow could not be built.">{result.error}</ErrorNotice></>;
   const c = result.data;
   const p = c.projection;
   return (
     <>
-      <PageHeader eyebrow="Finance" title="Cash flow" description="Money that actually moved, by month and source; then what is committed, expected and estimated for the next 30, 60 and 90 days. Projected revenue is not cash." actions={<ExportButton kind="cash_flow" from={`${c.months[0]?.month ?? '2026-01'}-01`} to={p.asOf} label="Export cash-flow report" />} />
+      <PageHeader eyebrow="Money · Reports" title="Cash flow" description="Money that actually moved, by month and source; then what is committed, expected and estimated for the next 30, 60 and 90 days. Projected revenue is not cash." actions={<ExportButton kind="cash_flow" from={`${c.months[0]?.month ?? '2026-01'}-01`} to={p.asOf} label="Export cash-flow report" />} />
       {!c.openingKnown && <div className="mb-5"><Notice tone="caution" title="No opening balance.">Record each account&apos;s opening balance and date under Settings → Accounts. Until then movements are shown but the running balance and free cash stay unknown rather than guessed.</Notice></div>}
       <div className="bc-figures" style={{ ['--cols' as string]: 4 }}>
         <PlainFigure label="Cash now" cents={p.cashNowCents} provenance={p.cashNowCents === null ? 'unknown' : 'calculated'} note="opening balances + recorded movements" />

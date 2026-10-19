@@ -14,7 +14,7 @@ export const metadata: Metadata = { title: 'Import batch' };
 
 export default async function ImportBatchPage({ params }: { params: { id: string } }) {
   const [result, operator] = await Promise.all([loadImportBatch(params.id), currentOperator()]);
-  if (!result.ok) return <><PageHeader eyebrow="Finance" title="Import batch" /><ErrorNotice title="The batch could not be loaded.">{result.error}</ErrorNotice></>;
+  if (!result.ok) return <><PageHeader eyebrow="Money · Setup" title="Import batch" /><ErrorNotice title="The batch could not be loaded.">{result.error}</ErrorNotice></>;
   if (!result.data) notFound();
   const { batch, rows, settlement } = result.data;
   const spec = ADAPTERS.find((a) => a.id === batch.adapter);
@@ -22,7 +22,7 @@ export default async function ImportBatchPage({ params }: { params: { id: string
   return (
     <>
       <BackLink href="/admin/finance/imports">Imports</BackLink>
-      <PageHeader eyebrow="Finance · import" title={batch.filename} description={<span className="inline-flex flex-wrap items-center gap-1.5"><StateBadge table="batch" value={batch.status} /><span className="bc-badge ghost" data-tone={spec?.readiness === 'validated' ? 'positive' : spec?.readiness === 'retired' ? 'muted' : 'caution'}>{spec?.label ?? batch.adapter} · {spec?.readiness ?? 'unknown'} · v{batch.adapter_version}</span></span>} />
+      <PageHeader eyebrow="Money · Setup" title={batch.filename} description={<span className="inline-flex flex-wrap items-center gap-1.5"><StateBadge table="batch" value={batch.status} /><span className="bc-badge ghost" data-tone={spec?.readiness === 'validated' ? 'positive' : spec?.readiness === 'retired' ? 'muted' : 'caution'}>{spec?.label ?? batch.adapter} · {spec?.readiness ?? 'unknown'} · v{batch.adapter_version}</span></span>} />
       {settlement && (
         <>
           <Section title={batch.status === 'imported' ? 'Booking.com statement · as staged' : 'Booking.com statement · before import'} meta="statement figures; matching against local reservations as they are now" id="settlement">

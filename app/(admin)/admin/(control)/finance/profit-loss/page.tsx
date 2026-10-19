@@ -14,12 +14,12 @@ export default async function ProfitLossPage({ searchParams }: { searchParams: P
   const unitId = one(searchParams, 'unit', 60);
   const channel = one(searchParams, 'channel', 20);
   const result = await loadPl(range, { unitId, channel });
-  if (!result.ok) return <><PageHeader eyebrow="Finance" title="Profit & loss" /><ErrorNotice title="The P&L could not be built.">{result.error}</ErrorNotice></>;
+  if (!result.ok) return <><PageHeader eyebrow="Money · Reports" title="Profit & loss" /><ErrorNotice title="The P&L could not be built.">{result.error}</ErrorNotice></>;
   const { pl, units, estimate } = result.data;
   const q = (extra: Record<string, string | null>) => `/admin/finance/transactions?from=${range.from}&to=${range.to}${unitId ? `&unit=${unitId}` : ''}${channel ? `&channel=${channel}` : ''}${Object.entries(extra).filter(([, v]) => v).map(([k, v]) => `&${k}=${v}`).join('')}`;
   return (
     <>
-      <PageHeader eyebrow="Finance · management GuV" title="Profit & loss" description="Management view: net revenue by service date, costs by category group, subtotals down to the operating result. Estimated company taxes appear only for a whole fiscal year and are labelled." actions={<span className="flex flex-wrap gap-2"><ExportButton kind="profit_loss" from={range.from} to={range.to} label="Export P&L" /><PrintButton /></span>} />
+      <PageHeader eyebrow="Money · Reports" title="Profit & loss" description="Management view: net revenue by service date, costs by category group, subtotals down to the operating result. Estimated company taxes appear only for a whole fiscal year and are labelled." actions={<span className="flex flex-wrap gap-2"><ExportButton kind="profit_loss" from={range.from} to={range.to} label="Export P&L" /><PrintButton /></span>} />
       <RangeForm action="/admin/finance/profit-loss" from={range.from} to={range.to} presets={presetsFor()} extra={<>
         <label className="bc-field"><span className="bc-label">Unit</span><select name="unit" defaultValue={unitId ?? ''} className="bc-select"><option value="">All units</option>{units.map((u) => <option key={u.id} value={u.id}>{u.display_name}</option>)}</select></label>
         <label className="bc-field"><span className="bc-label">Channel</span><select name="channel" defaultValue={channel ?? ''} className="bc-select"><option value="">All channels</option>{Object.entries(CHANNEL_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>

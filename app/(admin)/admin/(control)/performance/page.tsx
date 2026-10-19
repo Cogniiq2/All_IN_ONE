@@ -5,6 +5,8 @@ import { rangeOf, presetsFor, type Params } from '@/lib/finance/params';
 import { CHANNEL_LABEL } from '@/lib/finance/presentation';
 import { PageHeader, Section, ErrorNotice, EmptyState, Metric, Notice, Dash } from '@/components/admin/primitives';
 import { Money, Pct, RangeForm } from '@/components/admin/finance/primitives';
+import { PageTabs } from '@/components/admin/shell/page-tabs';
+import { APARTMENT_TABS } from '@/components/admin/shell/nav-items';
 
 export const metadata: Metadata = { title: 'Performance' };
 
@@ -32,8 +34,9 @@ export default async function PerformancePage({ searchParams }: { searchParams: 
 
   return (
     <>
+      <PageTabs tabs={APARTMENT_TABS} label="Apartments" />
       <PageHeader
-        eyebrow="Overview"
+        eyebrow="Apartments"
         title="Performance"
         description="Occupancy, ADR and RevPAR from what is actually booked at the channel manager. Gross booking value — not net revenue, and not cash received."
       />

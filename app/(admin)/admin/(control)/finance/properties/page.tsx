@@ -12,11 +12,11 @@ export const metadata: Metadata = { title: 'Property profitability' };
 export default async function PropertiesPage({ searchParams }: { searchParams: Params }) {
   const range = rangeOf(searchParams, 'ytd');
   const result = await loadProperties(range);
-  if (!result.ok) return <><PageHeader eyebrow="Finance" title="Properties" /><ErrorNotice title="Property profitability could not be built.">{result.error}</ErrorNotice></>;
+  if (!result.ok) return <><PageHeader eyebrow="Money · Reports" title="By apartment" /><ErrorNotice title="Property profitability could not be built.">{result.error}</ErrorNotice></>;
   const { report, channels } = result.data;
   return (
     <>
-      <PageHeader eyebrow="Finance" title="Property profitability" description="Per unit: revenue, nights, occupancy, ADR, the costs allocated to it and how, contribution. Shared costs that nobody allocated stay visibly unallocated — never spread silently." actions={<ExportButton kind="property_profitability" from={range.from} to={range.to} label="Export" />} />
+      <PageHeader eyebrow="Money · Reports" title="By apartment" description="Per apartment: income, nights, occupancy, average rate, the costs assigned to it, and what it earns. Shared costs nobody assigned stay visibly unassigned — never spread silently." actions={<ExportButton kind="property_profitability" from={range.from} to={range.to} label="Export" />} />
       <RangeForm action="/admin/finance/properties" from={range.from} to={range.to} presets={presetsFor()} />
       <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
         {report.units.map((u) => (

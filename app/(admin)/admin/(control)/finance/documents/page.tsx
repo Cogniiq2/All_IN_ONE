@@ -25,7 +25,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pa
   const hrefFor = (p: number) => `/admin/finance/documents${qs({ type, q, page: p > 1 ? p : null })}`;
   return (
     <>
-      <PageHeader eyebrow="Finance" title="Documents" description="The evidence registry: every invoice, statement and notice, hashed on arrival, versioned, never overwritten, with its retention class. Nothing here deletes." />
+      <PageHeader eyebrow="Money · Costs" title="Receipts & documents" description="The evidence registry: every invoice, statement and notice, hashed on arrival, versioned, never overwritten, with its retention class. Nothing here deletes." />
       {!result.ok ? <ErrorNotice title="Documents could not be loaded.">{result.error}</ErrorNotice> : (
         <>
           {result.data.missing.length > 0 && (

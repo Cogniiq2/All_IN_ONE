@@ -306,3 +306,16 @@ root `app/layout.tsx` carries the document, fonts and default metadata; the
 admin has its own layout, stylesheet (`app/(admin)/admin/control.css`,
 every rule scoped under `.bc`) and metadata. No public component imports
 anything from `lib/admin/` or `components/admin/`.
+
+
+## Navigation (19 Oct 2026)
+
+Six destinations — **Today** (`/admin`), **Calendar**, **Reservations**, **Cleaning**, **Money**
+(`/admin/finance`), **Apartments** (`/admin/properties`, with a **Performance** tab) — plus the
+**Needs you** signal (`/admin/operations`, with its count) and **Search** (⌘K / Ctrl K) above them.
+**Behind the scenes** (folded): Direct bookings, Payments, Automations, System. Money groups its 18
+sections into six: Overview (Overview, To do), Income (Revenue, Booking.com payouts, Invoices, Minibar),
+Costs (Expenses, Receipts & documents), Tax (VAT return, Company taxes, For the accountant), Reports
+(Profit & loss, Cash flow, By apartment, All entries), Setup (Uploads, Bank matching, Settings). Routes
+are unchanged; every existing link works. Channel reservations live only in Reservations; the System
+health list lives only on System.

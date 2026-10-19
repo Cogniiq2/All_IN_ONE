@@ -37,7 +37,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Rec
   return (
     <>
       <PageHeader
-        eyebrow="Operations"
+        eyebrow="Behind the scenes"
         title="Payments"
         description={
           <span className="inline-flex flex-wrap items-center gap-2">

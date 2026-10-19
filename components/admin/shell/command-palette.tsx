@@ -9,6 +9,7 @@ import { Icon } from '@/components/admin/shell/nav-icon';
 import { searchBookingsAction } from '@/lib/admin/actions';
 import { searchFinanceAction, type FinanceHit } from '@/lib/finance/search-action';
 import { FINANCE_SECTIONS } from '@/components/admin/shell/nav-items';
+import { OPEN_PALETTE_EVENT } from '@/components/admin/shell/palette-event';
 import type { BookingSummaryDto } from '@/lib/admin/dto';
 import { formatStay } from '@/lib/admin/format';
 import { bookingStatePresentation } from '@/lib/admin/presentation';
@@ -42,8 +43,13 @@ export function CommandPalette({ properties }: { properties: PropertyEntry[] }) 
         setOpen((o) => !o);
       }
     };
+    const onOpen = () => setOpen(true);
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener(OPEN_PALETTE_EVENT, onOpen);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener(OPEN_PALETTE_EVENT, onOpen);
+    };
   }, []);
 
   useEffect(() => {

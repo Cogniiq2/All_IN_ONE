@@ -20,7 +20,7 @@ export default async function RevenuePage({ searchParams }: { searchParams: Para
   const result = await loadRevenue(range);
   return (
     <>
-      <PageHeader eyebrow="Finance" title="Revenue" description="What was earned, net of VAT, by the service date (check-out). Commission and payouts are separate facts and never netted into this figure." actions={<ExportButton kind="revenue_ledger" from={range.from} to={range.to} label="Export revenue ledger" />} />
+      <PageHeader eyebrow="Money · Income" title="Revenue" description="What was earned, net of VAT, by the service date (check-out). Commission and payouts are separate facts and never netted into this figure." actions={<ExportButton kind="revenue_ledger" from={range.from} to={range.to} label="Export revenue ledger" />} />
       <RangeForm action="/admin/finance/revenue" from={range.from} to={range.to} presets={presetsFor()} />
       {!result.ok ? <ErrorNotice title="Revenue could not be loaded.">{result.error}</ErrorNotice> : (
         <>

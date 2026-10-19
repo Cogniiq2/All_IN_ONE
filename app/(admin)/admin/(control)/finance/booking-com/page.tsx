@@ -48,8 +48,8 @@ export default async function BookingComFinancePage({ searchParams }: { searchPa
   return (
     <>
       <PageHeader
-        eyebrow="Finance · settlements"
-        title="Booking.com"
+        eyebrow="Money · Income"
+        title="Booking.com payouts"
         description="Statement gross, commission, payment service fee and net payout, per reservation and per payout, from the Booking.com finance statement. Each line is matched to the local reservation by its Booking.com number; the reservation itself is never changed."
         actions={mayEdit ? <RematchSettlementsButton /> : undefined}
       />

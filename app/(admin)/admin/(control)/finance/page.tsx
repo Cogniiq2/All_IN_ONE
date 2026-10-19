@@ -43,7 +43,7 @@ export default async function FinanceOverviewPage() {
   if (!result.ok) {
     return (
       <>
-        <PageHeader eyebrow="Finance" title="Finance" description="Finance operations, management accounting and tax estimation." />
+        <PageHeader eyebrow="Money" title="Money" description="Income, costs and tax." />
         <ErrorNotice title="Finance could not be loaded.">{result.error}</ErrorNotice>
       </>
     );
@@ -60,9 +60,12 @@ export default async function FinanceOverviewPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Finance"
-        title={allClear ? 'Everything reconciled' : `${o.inbox.length} item${o.inbox.length === 1 ? ' requires' : 's require'} attention`}
-        description={<span className="inline-flex flex-wrap items-center gap-1.5">{chips.map((c) => <span key={c.label} className="bc-badge ghost" data-tone={c.tone}>{c.label}</span>)}<span className="bc-meta">· {o.inboxCounts.critical} critical · {o.inboxCounts.high} high · {o.inboxCounts.elevated + o.inboxCounts.watch} lower</span></span>}
+        eyebrow="Money"
+        // "Everything reconciled" used to show whenever the to-do list was
+        // empty — even with nothing imported. The title now only names money;
+        // what needs a person is said in the line below.
+        title="Money"
+        description={<span className="inline-flex flex-wrap items-center gap-1.5"><span>{allClear ? 'Nothing in Money is waiting for you.' : `${o.inbox.length} item${o.inbox.length === 1 ? ' needs' : 's need'} you — see To do.`}</span>{chips.map((c) => <span key={c.label} className="bc-badge ghost" data-tone={c.tone}>{c.label}</span>)}<span className="bc-meta">· {o.inboxCounts.critical} critical · {o.inboxCounts.high} high · {o.inboxCounts.elevated + o.inboxCounts.watch} lower</span></span>}
         actions={<RefreshControl loadedAt={result.loadedAt} every={120} />}
       />
 
@@ -77,7 +80,7 @@ export default async function FinanceOverviewPage() {
       <section aria-labelledby="fin-attn">
         <div className="bc-section-head" style={{ borderBottom: 'none', marginBottom: 12, paddingBottom: 0 }}>
           <h2 id="fin-attn" className="bc-h2">Needs a person</h2>
-          {o.inbox.length > 0 && <Link href="/admin/finance/inbox" className="bc-meta link-quiet">Open the Finance Inbox · {o.inbox.length} →</Link>}
+          {o.inbox.length > 0 && <Link href="/admin/finance/inbox" className="bc-meta link-quiet">Open To do · {o.inbox.length} →</Link>}
         </div>
         {allClear ? (
           <Notice tone="positive" icon="check">No missing documents, no unmatched money, no classification waiting. The next filing is {o.nextDeadlines[0] ? `${o.nextDeadlines[0].label} in ${o.nextDeadlines[0].daysLeft} days` : 'not within the calendar horizon'}.</Notice>

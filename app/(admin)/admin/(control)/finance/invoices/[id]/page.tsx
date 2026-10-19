@@ -15,7 +15,7 @@ export const metadata: Metadata = { title: 'Invoice' };
 
 export default async function InvoicePage({ params }: { params: { id: string } }) {
   const [result, operator] = await Promise.all([loadInvoice(params.id), currentOperator()]);
-  if (!result.ok) return <><PageHeader eyebrow="Finance" title="Invoice" /><ErrorNotice title="The invoice could not be loaded.">{result.error}</ErrorNotice></>;
+  if (!result.ok) return <><PageHeader eyebrow="Money · Income" title="Invoice" /><ErrorNotice title="The invoice could not be loaded.">{result.error}</ErrorNotice></>;
   if (!result.data) notFound();
   const { invoice: i, lines, requirements, config } = result.data;
   const number = i.number ? formatInvoiceNumber(i.series!, i.number) : null;

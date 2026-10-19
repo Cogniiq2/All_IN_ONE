@@ -20,7 +20,7 @@ export const metadata: Metadata = { title: 'Reconciliation' };
 export default async function ReconciliationPage({ searchParams }: { searchParams: Params }) {
   const focusPayment = one(searchParams, 'payment', 60);
   const [result, operator] = await Promise.all([loadReconciliation(), currentOperator()]);
-  if (!result.ok) return <><PageHeader eyebrow="Finance" title="Reconciliation" /><ErrorNotice title="Reconciliation could not be loaded.">{result.error}</ErrorNotice></>;
+  if (!result.ok) return <><PageHeader eyebrow="Money · Setup" title="Bank matching" /><ErrorNotice title="Reconciliation could not be loaded.">{result.error}</ErrorNotice></>;
   const r = result.data;
   const mayReview = can(operator?.role, 'finance.review') && !operator?.preview;
   const name = unitNamer(r.units);
@@ -28,7 +28,7 @@ export default async function ReconciliationPage({ searchParams }: { searchParam
   const auto = r.proposals.filter((p) => p.autoApply);
   return (
     <>
-      <PageHeader eyebrow="Finance" title="Reconciliation" description={`Deterministic rules ${RECONCILIATION_RULES_VERSION}. Exact and high-confidence matches are recorded automatically on every run; medium ones wait here. Nothing fuzzy is ever recorded silently.`} actions={mayReview ? <RunReconciliationButton /> : undefined} />
+      <PageHeader eyebrow="Money · Setup" title="Bank matching" description={`Money in the bank, matched to what it pays for. Certain matches are made automatically on every run; likely ones wait here for a yes or no. Nothing uncertain is ever matched silently. (Rules ${RECONCILIATION_RULES_VERSION}.)`} actions={mayReview ? <RunReconciliationButton /> : undefined} />
       <div className="bc-figures" style={{ ['--cols' as string]: 4 }}>
         <PlainFigure label="Open facts (no cash)" value={String(r.open.length)} provenance="actual" note={<Money cents={r.open.reduce((s, t) => s + Math.abs(t.gross_cents), 0)} />} />
         <PlainFigure label="Unmatched money" value={String(r.payments.length)} provenance="actual" note={<Money cents={r.payments.reduce((s, p) => s + p.amount_cents, 0)} />} />
