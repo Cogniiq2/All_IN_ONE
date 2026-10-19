@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import type { CSSProperties } from 'react';
 import type { CalendarDto, CalendarReservationDto } from '@/lib/admin/dto';
 import { datesIn, isWeekend, place, windowOf } from '@/lib/admin/calendar';
 import { compactUnitName, formatIsoDate, formatRelative, formatStay, pluralNights, weekdayShort } from '@/lib/admin/format';
@@ -34,6 +34,11 @@ export function barKind(r: Pick<CalendarReservationDto, 'status' | 'kind' | 'occ
   if (p.tone === 'caution') return 'caution';
   if (p.tone === 'progress' || p.tone === 'positive') return 'held';
   return 'unknown';
+}
+
+/** The key the stay sheet knows a stay by — also its `?stay=` value. */
+export function stayKey(r: Pick<CalendarReservationDto, 'kind' | 'reference'>): string {
+  return `${r.kind === 'reservation' ? 'r' : 'b'}-${r.reference}`;
 }
 
 export function CalendarGrid({ data, density, unitFilter }: { data: CalendarDto; density: 14 | 31 | 62; unitFilter: string | null }) {
@@ -146,32 +151,21 @@ function UnitLane({
           );
           return (
             <span key={`${r.kind}-${r.reference}`} className="bc-bar-host" style={{ left: left(p.startCol, p.clippedStart), width: barWidth }}>
-              {/* A channel reservation has no BoLaGio record page, so it is not a link. */}
-              {r.href ? (
-                <Link
-                  href={r.href}
-                  className="bc-bar"
-                  data-kind={kind}
-                  data-clipped-start={p.clippedStart ? 'true' : undefined}
-                  data-clipped-end={p.clippedEnd ? 'true' : undefined}
-                  style={{ left: 0, width: '100%' }}
-                  aria-label={ariaLabel}
-                >
-                  {inner}
-                </Link>
-              ) : (
-                <span
-                  className="bc-bar"
-                  data-kind={kind}
-                  data-clipped-start={p.clippedStart ? 'true' : undefined}
-                  data-clipped-end={p.clippedEnd ? 'true' : undefined}
-                  style={{ left: 0, width: '100%' }}
-                  role="img"
-                  aria-label={ariaLabel}
-                >
-                  {inner}
-                </span>
-              )}
+              {/* A button: the calendar board opens the stay sheet for it (one listener for every bar). */}
+              <button
+                type="button"
+                className="bc-bar"
+                data-kind={kind}
+                data-stay={stayKey(r)}
+                data-channel={r.source}
+                data-clipped-start={p.clippedStart ? 'true' : undefined}
+                data-clipped-end={p.clippedEnd ? 'true' : undefined}
+                style={{ left: 0, width: '100%' }}
+                aria-label={`${ariaLabel}. Open details.`}
+                aria-haspopup="dialog"
+              >
+                {inner}
+              </button>
               <span className="bc-bar-pop" style={{ top: 'calc(var(--row) - 6px)', left: 0 }} aria-hidden="true">
                 <span className="flex items-center justify-between gap-3">
                   <span className="bc-ref">{r.reference}</span>
@@ -200,45 +194,32 @@ function UnitLane({
   );
 }
 
-export function CalendarLegend() {
+const LEGEND: Array<{ kind: BarKind | 'channel'; label: string; swatch: CSSProperties }> = [
+  { kind: 'channel_stay', label: 'Booked', swatch: { background: 'hsl(var(--bc-accent-wash))', borderColor: 'hsl(var(--bc-accent) / 0.5)' } },
+  { kind: 'confirmed', label: 'Direct booking', swatch: { background: 'hsl(var(--bc-ink))' } },
+  { kind: 'held', label: 'Held / in payment', swatch: { background: 'hsl(var(--bc-progress-soft))', borderColor: 'hsl(var(--bc-progress) / 0.45)' } },
+  { kind: 'caution', label: 'Unpaid, still held', swatch: { background: 'hsl(var(--bc-caution-soft))', borderColor: 'hsl(var(--bc-caution) / 0.4)' } },
+  { kind: 'paid_unfinalized', label: 'Paid, not finalized', swatch: { background: 'hsl(var(--bc-critical-soft))', borderColor: 'hsl(var(--bc-critical) / 0.55)', borderStyle: 'dashed' } },
+  { kind: 'critical', label: 'Needs a person', swatch: { background: 'hsl(var(--bc-critical-soft))', borderColor: 'hsl(var(--bc-critical) / 0.55)' } },
+  { kind: 'channel_blocked', label: 'Blocked (owner, maintenance)', swatch: { background: 'hsl(var(--bc-neutral-soft))', borderColor: 'hsl(var(--bc-neutral) / 0.55)' } },
+  { kind: 'channel_cancelled', label: 'Cancelled', swatch: { background: 'hsl(var(--bc-surface-2))', borderColor: 'hsl(var(--bc-line-strong))', borderStyle: 'dashed', opacity: 0.62 } },
+  { kind: 'channel', label: 'Closed at the channel, no booking', swatch: { background: 'repeating-linear-gradient(135deg, hsl(var(--bc-surface-2)) 0 4px, hsl(var(--bc-line)) 4px 5px)', borderColor: 'hsl(var(--bc-line-strong))' } },
+];
+
+/** Only what is on screen: a legend of nine kinds when two are showing is noise. */
+export function CalendarLegend({ data }: { data: CalendarDto }) {
+  const present = new Set<string>(data.reservations.map((r) => barKind(r)));
+  if (data.closures.length > 0) present.add('channel');
+  const items = LEGEND.filter((l) => present.has(l.kind));
+  if (items.length === 0) return null;
   return (
     <div className="bc-legend" aria-label="Legend">
-      <span>
-        <i style={{ background: 'hsl(var(--bc-ink))' }} />
-        Confirmed
-      </span>
-      <span>
-        <i style={{ background: 'hsl(var(--bc-progress-soft))', borderColor: 'hsl(var(--bc-progress) / 0.45)' }} />
-        Held / in payment
-      </span>
-      <span>
-        <i style={{ background: 'hsl(var(--bc-caution-soft))', borderColor: 'hsl(var(--bc-caution) / 0.4)' }} />
-        Unpaid, still held
-      </span>
-      <span>
-        <i style={{ background: 'hsl(var(--bc-critical-soft))', borderColor: 'hsl(var(--bc-critical) / 0.55)', borderStyle: 'dashed' }} />
-        Paid, not finalized
-      </span>
-      <span>
-        <i style={{ background: 'hsl(var(--bc-critical-soft))', borderColor: 'hsl(var(--bc-critical) / 0.55)' }} />
-        Needs a person
-      </span>
-      <span>
-        <i style={{ background: 'hsl(var(--bc-accent-wash))', borderColor: 'hsl(var(--bc-accent) / 0.5)' }} />
-        Channel reservation
-      </span>
-      <span>
-        <i style={{ background: 'hsl(var(--bc-neutral-soft))', borderColor: 'hsl(var(--bc-neutral) / 0.55)' }} />
-        Blocked at channel (owner, maintenance)
-      </span>
-      <span>
-        <i style={{ background: 'hsl(var(--bc-surface-2))', borderColor: 'hsl(var(--bc-line-strong))', borderStyle: 'dashed', opacity: 0.62 }} />
-        Channel reservation, cancelled
-      </span>
-      <span>
-        <i style={{ background: 'repeating-linear-gradient(135deg, hsl(var(--bc-surface-2)) 0 4px, hsl(var(--bc-line)) 4px 5px)', borderColor: 'hsl(var(--bc-line-strong))' }} />
-        Closed at channel, no reservation
-      </span>
+      {items.map((l) => (
+        <span key={l.kind}>
+          <i style={l.swatch} />
+          {l.label}
+        </span>
+      ))}
     </div>
   );
 }

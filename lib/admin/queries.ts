@@ -336,8 +336,8 @@ function toCalendarReservation(dto: ReservationDto): CalendarDto['reservations']
   return {
     reference: dto.externalBookingId,
     kind: 'reservation',
-    // A channel reservation is not a BoLaGio record; there is nothing to open.
-    href: null,
+    reservationId: dto.id,
+    href: `/admin/reservations/${dto.id}`,
     unitSlug: dto.unitSlug,
     checkIn: dto.checkIn,
     checkOut: dto.checkOut,

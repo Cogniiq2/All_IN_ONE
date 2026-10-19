@@ -319,3 +319,16 @@ Costs (Expenses, Receipts & documents), Tax (VAT return, Company taxes, For the 
 (Profit & loss, Cash flow, By apartment, All entries), Setup (Uploads, Bank matching, Settings). Routes
 are unchanged; every existing link works. Channel reservations live only in Reservations; the System
 health list lives only on System.
+
+## Calendar (19 Oct 2026)
+
+`/admin/calendar` opens on the window's month title with Today / ← → and the window range, the views
+(2 weeks · Month · 2 months) and the apartment filter, then the window in five numbers (occupancy, nights
+booked and free, arrivals, departures, in house tonight). Every bar — and every line of the phone agenda —
+is a button that opens the **stay sheet** (`components/admin/calendar/stay-sheet.tsx`): moment (in house,
+arrives in n days…), check-in → nights → check-out, then Stay (apartment, party, bedrooms, the stays before
+and after with same-day changeovers), Guest (name, country, email/phone when the channel passed them),
+Money (finance roles only: guest paid, VAT, commission, what stays — the stay-tax engine) and Booking
+(channel, numbers with copy, booked, last update). Full data comes from the server action
+`lib/admin/stay-sheet.ts` (operator session required; read-only). ← / → walk the stays, Esc closes, and
+`?stay=` makes an open stay a link. The legend lists only the kinds on screen.

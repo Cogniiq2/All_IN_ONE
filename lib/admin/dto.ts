@@ -273,7 +273,9 @@ export interface CalendarReservationDto {
   /** A BLG reference for a direct booking; the provider booking id otherwise. */
   reference: string;
   kind: 'intent' | 'reservation';
-  /** The record page, or null when there is none — a channel reservation has no BoLaGio record. */
+  /** The imported reservation's id (channel stays) — what the stay sheet opens. */
+  reservationId?: string;
+  /** The record page: a direct booking's, or the imported reservation's. */
   href: string | null;
   unitSlug: string;
   checkIn: IsoDate;

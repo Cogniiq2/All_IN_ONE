@@ -1,8 +1,8 @@
-import Link from 'next/link';
 import type { CalendarDto } from '@/lib/admin/dto';
 import { datesIn, relationOn, windowOf } from '@/lib/admin/calendar';
 import { formatIsoDate, weekdayShort } from '@/lib/admin/format';
 import { BookingStateBadge } from '@/components/admin/primitives';
+import { stayKey } from '@/components/admin/calendar/calendar-grid';
 import { reservationClassPresentation, sourcePresentation } from '@/lib/admin/presentation';
 
 /**
@@ -41,7 +41,16 @@ export function Agenda({ data, days, unitFilter }: { data: CalendarDto; days: nu
               ))}
               {inHouse.length > 0 && (
                 <span className="bc-meta">
-                  In house: {inHouse.map((r) => `${r.guestLabel ?? r.reference} (${unitName(r.unitSlug)})`).join(', ')}
+                  In house:{' '}
+                  {inHouse.map((r, i) => (
+                    <span key={stayKey(r)}>
+                      {i > 0 ? ', ' : ''}
+                      <button type="button" className="bc-agenda-inline" data-stay={stayKey(r)} aria-haspopup="dialog">
+                        {r.guestLabel ?? r.reference}
+                      </button>{' '}
+                      ({unitName(r.unitSlug)})
+                    </span>
+                  ))}
                 </span>
               )}
               {closed.length > 0 && <span className="bc-meta">Closed at channel: {closed.map((c) => unitName(c.unitSlug)).join(', ')}</span>}
@@ -78,12 +87,10 @@ function Line({ label, r, unit }: { label: string; r: CalendarDto['reservations'
       )}
     </>
   );
-  // A channel reservation is not a BoLaGio record; there is nowhere to go.
-  return r.href ? (
-    <Link href={r.href} className="bc-agenda-line">
+  // Opens the same stay sheet as a bar on the grid.
+  return (
+    <button type="button" className="bc-agenda-line" data-stay={stayKey(r)} aria-haspopup="dialog">
       {body}
-    </Link>
-  ) : (
-    <span className="bc-agenda-line">{body}</span>
+    </button>
   );
 }
