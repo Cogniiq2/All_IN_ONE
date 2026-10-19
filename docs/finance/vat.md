@@ -63,3 +63,34 @@ gate requires the value to be decided (`false` for regular taxation). Not decide
 - Filing frequency and Dauerfristverlängerung for the current year.
 - Treatment of Booking.com commission invoices (Booking.com B.V., NL): reverse charge is the
   suggestion; the counterparty rule is seeded with it but not auto-verified.
+
+## The VAT return from the stays (since 19 Oct 2026)
+
+`lib/finance/tax/stay-tax.ts` (`STAY_TAX_RULES_VERSION`) computes, for every reservation, the German VAT
+consequences of the stay — and `buildVatReturn` turns the stays whose VAT month falls in a period into the
+boxes of the Umsatzsteuer-Voranmeldung. The same function feeds the VAT page (`/admin/finance/vat`), the
+"Money & tax" section of every reservation page, the recorded `system_estimate` and the posting of
+Booking.com statement lines, so the four cannot disagree.
+
+| Step | Rule | Certainty |
+|---|---|---|
+| What was sold | ≤ 6 months: short-term accommodation, 7 % (§ 12 Abs. 2 Nr. 11 S. 1); > 6 months: exempt long-term letting (§ 4 Nr. 12 S. 1 a, S. 2; Abschn. 4.12.9 UStAE) | law |
+| Taxable amount | the full price the guest paid; the platform's commission never reduces it (§ 10 Abs. 1 S. 2) | law |
+| Split | net = gross ÷ 1.07, rounded half-up; VAT = gross − net | law |
+| Period | Sollversteuerung: the month of check-out (§ 13 Abs. 1 Nr. 1 a S. 1) | law |
+| Commission | Booking.com B.V. (NL): reverse charge — 19 % owed (Kz 46/47) and deducted (Kz 67); not deductible against an exempt stay (§ 15 Abs. 2 Nr. 1) | law |
+| Payment fee | reverse charge (default) or exempt (§ 4 Nr. 8) — policy `ota_payment_fee_vat`; costs no VAT either way on a taxable stay | adviser |
+| Cancellation charge | excluded and listed until decided; policy `cancellation_charge_vat=taxable` taxes it at 7 % | adviser |
+| Prepayment (Mindest-Ist) | not applied; shown on the VAT page as an adviser question | adviser |
+
+Sources, strongest first: the Booking.com statement line → Beds24 (`price`; `commission` since Booking.com
+began sending it on 17 Oct 2026) → "not known yet" (an open question, never an estimate). The books add only
+what is not a stay: purchases (Kz 66) and other sales such as the minibar (Kz 81 / other Kz 86) —
+accommodation and the platforms' reverse charge are never taken from the books, so nothing counts twice.
+
+ELSTER takes bases in whole euros and computes the tax on Kz 81/86 itself; both the exact sum and the
+form figure are kept and shown, so a few cents' difference is explained, not mysterious.
+
+Booking.com statement lines are now posted by the same engine: stay at `DE_ACCOMMODATION_REDUCED` (net/VAT
+split), commission and fee at `DE_REVERSE_CHARGE`, all `suggested` (a person confirms). Cancellation charges
+and long-term lettings remain on `DE_REVIEW_REQUIRED`.

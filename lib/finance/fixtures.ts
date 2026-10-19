@@ -31,7 +31,7 @@ import { TAX_RATE_SEED } from '@/lib/finance/tax/rates';
 import type {
   AccountRow, AssetRow, CashMonthlyRow, CounterpartyRow, DocumentLinkRow, DocumentRow, ExceptionCountsRow, ExportRow, FinanceRowSource, ImportBatchRow, ImportRowRow, OtaPayoutRow, ReservationCandidate, SettlementRow,
   InvoiceLineRow, InvoiceRow, LineRow, MinibarMovementRow, MinibarProductRow, MinibarStockRow, OverrideRow, PaymentRow, PeriodRow, PlMonthlyRow, PolicyRow, ReconciliationRow,
-  ReserveRow, StayRow, TaxAdjustmentRow, TaxEstimateRow, TaxNoticeRow, TaxPaymentRow, TaxPeriodRow, TransactionQuery, TransactionRow, TurnoverCostRow, UnitMonthlyRow,
+  ReserveRow, StayRow, StayTaxReservationRow, TaxAdjustmentRow, TaxEstimateRow, TaxNoticeRow, TaxPaymentRow, TaxPeriodRow, TransactionQuery, TransactionRow, TurnoverCostRow, UnitMonthlyRow,
 } from '@/lib/finance/rows';
 import type { VatMonthlyRow } from '@/lib/finance/tax/vat';
 
@@ -636,6 +636,25 @@ const RESERVATION_CANDIDATES: ReservationCandidate[] = SETTLEMENTS.filter((st) =
     check_in: st.check_in, check_out: st.check_out, currency: 'EUR', total_amount_cents: st.local_gross_cents ?? st.gross_cents,
   })));
 
+/**
+ * Reservations for the stay-tax engine: every settled one above, plus a stay
+ * whose commission came from Beds24, one not ended yet, a cancellation and a
+ * stay with no commission known — the shapes the engine distinguishes.
+ */
+const STAY_TAX_RESERVATIONS: StayTaxReservationRow[] = [
+  ...RESERVATION_CANDIDATES.filter((r, i, all) => all.findIndex((o) => o.channel_reference === r.channel_reference) === i).map((r) => ({
+    id: r.id, channel_reference: r.channel_reference, external_booking_id: `9${r.id.replace(/\D/g, '').padStart(7, '0')}`, unit_id: r.unit_id, source: r.source, status_class: r.status_class,
+    check_in: r.check_in, check_out: r.check_out, currency: r.currency, total_amount_cents: r.total_amount_cents, commission: null,
+  })),
+  { id: 'res-tax-1', channel_reference: '5500000101', external_booking_id: '94819573', unit_id: 'u-s1', source: 'booking_com', status_class: 'active', check_in: addDays(berlinToday(), -6), check_out: addDays(berlinToday(), -2), currency: 'EUR', total_amount_cents: 25399, commission: '41.66' },
+  { id: 'res-tax-2', channel_reference: '5500000102', external_booking_id: '94863677', unit_id: 'u-s2', source: 'booking_com', status_class: 'active', check_in: addDays(berlinToday(), 9), check_out: addDays(berlinToday(), 12), currency: 'EUR', total_amount_cents: 46316, commission: '75.95' },
+  { id: 'res-tax-3', channel_reference: '5500000103', external_booking_id: '94556590', unit_id: 'u-s1', source: 'booking_com', status_class: 'active', check_in: addDays(berlinToday(), -12), check_out: addDays(berlinToday(), -8), currency: 'EUR', total_amount_cents: 48500, commission: '0' },
+  // The operations fixtures' r-1 (in house, commission from Beds24) and r-3 (cancelled), so a reservation page shows its calculation.
+  { id: 'r-1', channel_reference: '4123456789', external_booking_id: '90000001', unit_id: 'u-s1', source: 'booking_com', status_class: 'active', check_in: addDays(berlinToday(), -2), check_out: addDays(berlinToday(), 3), currency: 'EUR', total_amount_cents: 162000, commission: '265.68' },
+  { id: 'r-3', channel_reference: '4987654321', external_booking_id: '90000003', unit_id: 'u-s1', source: 'booking_com', status_class: 'cancelled', check_in: addDays(berlinToday(), 8), check_out: addDays(berlinToday(), 11), currency: 'EUR', total_amount_cents: 97200, commission: null },
+  { id: 'res-tax-4', channel_reference: null, external_booking_id: '94600216', unit_id: 'u-s1', source: 'direct', status_class: 'cancelled', check_in: addDays(berlinToday(), 40), check_out: addDays(berlinToday(), 42), currency: 'EUR', total_amount_cents: 30000, commission: null },
+];
+
 export function fixtureFinanceSource(): FinanceRowSource {
   const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
   return {
@@ -722,6 +741,9 @@ export function fixtureFinanceSource(): FinanceRowSource {
       return clone(rows);
     },
     async otaPayouts() { return clone(OTA_PAYOUTS); },
+    async stayTaxReservations(from, to) {
+      return clone(STAY_TAX_RESERVATIONS.filter((r) => r.check_out >= from && r.check_out < to));
+    },
     async reservationsByChannelReference(refs) { return clone(RESERVATION_CANDIDATES.filter((r) => refs.includes(r.channel_reference ?? ''))); },
     async ingestionSignals() { return [{ signal: 'booking_ingestion.success', observed_at: ts(0, 6), detail: '7 stays, 0 new' }, { signal: 'import.booking_com_reservations.success', observed_at: ts(-29), detail: 'reservations-2026-08.csv' }, { signal: 'import.paypal_activity.success', observed_at: ts(-1), detail: '11 rows' }, { signal: 'reconciliation.success', observed_at: ts(0, 6), detail: '2 proposals' }]; },
     async pipelineStatus() {

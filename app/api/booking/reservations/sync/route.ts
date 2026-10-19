@@ -107,6 +107,8 @@ export async function POST(request: NextRequest) {
           resumeFrom: report.resumeFrom,
           resumeKey: report.resumeKey,
           failedUnits: report.failedUnits,
+          failureReason: report.failureReason,
+          retried: report.retried,
           subrequests: report.subrequests,
           budget: report.budget,
         },

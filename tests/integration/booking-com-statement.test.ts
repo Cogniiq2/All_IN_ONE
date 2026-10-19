@@ -129,13 +129,17 @@ describe('commit', () => {
     expect(h.sql(`select match_candidates from bolagio_finance_ota_settlements where booking_number = '9990000004'`)).toBe('2');
     expect(h.sql(`select reservation_id is null from bolagio_finance_ota_settlements where booking_number = '9990000003'`)).toBe('t');
 
-    // Ledger: statement gross, commission and fee — each once, all parked for VAT review.
+    // Ledger: statement gross, commission and fee — each once, taxed by the stay-tax engine.
     expect(sum('gross_cents', 'bolagio_finance_transactions', `kind = 'revenue' and source_system = 'booking_com_statement'`)).toBe(249216);
     expect(sum('gross_cents', 'bolagio_finance_transactions', `kind = 'commission' and source_system = 'booking_com_statement'`)).toBe(35896);
     expect(sum('gross_cents', 'bolagio_finance_transactions', `kind = 'fee' and source_system = 'booking_com_statement'`)).toBe(3489);
     expect(count('bolagio_finance_transactions')).toBe(15);
-    expect(h.sql(`select distinct tax_code from bolagio_finance_transaction_lines`)).toBe('DE_REVIEW_REQUIRED');
-    expect(h.sql(`select distinct classification from bolagio_finance_transaction_lines`)).toBe('needs_review');
+    // Every stay at 7 % on the whole guest price; commission and fee under reverse charge (§ 13b).
+    expect(h.sql(`select string_agg(distinct tax_code, ',' order by tax_code) from bolagio_finance_transaction_lines`)).toBe('DE_ACCOMMODATION_REDUCED,DE_REVERSE_CHARGE');
+    expect(h.sql(`select distinct classification from bolagio_finance_transaction_lines`)).toBe('suggested');
+    expect(sum('vat_cents', 'bolagio_finance_transaction_lines', `tax_code = 'DE_ACCOMMODATION_REDUCED'`)).toBe(16304);
+    expect(sum('net_cents + vat_cents', 'bolagio_finance_transaction_lines', `tax_code = 'DE_ACCOMMODATION_REDUCED'`)).toBe(249216);
+    expect(sum('reverse_charge_vat_cents', 'bolagio_finance_transaction_lines', `tax_code = 'DE_REVERSE_CHARGE'`)).toBe(7484);
     expect(h.sql(`select distinct payment_state || '/' || reconciliation_state from bolagio_finance_transactions`)).toBe('not_applicable/not_applicable');
     // No cash fact: the payout is recorded once, from the bank.
     expect(count('bolagio_finance_payments')).toBe(0);

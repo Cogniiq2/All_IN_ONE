@@ -102,6 +102,29 @@ export interface ReservationSyncReport {
   budget: number;
   /** Units with a failed task in this run, comma-separated slugs ('' when none). */
   failedUnits: string;
+  /** Why the first failed task failed, in a few words and without any credential ('' when none). */
+  failureReason: string;
+  /** Provider reads that failed once and succeeded on the immediate retry. */
+  retried: number;
+}
+
+/**
+ * A failure as a short, safe phrase for the run record and the dashboard:
+ * an HTTP status when there is one, else the error's first words. Anything
+ * shaped like a token is cut out, so no credential ever reaches a row.
+ */
+export function syncFailureReason(cause: unknown): string {
+  const c = cause as { status?: unknown; statusCode?: unknown; name?: unknown; message?: unknown } | null;
+  const status = Number(c?.status ?? c?.statusCode);
+  const message = typeof c?.message === 'string' ? c.message : String(cause ?? 'unknown error');
+  const fromText = /\b(4\d\d|5\d\d)\b/.exec(message)?.[1];
+  const code = Number.isFinite(status) && status >= 400 ? status : fromText ? Number(fromText) : null;
+  const words = message.replace(/[A-Za-z0-9_\-.]{24,}/g, '…').replace(/\s+/g, ' ').trim().slice(0, 120);
+  if (code === 429) return 'Beds24 rate limit (HTTP 429)';
+  if (code !== null && code >= 500) return `Beds24 server error (HTTP ${code})`;
+  if (code === 401 || code === 403) return `Beds24 refused the credentials (HTTP ${code})`;
+  if (/abort|timeout|timed out/i.test(message)) return 'Beds24 did not answer in time';
+  return code !== null ? `Beds24 HTTP ${code}: ${words}` : words || 'unknown error';
 }
 
 export interface ReservationSyncOptions {
@@ -224,7 +247,7 @@ export async function syncReservations(
   const report: ReservationSyncReport = {
     fetched: 0, inserted: 0, updated: 0, skipped: 0, malformed: 0, failed: 0,
     units: units.length, requests: 0, windowFrom: from, windowTo: to, truncated: false,
-    tasks: tasks.length, tasksDone: 0, tasksFailed: 0, tasksRemaining: 0, cycleComplete: false, cursor, resumeFrom: '', resumeKey: '', subrequests: 0, budget, failedUnits: '',
+    tasks: tasks.length, tasksDone: 0, tasksFailed: 0, tasksRemaining: 0, cycleComplete: false, cursor, resumeFrom: '', resumeKey: '', subrequests: 0, budget, failedUnits: '', failureReason: '', retried: 0,
   };
   const failedUnits = new Set<string>();
   const done = new Set<string>();
@@ -235,8 +258,8 @@ export async function syncReservations(
     if (left() < 3) return 'interrupted';
     let read;
     const maxPages = Math.min(READER_PAGE_CAP, left() - 2);
-    try {
-      read = await readReservations({
+    const readOnce = () =>
+      readReservations({
         externalPropertyId: String(task.unit.providerRef!.externalPropertyId),
         externalRoomId: String(task.unit.providerRef!.externalRoomId),
         arrivalFrom: task.from,
@@ -245,11 +268,24 @@ export async function syncReservations(
         maxPages,
         quiet: true,
       });
+    try {
+      try {
+        read = await readOnce();
+      } catch (first) {
+        // One immediate retry when the budget allows: about one run in ten
+        // met a passing refusal (rate limit or timeout) that the next hour
+        // always cleared. A refused read is charged as three either way.
+        spent += 3;
+        if (left() < 6) throw first;
+        read = await readOnce();
+        report.retried += 1;
+      }
     } catch (cause) {
       // A refused read may have been a 401, a token refresh and a retry:
       // charged as three, so a provider refusing every call cannot overspend.
       spent += 3;
       logger.error('reservation.sync', cause, { unitSlug: task.unit.slug, from: task.from, to: task.to });
+      if (!report.failureReason) report.failureReason = syncFailureReason(cause);
       failedUnits.add(task.unit.slug);
       return 'failed';
     }
@@ -339,7 +375,7 @@ export async function syncReservations(
 
   // ONE heartbeat for the pass instead of one per provider call.
   const healthy = report.tasksFailed === 0 && report.failed === 0;
-  observeIntegration('beds24', healthy ? 'last_success' : 'last_failure', healthy ? `reservation sync: ${report.tasksDone} windows` : `reservation sync: ${report.tasksFailed} window(s) failed (${report.failedUnits || 'rows'})`);
+  observeIntegration('beds24', healthy ? 'last_success' : 'last_failure', healthy ? `reservation sync: ${report.tasksDone} windows` : `reservation sync: ${report.tasksFailed} window(s) failed (${report.failedUnits || 'rows'})${report.failureReason ? ` — ${report.failureReason}` : ''}`);
   spent += 1;
   report.subrequests = spent;
   return report;

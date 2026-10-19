@@ -24,6 +24,8 @@ import { errorMessage } from '@/lib/finance/errors';
 import type { FinanceConfigSnapshot } from '@/lib/finance/config-shape';
 import { addDays, berlinToday, monthKey, monthKeysBetween, mtd, periodLabel, periodRange, yearOf, yearRange, ytd, type DateRange, type IsoDate } from '@/lib/finance/periods';
 import { computeVatPosition, type VatPosition } from '@/lib/finance/tax/vat';
+import { buildVatReturn, computeStayTax, type StayTax, type StayTaxPolicy, type VatReturn } from '@/lib/finance/tax/stay-tax';
+import { otherVatFromLedger, stayTaxInputsFrom, stayTaxPolicyFrom } from '@/lib/finance/tax/stay-tax-inputs';
 import { estimateCompanyTaxes, type CompanyTaxEstimate, type TaxAdjustment } from '@/lib/finance/tax/company';
 import { computeFreeCash, computeReserve, governingStage, type FreeCashReport, type ReserveReport, type TaxLiabilityInput, type TaxStage } from '@/lib/finance/tax/reserve';
 import { calculatedDeadlines, mergeDeadlines, urgencyOf, vatPeriodKeyFor, vatPeriodKeysBetween, type Deadline } from '@/lib/finance/tax/calendar';
@@ -733,10 +735,98 @@ export async function loadFinanceHealth(now: Date = new Date()): Promise<Finance
             ...pending,
           ].map((x, i) => (i === 0 ? x.charAt(0).toUpperCase() + x.slice(1) : x)).join('; ') + '. Do not rely on the figures until this clears.'
         : status === 'attention'
-          ? pending.length > 0 ? `${pending.map((x, i) => (i === 0 ? x.charAt(0).toUpperCase() + x.slice(1) : x)).join('; ')}. Everything else is current.` : 'Exceptions wait in the Finance Inbox.'
+          ? pending.length > 0 ? `${pending.map((x, i) => (i === 0 ? x.charAt(0).toUpperCase() + x.slice(1) : x)).join('; ')}. Everything else is current.` : 'Exceptions wait in Money → To do.'
           : 'Everything reconciled; no open exceptions.';
     return { status, summary, facts };
   } catch (cause) {
     return { status: cause instanceof AdminUnconfiguredError ? 'unavailable' : 'degraded', summary: describe(cause), facts: [] };
   }
+}
+
+/* ── The VAT return, from the stays ─────────────────────────────────── */
+
+export interface VatReturnScreen {
+  periodKey: string;
+  label: string;
+  /** Every period from the first stay to the current one, newest first. */
+  keys: string[];
+  frequency: 'monthly' | 'quarterly' | 'annual_only';
+  vatReturn: VatReturn;
+  policy: StayTaxPolicy;
+  decided: { smallBusiness: boolean; paymentFee: boolean; cancellationCharge: boolean };
+  deadline: Deadline | null;
+  sources: {
+    stays: number;
+    fromStatement: number;
+    commissionFromBeds24: number;
+    commissionUnknown: number;
+    /** Booking.com statement files checked but never imported. */
+    statementsWaiting: Array<{ id: string; filename: string; createdAt: string; validRows: number }>;
+    /** Statement lines in the period that match no reservation: money not attached to a stay. */
+    unmatchedSettlements: number;
+  };
+}
+
+/**
+ * The Umsatzsteuer-Voranmeldung for one period, built from the stays that
+ * ended in it (Sollversteuerung) plus what the books add — purchases and
+ * other sales. Pure computation over read-only data; nothing is written.
+ */
+export async function loadVatReturn(periodKey: string | null, today: IsoDate = berlinToday()): Promise<QueryResult<VatReturnScreen>> {
+  return guard(async () => {
+    const source = await financeRowSource();
+    const policyRows = await source.policy();
+    const calendar = calendarPolicyFrom(policyRows, today);
+    const key = periodKey && /^\d{4}(-Q[1-4]|-\d{2})?$/.test(periodKey) ? periodKey : vatPeriodKeyFor(today, calendar);
+    const range = periodRange(key);
+    const [reservations, settlements, units, ledger, batches] = await Promise.all([
+      source.stayTaxReservations(range.from, range.to),
+      source.otaSettlements({ from: range.from, to: range.to, basis: 'checkout' }),
+      source.units(),
+      source.vatMonthly(range.from, range.to),
+      source.importBatches(50),
+    ]);
+    const { policy, decided } = stayTaxPolicyFrom(policyRows, today);
+    const { inputs, unmatchedSettlements } = stayTaxInputsFrom(reservations, settlements, units);
+    const stays = inputs.map((i) => computeStayTax(i, today, policy));
+    const vatReturn = buildVatReturn(key, stays, otherVatFromLedger(ledger));
+    const firstMonth = '2026-09';
+    const keys = vatPeriodKeysBetween(`${firstMonth}-01`, addDays(today, 1), calendar).reverse();
+    if (!keys.includes(key)) keys.unshift(key);
+    const deadline = calculatedDeadlines(yearOf(range.from), calendar).find((d) => d.kind === 'vat_advance_return' && d.periodKey === key) ?? null;
+    return {
+      periodKey: key,
+      label: periodLabel(key),
+      keys,
+      frequency: calendar.vatFilingFrequency,
+      vatReturn,
+      policy,
+      decided,
+      deadline,
+      sources: {
+        stays: stays.length,
+        fromStatement: inputs.filter((i) => i.settlement).length,
+        commissionFromBeds24: stays.filter((t) => t.commission?.source === 'beds24').length,
+        commissionUnknown: stays.filter((t) => t.questions.some((q) => q.code === 'commission_unknown')).length,
+        statementsWaiting: batches
+          .filter((b) => b.source_type === 'booking_com_finance_statement' && b.status === 'validated' && !b.imported_at && b.valid_rows > 0)
+          .map((b) => ({ id: b.id, filename: b.filename, createdAt: b.created_at, validRows: b.valid_rows })),
+        unmatchedSettlements: unmatchedSettlements.length,
+      },
+    };
+  });
+}
+
+/** One reservation's tax calculation, for its detail page. Null when the reservation is unknown to finance. */
+export async function loadStayTax(reservationId: string, today: IsoDate = berlinToday()): Promise<QueryResult<{ tax: StayTax; policy: StayTaxPolicy } | null>> {
+  return guard(async () => {
+    const source = await financeRowSource();
+    const [policyRows, reservations, units] = await Promise.all([source.policy(), source.stayTaxReservations('2000-01-01', '9999-12-31'), source.units()]);
+    const reservation = reservations.find((r) => r.id === reservationId);
+    if (!reservation) return null;
+    const settlements = await source.otaSettlements({ from: reservation.check_out, to: addDays(reservation.check_out, 1), basis: 'checkout' });
+    const { policy } = stayTaxPolicyFrom(policyRows, today);
+    const { inputs } = stayTaxInputsFrom([reservation], settlements, units);
+    return { tax: computeStayTax(inputs[0], today, policy), policy };
+  });
 }

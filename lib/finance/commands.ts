@@ -30,7 +30,9 @@ import { calendarPolicyFrom } from '@/lib/finance/config';
 import { periodRange, yearRange, berlinToday, type IsoDate } from '@/lib/finance/periods';
 import { isMissingRelation, supabaseFinanceSource } from '@/lib/finance/source-supabase';
 import type { CounterpartyRow, TaxRateRowDb } from '@/lib/finance/rows';
-import { fromNet, splitGross } from '@/lib/finance/money';
+import { fromNet, splitGross, vatFromNet } from '@/lib/finance/money';
+import { buildVatReturn, computeStayTax, vatReturnBasis } from '@/lib/finance/tax/stay-tax';
+import { otherVatFromLedger, stayTaxInputsFrom, stayTaxPolicyFrom } from '@/lib/finance/tax/stay-tax-inputs';
 import { REVIEW_REQUIRED_CODE, requireTaxCode } from '@/lib/finance/tax-codes';
 import { allocateInvoiceNumber } from '@/lib/invoicing/numbering';
 import { FinanceCommandError, asFinanceError, errorMessage } from '@/lib/finance/errors';
@@ -716,7 +718,8 @@ async function postStagedRow(row: Exclude<StagedRow, StagedOtaSettlement>, batch
 //      answers created / duplicate / amendment
 //   2. for a created, current line: up to three LEDGER transactions —
 //      revenue (statement gross), commission, payment-service fee — each
-//      under its own source key, VAT parked on DE_REVIEW_REQUIRED
+//      under its own source key, taxed by the stay-tax engine (7 % stay,
+//      § 13b commission and fee); what it cannot decide stays parked
 // and never a payment: the payout's cash is the bank's fact.
 
 export const SETTLEMENT_SOURCE_SYSTEM = 'booking_com_statement';
@@ -775,11 +778,12 @@ async function settlementById(id: string): Promise<SettlementRow | null> {
  * amendment (different content) posts under different keys after the
  * original's facts were reversed.
  *
- * VAT is NOT decided here. Every line is posted on DE_REVIEW_REQUIRED
- * (rate 0, counted in no VAT figure) and `needs_review`: the statement says
- * what was charged, not how it is taxed — accommodation vs. cleaning, a
- * cancellation charge, and the input-VAT treatment of Booking.com's
- * commission and payment fee are the adviser's decisions.
+ * VAT is decided by `computeStayTax` (lib/finance/tax/stay-tax.ts) — the
+ * same function as the VAT return: a short stay at 7 % on the whole price,
+ * commission and payment fee under reverse charge (the fee per the company
+ * setting). Lines are `suggested`, never `reviewed`: a person confirms. A
+ * cancellation charge (unless the company setting says taxable) and a
+ * long-term letting stay on DE_REVIEW_REQUIRED for the adviser.
  */
 export async function postSettlementLedger(settlementId: string, actor: string, registry?: CounterpartyRow[]): Promise<{ revenueTransactionId: string | null; state: string }> {
   const s = await settlementById(settlementId);
@@ -795,49 +799,86 @@ export async function postSettlementLedger(settlementId: string, actor: string, 
     await db.from('bolagio_finance_ota_settlements').update({ ledger_state: 'legacy_posted' }).eq('id', s.id).throwOnError();
     return { revenueTransactionId: null, state: 'legacy_posted' };
   }
-  const reg = registry ?? await supabaseFinanceSource().counterparties();
+  const finance = supabaseFinanceSource();
+  const [reg, policyRows] = await Promise.all([registry ? Promise.resolve(registry) : finance.counterparties(), finance.policy()]);
   const bcom = reg.find((c) => c.name.toLowerCase().includes('booking.com'));
   const key = `${s.identity_key}#${s.content_sha256.slice(0, 16)}`;
   const unitId = s.unit_id;
-  const cancelled = s.reservation_status !== 'ok';
   const stay = `${s.booking_number} · ${s.check_in} – ${s.check_out}`;
   const unitNote = unitId ? null : 'No local reservation matched this Booking.com number when it was imported; the unit is unallocated.';
-  const vatNote = 'VAT treatment not yet classified: the Booking.com statement states amounts, not tax. Classify once the adviser has confirmed the rule.';
+
+  // The SAME engine that builds the VAT return decides the tax of every
+  // line, so the books and the return cannot disagree. What it cannot
+  // decide (a cancellation charge, a long-term letting) stays parked.
+  const { policy } = stayTaxPolicyFrom(policyRows, berlinToday());
+  const tax = computeStayTax(
+    {
+      reservationId: s.reservation_id ?? s.id, reference: s.booking_number, unitName: 'the apartment', source: 'booking_com',
+      statusClass: s.reservation_status === 'ok' ? 'active' : 'cancelled', checkIn: s.check_in, checkOut: s.check_out,
+      nights: Math.round((Date.parse(`${s.check_out}T00:00:00Z`) - Date.parse(`${s.check_in}T00:00:00Z`)) / 86_400_000), currency: s.currency,
+      beds24GrossCents: null, beds24CommissionCents: null,
+      settlement: { payoutId: s.payout_id, payoutDate: s.payout_date, grossCents: s.gross_cents, commissionCents: s.commission_cents, paymentFeeCents: s.payment_service_fee_cents, netCents: s.net_cents, reservationStatus: s.reservation_status },
+    },
+    berlinToday(),
+    policy
+  );
+  const classified = tax.kind === 'short_stay' || (tax.kind === 'cancellation_charge' && policy.cancellationCharge === 'taxable');
+  const deductible = classified && policy.smallBusinessScheme !== true;
+  const why = `Classified by ${tax.rulesVersion}; the calculation is on the reservation page.`;
+  const parked = tax.kind === 'long_stay'
+    ? 'A stay longer than six months is exempt long-term letting (§ 4 Nr. 12 UStG); parked for the adviser to post.'
+    : tax.kind === 'cancellation_charge' ? 'A cancellation charge: taxable consideration or untaxed compensation is the adviser\'s decision.'
+      : 'Tax treatment not determined.';
   const base = {
     service_from: s.check_in, service_to: s.check_out, currency: s.currency, channel: 'booking_com', booking_reference: s.booking_number, unit_id: unitId,
-    source_type: 'import', source_system: SETTLEMENT_SOURCE_SYSTEM, import_batch_id: s.import_batch_id, review_state: 'needs_review',
+    source_type: 'import', source_system: SETTLEMENT_SOURCE_SYSTEM, import_batch_id: s.import_batch_id,
     // Settled by Booking.com: commission and fee are deducted, the net is paid
     // out in payout `payout_id`. Cash is reconciled per payout group against
     // the bank, never per stay, so none of these is an open item on its own.
     payment_state: 'not_applicable', reconciliation_state: 'not_applicable',
   };
-  const line = (category: string, description: string, cents: number, cost: boolean) => ({
-    line_no: 1, category, description, tax_code: REVIEW_REQUIRED_CODE, rate_bp: 0, net_cents: cents, vat_cents: 0, gross_cents: cents, reverse_charge_vat_cents: 0,
-    input_vat_treatment: cost ? 'review_required' : 'not_applicable', unit_id: unitId, allocation_method: unitId ? 'direct' : 'unallocated', classification: 'needs_review',
+  const lineBase = { line_no: 1, unit_id: unitId, allocation_method: unitId ? 'direct' : 'unallocated' };
+  const parkedLine = (category: string, description: string, cents: number, cost: boolean) => ({
+    ...lineBase, category, description, tax_code: REVIEW_REQUIRED_CODE, rate_bp: 0, net_cents: cents, vat_cents: 0, gross_cents: cents, reverse_charge_vat_cents: 0,
+    input_vat_treatment: cost ? 'review_required' : 'not_applicable', classification: 'needs_review',
   });
+  const reverseChargeLine = (category: string, description: string, cents: number) => ({
+    ...lineBase, category, description, tax_code: 'DE_REVERSE_CHARGE', rate_bp: 1900, net_cents: cents, vat_cents: 0, gross_cents: cents, reverse_charge_vat_cents: vatFromNet(cents, 1900),
+    input_vat_treatment: deductible ? 'reverse_charge' : 'not_deductible', classification: 'suggested',
+  });
+
   let revenueId: string | null = null;
   let commissionId: string | null = null;
   let feeId: string | null = null;
   if (s.gross_cents !== 0) {
+    const cancelled = tax.kind === 'cancellation_charge';
+    const line = classified && tax.revenue
+      ? { ...lineBase, category: cancelled ? 'other_guest_charges' : 'accommodation_revenue', description: cancelled ? 'Cancellation charge per Booking.com statement, taxable at the stay\'s rate (company setting)' : 'Stay per Booking.com statement — whole price, 7 % (§ 12 Abs. 2 Nr. 11 UStG)', tax_code: 'DE_ACCOMMODATION_REDUCED', rate_bp: 700, net_cents: tax.revenue.netCents, vat_cents: tax.revenue.vatCents, gross_cents: tax.revenue.grossCents, reverse_charge_vat_cents: 0, input_vat_treatment: 'not_applicable', classification: 'suggested' }
+      : parkedLine(cancelled ? 'other_guest_charges' : 'accommodation_revenue', cancelled ? 'Cancellation / no-show charge per Booking.com statement' : 'Stay per Booking.com statement (whole amount)', s.gross_cents, false);
     const r = await postTransaction({
-      ...base, kind: 'revenue', booked_on: s.check_out, document_state: 'complete', source_reference: key,
+      ...base, kind: 'revenue', booked_on: s.check_out, document_state: 'complete', source_reference: key, review_state: classified ? 'suggested' : 'needs_review',
       description: `${cancelled ? 'Booking.com cancellation charge' : 'Booking.com stay'} ${stay} (statement gross)`,
-      note: [`Booking.com statement, payout ${s.payout_id} on ${s.payout_date}.`, cancelled ? `Reservation status "${s.reservation_status}": a charge on a reservation that did not happen as booked, not a night sold.` : null, vatNote, unitNote].filter(Boolean).join(' '),
-    }, [line(cancelled ? 'other_guest_charges' : 'accommodation_revenue', cancelled ? 'Cancellation / no-show charge per Booking.com statement' : 'Stay per Booking.com statement (whole amount; components not itemised by the statement)', s.gross_cents, false)], actor);
+      note: [`Booking.com statement, payout ${s.payout_id} on ${s.payout_date}.`, classified ? why : parked, unitNote].filter(Boolean).join(' '),
+    }, [line], actor);
     revenueId = r.id;
   }
   if (s.commission_cents !== 0) {
     const r = await postTransaction({
-      ...base, kind: 'commission', booked_on: s.check_out, counterparty_id: bcom?.id ?? null, counterparty_label: 'Booking.com B.V.', document_state: 'missing', source_reference: `${key}:commission`,
-      description: `Booking.com commission · ${stay}`, note: `Deducted in payout ${s.payout_id}. The commission invoice from Booking.com is the document. ${vatNote}`,
-    }, [line('ota_commission', 'Commission per Booking.com statement', s.commission_cents, true)], actor);
+      ...base, kind: 'commission', booked_on: s.check_out, counterparty_id: bcom?.id ?? null, counterparty_label: 'Booking.com B.V.', document_state: 'missing', source_reference: `${key}:commission`, review_state: 'suggested',
+      description: `Booking.com commission · ${stay}`,
+      note: `Deducted in payout ${s.payout_id}. Reverse charge (§ 13b Abs. 1, 5 UStG): 19 % owed${deductible ? ' and deducted (§ 15 Abs. 1 Nr. 4)' : '; not deductible against an exempt or undecided sale'}. The commission invoice from Booking.com is the document. ${why}`,
+    }, [reverseChargeLine('ota_commission', 'Commission per Booking.com statement (reverse charge)', s.commission_cents)], actor);
     commissionId = r.id;
   }
   if (s.payment_service_fee_cents !== 0) {
+    const exempt = policy.paymentFee === 'exempt';
     const r = await postTransaction({
-      ...base, kind: 'fee', booked_on: s.check_out, counterparty_id: bcom?.id ?? null, counterparty_label: 'Booking.com B.V.', document_state: 'missing', source_reference: `${key}:payment_service_fee`,
-      description: `Booking.com payment service fee · ${stay}`, note: `Deducted in payout ${s.payout_id}. ${vatNote}`,
-    }, [line('payment_fees', 'Payments Service Fee per Booking.com statement', s.payment_service_fee_cents, true)], actor);
+      ...base, kind: 'fee', booked_on: s.check_out, counterparty_id: bcom?.id ?? null, counterparty_label: 'Booking.com B.V.', document_state: 'missing', source_reference: `${key}:payment_service_fee`, review_state: 'suggested',
+      description: `Booking.com payment service fee · ${stay}`,
+      note: `Deducted in payout ${s.payout_id}. ${exempt ? 'Treated as an exempt payment service (§ 4 Nr. 8 UStG, company setting).' : 'Treated like the commission: reverse charge (company setting; the adviser confirms).'} ${why}`,
+    }, [exempt
+      ? { ...lineBase, category: 'payment_fees', description: 'Payments Service Fee per Booking.com statement (exempt)', tax_code: 'DE_EXEMPT', rate_bp: 0, net_cents: s.payment_service_fee_cents, vat_cents: 0, gross_cents: s.payment_service_fee_cents, reverse_charge_vat_cents: 0, input_vat_treatment: 'not_deductible', classification: 'suggested' }
+      : reverseChargeLine('payment_fees', 'Payments Service Fee per Booking.com statement (reverse charge)', s.payment_service_fee_cents)], actor);
     feeId = r.id;
   }
   const state = revenueId || commissionId || feeId ? 'posted' : 'not_posted';
@@ -1001,11 +1042,21 @@ export async function recordSystemTaxEstimates(actor = 'system:tax-estimates', t
   const keys = vatPeriodKeysBetween(yr.from, today, calendar);
   for (const key of keys) {
     const range = periodRange(key);
-    const rows = await source.vatMonthly(range.from, range.to);
+    // The estimate IS the VAT return: stays that ended in the period (the
+    // stay-tax engine) plus what the books add — the same figure the VAT
+    // page shows, so a recorded stage never disagrees with the screen.
+    const [rows, reservations, settlements, units] = await Promise.all([
+      source.vatMonthly(range.from, range.to),
+      source.stayTaxReservations(range.from, range.to),
+      source.otaSettlements({ from: range.from, to: range.to, basis: 'checkout' }),
+      source.units(),
+    ]);
     const adj = adjustments.filter((a) => a.tax_type === 'vat' && a.superseded_by === null && a.fiscal_year === year).reduce((s, a) => s + a.amount_cents, 0);
-    const position = computeVatPosition(key, rows, adj);
+    const { policy: stayPolicy } = stayTaxPolicyFrom(policy, today);
+    const stays = stayTaxInputsFrom(reservations, settlements, units).inputs.map((i) => computeStayTax(i, today, stayPolicy));
+    const vatReturn = buildVatReturn(key, stays, otherVatFromLedger(rows));
     const deadline = calculatedDeadlines(Number(key.slice(0, 4)), calendar).find((d) => d.kind === 'vat_advance_return' && d.periodKey === key);
-    await recordTaxStage({ taxType: 'vat', periodKey: key, startsOn: range.from, endsOn: new Date(Date.parse(`${range.to}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10), stage: 'system_estimate', amountCents: position.estimateCents, basis: vatBasis(position), rulesVersion: VAT_RULES_VERSION, actor, filingDueOn: deadline?.dueOn ?? null, paymentDueOn: deadline?.dueOn ?? null });
+    await recordTaxStage({ taxType: 'vat', periodKey: key, startsOn: range.from, endsOn: new Date(Date.parse(`${range.to}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10), stage: 'system_estimate', amountCents: vatReturn.exactPayableCents + adj, basis: vatReturnBasis(vatReturn, adj), rulesVersion: vatReturn.rulesVersion, actor, filingDueOn: deadline?.dueOn ?? null, paymentDueOn: deadline?.dueOn ?? null });
     recorded += 1;
   }
   const pl = await source.plMonthly(yr.from, yr.to);

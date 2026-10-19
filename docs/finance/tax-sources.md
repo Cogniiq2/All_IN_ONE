@@ -47,3 +47,20 @@ Bayreuther Tagblatt, Nordbayerischer Kurier, gewerbesteuer.de, papierkram.de.
 
 **Action for the Steuerberater:** confirm rows 2, 9, 10, 12, 15, 19 and provide the DATEV account
 map (row 25). Row 15 is the only one that changes an amount in the estimate today.
+
+## Added 19 Oct 2026 — the stay-tax engine
+
+| # | Rule | Value in the system | Legal basis | Certainty |
+|---|---|---|---|---|
+| 27 | Short-term vs long-term letting | > 6 months is exempt long-term letting | § 4 Nr. 12 S. 1 a, S. 2 UStG; Abschn. 4.12.9 UStAE | LEGALLY CERTAIN (threshold as administrative practice) |
+| 28 | Platform commission does not reduce the taxable amount | full guest price is the Bemessungsgrundlage | § 10 Abs. 1 S. 2 UStG (Booking.com as intermediary) | LEGALLY CERTAIN |
+| 29 | VAT period for a stay | month of check-out (Soll) | § 13 Abs. 1 Nr. 1 a S. 1 UStG | LEGALLY CERTAIN for Sollversteuerung; Ist-Versteuerung (§ 20) not modelled |
+| 30 | Booking.com commission | reverse charge, deductible against taxable stays | § 13b Abs. 1, 5; § 15 Abs. 1 Nr. 4; § 15 Abs. 2 Nr. 1 UStG | LEGALLY CERTAIN as a rule (Booking.com B.V., NL805734958B01) |
+| 31 | Booking.com Payments Service Fee | reverse charge by default; exempt by policy | § 13b vs § 4 Nr. 8 UStG | **ACCOUNTANT-REVIEW REQUIRED** (no tax effect on taxable stays; box reporting differs) |
+| 32 | Cancellation / no-show charges | excluded until decided; taxable at 7 % by policy | EuGH C-295/17; § 10 Abs. 1 UStG | **ACCOUNTANT-REVIEW REQUIRED** |
+| 33 | Prepayments collected by Booking.com before the stay | not applied | § 13 Abs. 1 Nr. 1 a S. 4 UStG (Mindest-Ist) | **ACCOUNTANT-REVIEW REQUIRED** — may move VAT to the month of receipt |
+| 34 | UStVA Kennzahlen | 81, 86, 48, 46, 47, 66, 67, 83 | UStVA form | **UNVERIFIED** against the current year's form here — the adviser confirms the box numbers once |
+| 35 | Whole-euro bases on the form | cents dropped; tax on 81/86 computed by the form | ELSTER form logic | UNVERIFIED here; both exact and form figures are shown |
+
+**Action for the Steuerberater:** confirm rows 31–35 once; record the decisions as policies
+`ota_payment_fee_vat` and `cancellation_charge_vat` in Money → Setup → Settings.

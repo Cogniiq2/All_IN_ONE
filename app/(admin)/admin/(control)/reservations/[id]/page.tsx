@@ -8,6 +8,11 @@ import { relationOn } from '@/lib/admin/calendar';
 import { BackLink, Badge, Dash, ErrorNotice, KeyValue, Notice, Section, When } from '@/components/admin/primitives';
 import { RefreshControl } from '@/components/admin/shell/refresh-control';
 import { CopyButton } from '@/components/admin/copy-button';
+import { currentOperator } from '@/lib/admin/auth';
+import { can } from '@/lib/admin/permissions';
+import { loadStayTax } from '@/lib/finance/queries';
+import { KIND_LABEL, monthName, type StayTax } from '@/lib/finance/tax/stay-tax';
+import { StayTaxSteps } from '@/components/admin/finance/stay-tax-view';
 
 export const metadata: Metadata = { title: 'Reservation' };
 
@@ -18,7 +23,11 @@ const STALE_MS = 24 * 60 * 60_000;
  * truth, and a change is made there — this page shows it within seconds.
  */
 export default async function ReservationDetailPage({ params }: { params: { id: string } }) {
-  const result = await loadReservation(decodeURIComponent(params.id));
+  const id = decodeURIComponent(params.id);
+  const [result, operator] = await Promise.all([loadReservation(id), currentOperator()]);
+  // The money view is finance data: shown only to roles that may read Finance.
+  const taxResult = can(operator?.role, 'finance.view') ? await loadStayTax(id) : null;
+  const tax = taxResult?.ok ? taxResult.data?.tax ?? null : null;
   if (!result.ok) {
     return (
       <>
@@ -122,7 +131,7 @@ export default async function ReservationDetailPage({ params }: { params: { id: 
                 ]}
               />
               <p className="bc-meta mt-3" style={{ fontSize: 12 }}>
-                Not payout and not net of commission. Payouts and commission come from the channel statements, in Finance.
+                Not payout and not net of commission — the money and tax of this stay are calculated below.
               </p>
             </div>
           </Section>
@@ -158,6 +167,49 @@ export default async function ReservationDetailPage({ params }: { params: { id: 
           </Section>
         </div>
       </div>
+
+      {tax && <MoneyAndTax tax={tax} />}
     </>
+  );
+}
+
+/**
+ * What this stay means in money and tax: five figures, then the full
+ * calculation behind them, one tap away. The same engine as the VAT return.
+ */
+function MoneyAndTax({ tax }: { tax: StayTax }) {
+  const eur = (c: number) => formatMoney(c, 'EUR');
+  const figures: Array<[string, string, string?]> = [
+    ['Guest paid', tax.revenue ? eur(tax.revenue.grossCents) : '—', tax.revenue ? `from the ${tax.revenue.source === 'statement' ? 'Booking.com statement' : 'Beds24 booking'}` : undefined],
+    ['VAT inside', tax.revenue ? eur(tax.revenue.vatCents) : '—', tax.revenue && tax.revenue.rateBp ? `${tax.revenue.rateBp / 100} % · net ${eur(tax.revenue.netCents)}` : KIND_LABEL[tax.kind]],
+    ['Commission', tax.commission ? eur(tax.commission.netCents) : tax.revenue ? 'not known yet' : '—', tax.commission ? `+ ${eur(tax.commission.reverseChargeVatCents)} VAT owed and deducted` : undefined],
+    ['Payout', tax.payout.netCents !== null ? eur(tax.payout.netCents) : '—', tax.payout.state === 'paid_out' ? `paid ${formatIsoDate(tax.payout.date, 'long')}` : tax.payout.state === 'expected' ? 'expected, not yet confirmed' : 'not known yet'],
+    ['Stays with BoLaGio', tax.keptCents !== null ? eur(tax.keptCents) : '—', 'after VAT and the platform, before income taxes'],
+  ];
+  return (
+    <section className="fx-money" aria-labelledby="money-title">
+      <div className="fx-money-head">
+        <h2 id="money-title">Money &amp; tax</h2>
+        {tax.vatMonth && <span className="bc-meta">VAT belongs to the {monthName(tax.vatMonth)} return{tax.completed ? '' : ' (stay not ended yet)'}</span>}
+      </div>
+      <dl className="fx-money-figures">
+        {figures.map(([label, value, note], i) => (
+          <div key={label} style={{ ['--i' as string]: i }}>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+            {note && <dd className="fx-money-note">{note}</dd>}
+          </div>
+        ))}
+      </dl>
+      <details className="fx-explain">
+        <summary>
+          Show the full calculation
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </summary>
+        <StayTaxSteps tax={tax} linkToReservation={false} />
+      </details>
+    </section>
   );
 }

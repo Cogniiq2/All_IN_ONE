@@ -244,6 +244,21 @@ export interface TransactionQuery {
   sort?: 'booked_desc' | 'booked_asc' | 'amount_desc' | 'amount_asc';
 }
 
+/** A reservation as the stay-tax engine reads it. No guest field. `commission` is Beds24's text value (euros). */
+export interface StayTaxReservationRow {
+  id: string;
+  channel_reference: string | null;
+  external_booking_id: string;
+  unit_id: string | null;
+  source: string;
+  status_class: string;
+  check_in: string;
+  check_out: string;
+  currency: string | null;
+  total_amount_cents: number | null;
+  commission: string | null;
+}
+
 export interface FinanceRowSource {
   ping(): Promise<boolean>;
   taxCodes(): Promise<TaxCodeRow[]>;
@@ -289,6 +304,8 @@ export interface FinanceRowSource {
    */
   otaSettlements(filter: { from?: string | null; to?: string | null; basis?: 'payout' | 'checkout'; batchId?: string | null; ids?: string[] | null; limit?: number }): Promise<import('@/lib/finance/settlements').SettlementRow[]>;
   otaPayouts(): Promise<OtaPayoutRow[]>;
+  /** Reservations whose stay ends in [from, to) — the stay-tax input. No guest field. */
+  stayTaxReservations(from: string, to: string): Promise<StayTaxReservationRow[]>;
   /** Local reservations by exact channel reference — the match input. No guest field. */
   reservationsByChannelReference(refs: string[]): Promise<import('@/lib/finance/settlements').ReservationCandidate[]>;
   minibarProducts(): Promise<MinibarProductRow[]>;

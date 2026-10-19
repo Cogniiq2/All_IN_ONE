@@ -39,6 +39,18 @@ explicit range: `POST /api/booking/reservations/sync {"from":"2015-01-01","to":"
 When its request budget ends a run early, the response carries `resumeKey`; pass it back
 with the same range and the import continues exactly where it stopped.
 
+## Verified again on 19 Oct 2026
+
+- Booking.com → Beds24 → Supabase: every Booking.com booking arrived within ~10 seconds of Beds24
+  creating it (median 14 s, newest at 00:30:14 for a 00:30:04 booking). 33 webhooks since 22 Sep, all processed.
+- Hourly import: 121 runs since 14 Oct; 11 had one apartment's window refused by Beds24 and were
+  repaired by the next run. Since 19 Oct a refused read is retried once, and the reason (e.g.
+  "Beds24 rate limit (HTTP 429)") is stored with the run and shown on System — never a credential.
+- Commission: Booking.com has sent the commission to Beds24 since 17 Oct 2026 (16.4 % on the first
+  three). Earlier bookings carry 0 in Beds24 and cannot be backfilled from it; their exact commission,
+  fee and payout come from the Booking.com statement (Money → Setup → Uploads). Three statements
+  uploaded on 23 Sep were validated but never imported.
+
 ## What is NOT automatic, and why
 
 | Data | Why it cannot be automatic today | Best supported route |

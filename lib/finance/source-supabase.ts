@@ -12,7 +12,7 @@ import { supabaseAdmin } from '@/lib/supabase/server';
 import type {
   AccountRow, AssetRow, CategoryRow, CashMonthlyRow, CounterpartyRow, DocumentLinkRow, DocumentRow, ExceptionCountsRow, ExportRow, FinancePipelineStatus, FinanceRowSource, ImportBatchRow,
   ImportRowRow, OtaPayoutRow, ReservationCandidate, SettlementRow, InvoiceLineRow, InvoiceRow, LineRow, MinibarMovementRow, MinibarProductRow, MinibarStockRow, OverrideRow, PaymentRow, PeriodRow, PlMonthlyRow, PolicyRow,
-  ReconciliationRow, ReserveRow, StayRow, TaxAdjustmentRow, TaxCodeRow, TaxEstimateRow, TaxNoticeRow, TaxPaymentRow, TaxPeriodRow, TaxRateRowDb, TransactionQuery,
+  ReconciliationRow, ReserveRow, StayRow, StayTaxReservationRow, TaxAdjustmentRow, TaxCodeRow, TaxEstimateRow, TaxNoticeRow, TaxPaymentRow, TaxPeriodRow, TaxRateRowDb, TransactionQuery,
   TransactionRow, TurnoverCostRow, UnitMonthlyRow,
 } from '@/lib/finance/rows';
 import type { VatMonthlyRow } from '@/lib/finance/tax/vat';
@@ -307,6 +307,17 @@ export function supabaseFinanceSource(): FinanceRowSource {
       return ((data ?? []) as unknown as SettlementRow[]).map((r) => num(r, SETTLEMENT_NUM));
     },
     otaPayouts: () => all<OtaPayoutRow>('bolagio_finance_ota_payouts', 'id, provider, payout_id, payout_date, currency, bank_state, bank_payment_id, bank_matched_at, first_import_batch_id, created_at', { column: 'payout_date', ascending: false }, 2000),
+    async stayTaxReservations(from, to) {
+      const { data, error } = await db()
+        .from('bolagio_reservations')
+        .select('id, channel_reference, external_booking_id, unit_id, source, status_class, check_in, check_out, currency, total_amount_cents, commission:raw_provider_snapshot->>commission')
+        .gte('check_out', from)
+        .lt('check_out', to)
+        .order('check_out')
+        .limit(5000);
+      if (error) throw error;
+      return ((data ?? []) as unknown as StayTaxReservationRow[]).map((r) => num(r, ['total_amount_cents']));
+    },
     async reservationsByChannelReference(refs) {
       const unique = Array.from(new Set(refs.map((r) => r.trim()).filter(Boolean)));
       const out: ReservationCandidate[] = [];

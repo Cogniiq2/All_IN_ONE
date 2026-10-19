@@ -1,119 +1,209 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { loadVat } from '@/lib/finance/queries';
+import { loadVat, loadVatReturn } from '@/lib/finance/queries';
 import { one, type Params } from '@/lib/finance/params';
-import { periodLabel, periodRange } from '@/lib/finance/periods';
-import { categoryLabel } from '@/lib/finance/categories';
-import { INPUT_VAT_LABEL } from '@/lib/finance/presentation';
+import { periodLabel } from '@/lib/finance/periods';
+import { formatIsoDate } from '@/lib/admin/format';
 import { PageHeader, Section, ErrorNotice, Notice, When } from '@/components/admin/primitives';
-import { Money, StateBadge, Provenance, LedgerRow, Caveats, DateCell } from '@/components/admin/finance/primitives';
-import { ExportButton, RunTaxEstimatesButton } from '@/components/admin/finance/controls';
+import { Money, StateBadge } from '@/components/admin/finance/primitives';
+import { RunTaxEstimatesButton } from '@/components/admin/finance/controls';
+import { QuestionList, StayTaxList, VatBoxes, VatReturnHero } from '@/components/admin/finance/stay-tax-view';
 
-export const metadata: Metadata = { title: 'VAT' };
+export const metadata: Metadata = { title: 'VAT return' };
 
 /**
- * The VAT position by filing period: output by code, reverse charge both
- * ways, deductible input, what is excluded and why, the stages the adviser
- * recorded, and the planning deadline. An estimate is never shown as filed.
+ * The Umsatzsteuer-Voranmeldung, stay by stay.
+ *
+ * The answer first (what to pay, and whether that is final), then the boxes
+ * to type into ELSTER, then the questions that hold the return, then every
+ * stay — each opens to show its full calculation with the law and the
+ * source of every number. Nothing is filed from here.
  */
 export default async function VatPage({ searchParams }: { searchParams: Params }) {
   const key = one(searchParams, 'period', 10);
-  const result = await loadVat(key && /^\d{4}(-Q[1-4]|-\d{2})?$/.test(key) ? key : null);
-  if (!result.ok) return <><PageHeader eyebrow="Finance" title="VAT" /><ErrorNotice title="The VAT position could not be loaded.">{result.error}</ErrorNotice></>;
+  const period = key && /^\d{4}(-Q[1-4]|-\d{2})?$/.test(key) ? key : null;
+  const [result, ledger] = await Promise.all([loadVatReturn(period), loadVat(period)]);
+  if (!result.ok) {
+    return (
+      <>
+        <PageHeader eyebrow="Money · Tax" title="VAT return" />
+        <ErrorNotice title="The VAT return could not be calculated.">{result.error}</ErrorNotice>
+      </>
+    );
+  }
   const v = result.data;
-  const p = v.position;
-  const range = periodRange(v.periodKey);
-  const governing = v.stages.length > 0 ? v.stages[v.stages.length - 1] : null;
+  const r = v.vatReturn;
+  const stages = ledger.ok ? ledger.data.stages : [];
+  const taxPeriod = ledger.ok ? ledger.data.taxPeriod : null;
+  const src = v.sources;
+
   return (
     <>
       <PageHeader
-        eyebrow="Finance · Umsatzsteuer"
-        title={`VAT · ${v.label}`}
-        description={<span className="inline-flex flex-wrap items-center gap-1.5"><StateBadge table="taxperiod" value={v.taxPeriod?.status ?? 'open'} /><span className="bc-badge ghost" data-tone="neutral">{v.calendar.vatFilingFrequency}{v.calendar.dauerfristverlaengerung ? ' · Dauerfristverlängerung' : ''}</span>{v.deadline && <span className="bc-badge ghost" data-tone="neutral">planning deadline {v.deadline.dueOn}</span>}</span>}
-        actions={<span className="flex flex-wrap gap-2"><ExportButton kind="vat_report" from={range.from} to={range.to} label="Export VAT report" /><ExportButton kind="reverse_charge_report" from={range.from} to={range.to} label="Reverse-charge report" /></span>}
+        eyebrow="Money · Tax"
+        title="VAT return"
+        description="What BoLaGio owes the Finanzamt for each period, calculated stay by stay. Open any stay to see every step, the law behind it and where each number came from."
       />
-      <div className="mb-5 bc-seg" role="group" aria-label="Period">
-        {v.keys.slice(0, 8).map((k) => <Link key={k} href={`/admin/finance/vat?period=${k}`} aria-current={k === v.periodKey ? 'true' : undefined}>{periodLabel(k)}</Link>)}
-      </div>
 
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <div>
-          <Section title="Position" meta={<span>rules {p.rulesVersion} · <Provenance value="estimated" /></span>} id="position">
-            <div className="bc-ledger mt-2">
-              <div className="bc-ledger-row" data-total="true"><span>OUTPUT VAT</span><Money cents={p.outputVatCents} /></div>
-              {p.output.map((l) => <LedgerRow key={l.taxCode} label={<>{l.label} <span className="bc-meta">net {(l.basisCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 })} €</span></>} cents={l.vatCents} level={1} href={`/admin/finance/transactions?tax=${l.taxCode}&kind=revenue&from=${range.from}&to=${range.to}`} />)}
-              {p.output.length === 0 && <div className="bc-ledger-row" data-level="1"><span className="bc-meta">no taxable sales in the period</span><span /></div>}
-              <div className="bc-ledger-row" data-total="true"><span>REVERSE CHARGE (§ 13b) <span className="bc-meta">basis {(p.reverseCharge.basisCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 })} €</span></span><span /></div>
-              <LedgerRow label="Output VAT owed as recipient" cents={p.reverseCharge.outputVatCents} level={1} href={`/admin/finance/transactions?tax=DE_REVERSE_CHARGE&from=${range.from}&to=${range.to}`} />
-              <LedgerRow label="Input VAT deducted (§ 15 Abs. 1 Nr. 4)" cents={-p.reverseCharge.inputVatCents} level={1} href={`/admin/finance/transactions?tax=DE_REVERSE_CHARGE&from=${range.from}&to=${range.to}`} />
-              <div className="bc-ledger-row" data-total="true"><span>INPUT VAT (deductible)</span><Money cents={-p.inputVatCents} /></div>
-              {p.input.map((l) => <LedgerRow key={l.taxCode} label={<>{l.label} <span className="bc-meta">net {(l.basisCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 })} €</span></>} cents={-l.vatCents} level={1} href={`/admin/finance/transactions?tax=${l.taxCode}&kind=expense&from=${range.from}&to=${range.to}`} />)}
-              {p.nonDeductibleVatCents !== 0 && <LedgerRow label="Not deductible (excluded)" cents={p.nonDeductibleVatCents} level={1} meta="shown, not counted" />}
-              {p.reviewVatCents !== 0 && <LedgerRow label="Awaiting deductibility decision (excluded)" cents={p.reviewVatCents} level={1} meta="shown, not counted" />}
-              {p.adjustmentsCents !== 0 && <LedgerRow label="Manual adjustments (adviser)" cents={p.adjustmentsCents} />}
-              <div className="bc-ledger-row" data-total="estimate"><span>{p.estimateCents >= 0 ? 'ESTIMATED VAT PAYABLE' : 'ESTIMATED VAT REFUND'} <Provenance value="estimated" /></span><Money cents={p.estimateCents} /></div>
-            </div>
-            <Caveats items={p.caveats} />
-            <p className="bc-meta mt-3" style={{ fontSize: 12 }}>Accommodation 7 % (§ 12 Abs. 2 Nr. 11 UStG); beverages and ancillary services 19 %; foreign B2B services under § 13b. Lines under a review-required code contribute nothing until classified. Rounding: docs/finance/vat.md.</p>
+      <nav className="fx-periods" aria-label="VAT period">
+        {v.keys.slice(0, 10).map((k) => (
+          <Link key={k} href={`/admin/finance/vat?period=${k}`} aria-current={k === v.periodKey ? 'true' : undefined} replace scroll={false}>
+            {periodLabel(k)}
+          </Link>
+        ))}
+      </nav>
+
+      <VatReturnHero vatReturn={r} label={v.label} dueOn={v.deadline?.dueOn ?? null} />
+
+      {src.statementsWaiting.length > 0 && (
+        <div className="fx-callout" data-tone="caution">
+          <div>
+            <strong>
+              {src.statementsWaiting.length} Booking.com {src.statementsWaiting.length === 1 ? 'statement was' : 'statements were'} checked but never imported
+            </strong>
+            <p>Importing writes the exact commission, fee and payout of every stay they cover into the books. Open one and press “Import valid rows”.</p>
+          </div>
+          <div className="fx-callout-actions">
+            {src.statementsWaiting.slice(0, 3).map((b) => (
+              <Link key={b.id} href={`/admin/finance/imports/${b.id}`} className="bc-btn sm">
+                {b.filename.length > 28 ? `${b.filename.slice(0, 26)}…` : b.filename} · {b.validRows} rows
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="fx-layout">
+        <div className="min-w-0">
+          <Section title="The form" meta={<span>Umsatzsteuer-Voranmeldung · {v.label}</span>} id="form">
+            <VatBoxes vatReturn={r} />
           </Section>
 
-          {v.reviewLines.length > 0 && (
-            <Section title="Lines that block a clean position" meta={`${v.reviewLines.length}`} id="review">
-              <div className="bc-rows">
-                {v.reviewLines.slice(0, 40).map((l) => (
-                  <Link key={l.id} href={`/admin/finance/transactions/${l.transaction_id}`} className="bc-row bc-row-link" style={{ gridTemplateColumns: 'minmax(0,1fr) auto' }}>
-                    <span className="min-w-0 truncate">{l.transaction.counterparty_label ?? l.transaction.description} · {categoryLabel(l.category)} · <span className="bc-mono">{l.tax_code}</span> · {INPUT_VAT_LABEL[l.input_vat_treatment] ?? ''} <StateBadge table="review" value={l.classification} ghost /></span>
-                    <Money cents={l.gross_cents} />
-                  </Link>
-                ))}
-              </div>
+          {r.questions.length > 0 && (
+            <Section title="Needs an answer" meta={<span>until then the figure above is provisional</span>} id="questions">
+              <QuestionList questions={r.questions} />
             </Section>
           )}
 
-          {v.rcLines.length > 0 && (
-            <Section title="Reverse-charge lines" meta="issuer and country decide; confirm each" id="rc">
-              <div className="bc-rows">
-                {v.rcLines.map((l) => (
-                  <Link key={l.id} href={`/admin/finance/transactions/${l.transaction_id}`} className="bc-row bc-row-link" style={{ gridTemplateColumns: 'minmax(0,1fr) auto auto' }}>
-                    <span className="min-w-0 truncate">{l.transaction.counterparty_label} · {l.transaction.supplier_invoice_no ?? '—'} · <DateCell iso={l.transaction.booked_on} /> <StateBadge table="review" value={l.classification} ghost /></span>
-                    <span className="bc-meta">RC VAT <Money cents={l.reverse_charge_vat_cents} /></span>
-                    <Money cents={l.net_cents} />
-                  </Link>
-                ))}
-              </div>
-            </Section>
-          )}
+          <Section title="Every stay in this return" meta={<span>{r.stays.length} · tap one to see the calculation</span>} id="stays">
+            <StayTaxList stays={r.stays} />
+          </Section>
         </div>
 
-        <div>
-          <Section title="Stages" meta="append-only; a filed amount is never recalculated" id="stages">
-            {v.stages.length === 0 ? <p className="bc-meta mt-3">No stage recorded for this period yet. The figure above is the live system estimate; recording it makes it visible on the Taxes page and in the reserve.</p> : (
+        <aside className="fx-side">
+          <section className="fx-card" aria-labelledby="fx-sources">
+            <h2 id="fx-sources">Where the numbers come from</h2>
+            <ul className="fx-sources">
+              <li data-state="ok">
+                <strong>Stays and prices</strong>
+                <span>Beds24, automatic · {src.stays} in this period</span>
+              </li>
+              <li data-state={src.commissionUnknown === 0 ? 'ok' : 'partial'}>
+                <strong>Booking.com commission</strong>
+                <span>
+                  {src.fromStatement} from statements · {src.commissionFromBeds24} from Beds24
+                  {src.commissionUnknown > 0 ? ` · ${src.commissionUnknown} not known yet` : ''}
+                </span>
+              </li>
+              <li data-state={src.fromStatement > 0 ? 'ok' : 'manual'}>
+                <strong>Payouts</strong>
+                <span>Booking.com statement upload · {src.fromStatement > 0 ? `${src.fromStatement} stays confirmed` : 'none imported yet'}</span>
+              </li>
+              <li data-state="manual">
+                <strong>Purchases (box 66)</strong>
+                <span>From the books: expenses with their invoices</span>
+              </li>
+            </ul>
+            {src.unmatchedSettlements > 0 && (
+              <p className="fx-note">
+                {src.unmatchedSettlements} statement {src.unmatchedSettlements === 1 ? 'line matches' : 'lines match'} no reservation — check them on the Booking.com page.
+              </p>
+            )}
+            <Link href="/admin/finance/imports" className="fx-link">
+              Upload a statement →
+            </Link>
+          </section>
+
+          <section className="fx-card" aria-labelledby="fx-settings">
+            <h2 id="fx-settings">Rules this return uses</h2>
+            <dl className="fx-settings">
+              <div>
+                <dt>Filing</dt>
+                <dd>
+                  {v.frequency === 'monthly' ? 'Monthly' : v.frequency === 'quarterly' ? 'Quarterly' : 'Annual only'}
+                  <small>confirm with the Finanzamt</small>
+                </dd>
+              </div>
+              <div>
+                <dt>Taxation</dt>
+                <dd>
+                  On agreed amounts (Soll), VAT in the month the stay ends
+                  <small>§ 13 Abs. 1 Nr. 1 a UStG</small>
+                </dd>
+              </div>
+              <div>
+                <dt>Prepaid bookings</dt>
+                <dd>
+                  VAT counted when the stay ends
+                  <small>adviser to confirm: when Booking.com collects the price before the stay, VAT may be due on receipt (Mindest-Ist, § 13 Abs. 1 Nr. 1 a S. 4 UStG)</small>
+                </dd>
+              </div>
+              <div>
+                <dt>Booking.com payment fee</dt>
+                <dd>
+                  {v.policy.paymentFee === 'reverse_charge' ? 'Reverse charge, like the commission' : 'Exempt payment service'}
+                  <small>{v.decided.paymentFee ? 'company setting' : 'default — adviser to confirm; costs no VAT either way'}</small>
+                </dd>
+              </div>
+              <div>
+                <dt>Cancellation charges</dt>
+                <dd>
+                  {v.policy.cancellationCharge === 'taxable' ? 'Taxed at 7 %' : 'Kept out until decided'}
+                  <small>{v.decided.cancellationCharge ? 'company setting' : 'default — adviser decides'}</small>
+                </dd>
+              </div>
+            </dl>
+            <Link href="/admin/finance/settings" className="fx-link">
+              Change in Settings →
+            </Link>
+          </section>
+
+          <section className="fx-card" aria-labelledby="fx-filing">
+            <h2 id="fx-filing">Filing record</h2>
+            <p className="fx-card-line">
+              <StateBadge table="taxperiod" value={taxPeriod?.status ?? 'open'} />
+              {v.deadline && <span className="bc-meta">due {formatIsoDate(v.deadline.dueOn, 'long')}</span>}
+            </p>
+            {stages.length === 0 ? (
+              <p className="bc-meta mt-2">Nothing recorded yet. Recording saves today&apos;s figure as the system estimate; the adviser records what was filed.</p>
+            ) : (
               <div className="bc-timeline mt-2">
-                {v.stages.map((s) => (
+                {stages.map((s) => (
                   <div key={s.id} className="bc-tl-item" data-tone={s.stage === 'system_estimate' ? undefined : 'positive'}>
-                    <div className="flex items-center justify-between gap-3"><StateBadge table="stage" value={s.stage} /><Money cents={s.amount_cents} /></div>
-                    <div className="bc-meta mt-1"><When value={s.computed_at} /> · {s.actor} · {s.rules_version}{s.note ? ` · ${s.note}` : ''}</div>
+                    <div className="flex items-center justify-between gap-3">
+                      <StateBadge table="stage" value={s.stage} />
+                      <Money cents={s.amount_cents} />
+                    </div>
+                    <div className="bc-meta mt-1">
+                      <When value={s.computed_at} /> · {s.actor}
+                    </div>
                   </div>
                 ))}
               </div>
             )}
-            {governing && governing.stage !== 'system_estimate' && Math.abs(governing.amount_cents - p.estimateCents) > 0 && (
-              <div className="mt-3"><Notice tone="neutral" title="Variance.">The {governing.stage.replace('_', ' ')} figure differs from the live estimate by <Money cents={governing.amount_cents - p.estimateCents} />. Later postings into the period or adviser corrections explain it; the recorded stage governs.</Notice></div>
-            )}
-            <div className="mt-4"><RunTaxEstimatesButton /></div>
-          </Section>
+            <div className="mt-3">
+              <RunTaxEstimatesButton />
+            </div>
+          </section>
+        </aside>
+      </div>
 
-          <Section title="Filing" id="filing">
-            <dl className="bc-kv">
-              <div className="contents"><dt>Frequency</dt><dd>{v.calendar.vatFilingFrequency} <span className="bc-meta">(policy — confirm with the Finanzamt)</span></dd></div>
-              <div className="contents"><dt>Dauerfristverlängerung</dt><dd>{v.calendar.dauerfristverlaengerung ? 'granted' : 'not set'}</dd></div>
-              <div className="contents"><dt>Planning deadline</dt><dd>{v.deadline ? <>{v.deadline.dueOn} <span className="bc-meta">({v.deadline.legalReference})</span></> : '—'}</dd></div>
-              <div className="contents"><dt>Official date</dt><dd>{v.taxPeriod?.official_due_on ?? <span className="dim">none recorded</span>}</dd></div>
-              <div className="contents"><dt>Status</dt><dd><StateBadge table="taxperiod" value={v.taxPeriod?.status ?? 'open'} /></dd></div>
-            </dl>
-            <p className="bc-meta mt-3" style={{ fontSize: 12 }}>Nothing is transmitted from here. The adviser files via ELSTER and records the filed amount as a stage on the Taxes page (administrator).</p>
-          </Section>
-        </div>
+      <div className="mt-8">
+        <Notice tone="neutral" title="Prepared, not filed.">
+          These figures are calculated from the bookings and the books by fixed rules ({r.rulesVersion}); nothing is sent to the Finanzamt from here.
+          Each rule is marked “set by law”, “company setting” or “adviser to confirm”. Have the Steuerberater confirm the settings once; after that every
+          period is calculated the same way.
+        </Notice>
       </div>
     </>
   );
