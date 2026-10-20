@@ -24,7 +24,7 @@ Exit 1 on any `refuse` finding. Findings name variables, never values.
 | Supabase project | own dev project or none | **none** | staging project | production project |
 | `BEDS24_MODE` | `mock` | `mock` | `live` (real account, reads) | `live` |
 | `PAYPAL_MODE` | unset or `sandbox` | unset | `sandbox` | `live` |
-| `DIRECT_BOOKING_ENABLED` | may be `true` for dev | **refused** | `true` only for the sandbox E2E | `true` only after `docs/production-readiness.md` |
+| `DIRECT_BOOKING_ENABLED` | may be `true` for dev | **refused** | `true` for the sandbox E2E; live Beds24 writes only from an administrator-unlocked browser (`lib/booking/tester.ts`, `docs/staging-live-test.md`) | `true` only after `docs/production-readiness.md` |
 | Admin data | fixtures (`ADMIN_DEV_FIXTURES`) or Supabase | preview demo (`ADMIN_PREVIEW_DEMO`) | Supabase | Supabase |
 | Guest messages | none | none | none (outbox only) | via n8n |
 

@@ -36,6 +36,7 @@ import { otherVatFromLedger, stayTaxInputsFrom, stayTaxPolicyFrom } from '@/lib/
 import { REVIEW_REQUIRED_CODE, requireTaxCode } from '@/lib/finance/tax-codes';
 import { allocateInvoiceNumber } from '@/lib/invoicing/numbering';
 import { FinanceCommandError, asFinanceError, errorMessage } from '@/lib/finance/errors';
+import { isStagingTestBooking } from '@/lib/finance/ingestion-rules';
 
 type Json = Record<string, unknown>;
 
@@ -165,6 +166,7 @@ interface IntentFactRow {
   id: string; reference: string; unit_id: string; source: string; status: string; payment_status: string; check_in: string; check_out: string; currency: string;
   quoted_total_cents: number | null; quote_components: unknown; paid_amount_cents: number | null; paid_currency: string | null; payment_capture_id: string | null; payment_provider: string | null;
   paid_at: string | null; confirmed_at: string | null; refund_state: string | null; refund_id: string | null; refunded_amount_cents: number | null; refund_completed_at: string | null; cancellation_completed_at: string | null;
+  terms_evidence?: unknown;
 }
 
 export interface IngestionReport {
@@ -190,7 +192,7 @@ function toFact(r: IntentFactRow): BookingFact {
   };
 }
 
-const INTENT_FACT_COLUMNS = 'id, reference, unit_id, source, status, payment_status, check_in, check_out, currency, quoted_total_cents, quote_components, paid_amount_cents, paid_currency, payment_capture_id, payment_provider, paid_at, confirmed_at, refund_state, refund_id, refunded_amount_cents, refund_completed_at, cancellation_completed_at';
+const INTENT_FACT_COLUMNS = 'id, reference, unit_id, source, status, payment_status, check_in, check_out, currency, quoted_total_cents, quote_components, paid_amount_cents, paid_currency, payment_capture_id, payment_provider, paid_at, confirmed_at, refund_state, refund_id, refunded_amount_cents, refund_completed_at, cancellation_completed_at, terms_evidence';
 const ELIGIBLE_INTENTS = 'status.in.(confirmed,paid,paid_unfinalized,finalizing,finalization_failed),refund_state.eq.completed';
 
 function emptyReport(): IngestionReport {
@@ -264,6 +266,13 @@ async function ingestIntentFacts(rows: IntentFactRow[], actor: string, report: I
 
   for (const raw of rows) {
     report.scanned += 1;
+    // A staging test: concluded under the labelled TEST terms (refused on
+    // production) and so paid with PayPal SANDBOX money. It moved no money and
+    // sold no stay — never revenue, a receipt or a refund in the books.
+    if (isStagingTestBooking(raw.terms_evidence)) {
+      errors.set(raw.id, []);
+      continue;
+    }
     const fact = toFact(raw);
     const failures: string[] = [];
     errors.set(fact.intentId, failures);

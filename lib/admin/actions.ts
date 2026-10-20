@@ -38,7 +38,7 @@ import {
   establishSession,
   operatorFor,
 } from '@/lib/admin/auth';
-import { adminMode } from '@/lib/admin/config';
+import { adminMode, isSecureCookieContext } from '@/lib/admin/config';
 import { createLogger } from '@/lib/booking/logger';
 import { clientKey, rateLimit } from '@/lib/booking/http';
 import { BookingError } from '@/lib/booking/service';
@@ -48,6 +48,9 @@ import { assignTurnover, queueReconciliation, requeueMessageDelivery, requeueOut
 import { reconciliationReasonFor, runReconciliation, type ReconciliationReport } from '@/lib/booking/reconciliation';
 import { cancelBooking, classifyCancellation } from '@/lib/booking/cancellation';
 import { operatorPaidCancellationEnabled } from '@/lib/booking/config';
+import { directBookingPermitted } from '@/lib/booking/config';
+import { mintTesterToken, testerCookieOptions, testerGateApplies, TESTER_COOKIE } from '@/lib/booking/tester';
+import { cookies } from 'next/headers';
 
 /* ── Sign in / out ─────────────────────────────────────────────────────── */
 
@@ -428,6 +431,40 @@ export async function requeueOutboxAction(eventId: string): Promise<RequeueResul
   } catch (cause) {
     createLogger().error('outbox.requeue', cause, { outcome: 'operator_requeue_failed' });
     await audit({ operator: gate.operator, action: 'outbox.requeue', targetType: 'outbox_event', targetRef: eventId, outcome: 'error' });
+    return { ok: false, reason: 'failed' };
+  }
+}
+
+/* ── Staging test bookings ─────────────────────────────────────────────── */
+
+export type BookingTesterResult =
+  | { ok: true; on: boolean }
+  | { ok: false; reason: 'unauthenticated' | 'forbidden' | 'preview' | 'not_applicable' | 'gate_closed' | 'failed' };
+
+/**
+ * Let THIS browser make live test bookings on staging (or stop). Administrators
+ * only, never on production, and only while the launch gate itself is open:
+ * the cookie unlocks the tester gate (lib/booking/tester.ts), not the launch
+ * gate or any legal check.
+ */
+export async function setBookingTesterAction(on: boolean): Promise<BookingTesterResult> {
+  const gate = await operatorFor('manage_operators');
+  if (!gate.ok) return { ok: false, reason: gate.reason };
+  if (!testerGateApplies()) return { ok: false, reason: 'not_applicable' };
+  const secure = isSecureCookieContext();
+  if (!on) {
+    cookies().set(TESTER_COOKIE, '', { ...testerCookieOptions(secure), maxAge: 0 });
+    await audit({ operator: gate.operator, action: 'booking_tester.off', outcome: 'ok' });
+    revalidatePath('/admin/system');
+    return { ok: true, on: false };
+  }
+  if (!directBookingPermitted().permitted) return { ok: false, reason: 'gate_closed' };
+  try {
+    cookies().set(TESTER_COOKIE, await mintTesterToken({ id: gate.operator.authUserId, email: gate.operator.email }), testerCookieOptions(secure));
+    await audit({ operator: gate.operator, action: 'booking_tester.on', outcome: 'ok' });
+    revalidatePath('/admin/system');
+    return { ok: true, on: true };
+  } catch {
     return { ok: false, reason: 'failed' };
   }
 }

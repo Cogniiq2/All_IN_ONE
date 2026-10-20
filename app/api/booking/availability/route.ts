@@ -16,6 +16,7 @@ import { createLogger } from '@/lib/booking/logger';
 import { bookingErrorResponse, bookingJson, clientKey, rateLimit, requireBackend } from '@/lib/booking/http';
 import { getAvailability } from '@/lib/booking/service';
 import { isIsoDate } from '@/lib/booking/stay-rules';
+import { directBookingFor } from '@/lib/booking/tester';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -40,7 +41,8 @@ export async function GET(request: NextRequest) {
       },
       logger
     );
-    return bookingJson(calendar, logger);
+    // The gate as it applies to THIS visitor (a staging tester or not).
+    return bookingJson({ ...calendar, directBooking: await directBookingFor(request) }, logger);
   } catch (cause) {
     return bookingErrorResponse(cause, logger);
   }

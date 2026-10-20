@@ -32,7 +32,8 @@ import {
   readJson,
   requireBackend,
 } from '@/lib/booking/http';
-import { BookingError, requireDirectBooking, startBooking } from '@/lib/booking/service';
+import { BookingError, startBooking } from '@/lib/booking/service';
+import { requireDirectBookingFor } from '@/lib/booking/tester';
 import type { GuestDetails } from '@/lib/booking/types';
 import { parseAcceptedVersions } from '@/lib/legal/booking-terms';
 
@@ -50,8 +51,9 @@ export async function POST(request: NextRequest) {
     requireBackend();
     // The launch gate answers before any input is judged: with direct booking
     // off, every request is `booking_disabled`, whatever its body says.
-    // `startBooking` checks it again; this only fixes the order.
-    requireDirectBooking(logger);
+    // `startBooking` checks it again; this only fixes the order. Off
+    // production, against the real Beds24, only an approved tester passes.
+    await requireDirectBookingFor(request, logger);
 
     const body = await readJson(request);
     const result = await startBooking(

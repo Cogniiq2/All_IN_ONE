@@ -99,7 +99,7 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplate[] = [
     id: 'booking_confirmation.de',
     kind: 'booking_confirmation',
     locale: 'de',
-    version: '2',
+    version: '3',
     required: [...CORE, 'nights', 'totalAmount', 'checkInTime', 'checkOutTime', ...CONTRACT_TERMS],
     subject: 'Ihre Buchung {{reference}} bei {{brandName}} ist bestätigt',
     text: `Guten Tag {{firstName}},
@@ -111,7 +111,7 @@ Unterkunft: {{unitName}}
 Anreise: {{checkInDate}} ab {{checkInTime}} Uhr
 Abreise: {{checkOutDate}} bis {{checkOutTime}} Uhr
 Nächte: {{nights}}
-Gesamtbetrag: {{totalAmount}}
+Gesamtbetrag (per PayPal bezahlt): {{totalAmount}}
 
 Ihr Vertragspartner: {{contractingParty}}
 
@@ -135,7 +135,7 @@ Herzliche Grüße
     id: 'booking_confirmation.en',
     kind: 'booking_confirmation',
     locale: 'en',
-    version: '2',
+    version: '3',
     required: [...CORE, 'nights', 'totalAmount', 'checkInTime', 'checkOutTime', ...CONTRACT_TERMS],
     subject: 'Your booking {{reference}} at {{brandName}} is confirmed',
     text: `Dear {{firstName}},
@@ -147,7 +147,7 @@ Apartment: {{unitName}}
 Arrival: {{checkInDate}} from {{checkInTime}}
 Departure: {{checkOutDate}} by {{checkOutTime}}
 Nights: {{nights}}
-Total: {{totalAmount}}
+Total (paid via PayPal): {{totalAmount}}
 
 Your contracting party: {{contractingParty}}
 

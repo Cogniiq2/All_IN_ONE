@@ -140,8 +140,11 @@ export const SUCCESS_SCENES: Record<SuccessSceneId, SuccessScene> = {
     eyebrow: { de: 'Zahlung erhalten', en: 'Payment received' },
     title: { de: 'Zahlung erhalten', en: 'Payment received' },
     lede: {
-      de: 'Ihre Zahlung ist bei uns eingegangen und Ihr Zeitraum ist für Sie reserviert. Die endgültige Bestätigung schicken wir Ihnen per E-Mail, sobald sie vorliegt.',
-      en: 'Your payment has reached us and your dates are reserved for you. We will email you the final confirmation as soon as it is ready.',
+      // Not "your dates are reserved": a paid booking whose hold could not be
+      // confirmed (manual review) lands here too. Only the confirmed scene
+      // may promise the dates.
+      de: 'Ihre Zahlung ist bei uns eingegangen. Wir schließen Ihre Reservierung jetzt ab und schicken Ihnen die Bestätigung per E-Mail. Sollte dabei etwas nicht stimmen, melden wir uns persönlich bei Ihnen.',
+      en: 'Your payment has reached us. We are now completing your reservation and will email you the confirmation. Should anything not be right, we will contact you personally.',
     },
     steps: [
       {

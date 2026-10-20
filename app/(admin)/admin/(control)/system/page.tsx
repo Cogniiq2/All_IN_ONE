@@ -8,6 +8,9 @@ import { HealthSectionCard } from '@/components/admin/health-section-card';
 import { PageHeader, Section, ErrorNotice, JobBadge, OperationBadge, When, Notice } from '@/components/admin/primitives';
 import { RefreshControl } from '@/components/admin/shell/refresh-control';
 import { RunPassButton } from '@/components/admin/system/run-pass-button';
+import { BookingTesterControl } from '@/components/admin/system/booking-tester-control';
+import { cookies } from 'next/headers';
+import { isBookingTester, testerGateApplies } from '@/lib/booking/tester';
 import { loadFinanceHealth } from '@/lib/finance/queries';
 
 export const metadata: Metadata = { title: 'System' };
@@ -37,10 +40,18 @@ export default async function SystemPage() {
     loadFinanceHealth(),
   ]);
   const mayRun = can(operator?.role, 'run_reconciliation_pass') && !operator?.preview;
+  const mayTest = can(operator?.role, 'manage_operators') && !operator?.preview && testerGateApplies();
+  const testing = mayTest && (await isBookingTester({ cookies: cookies() }));
 
   return (
     <>
       <PageHeader eyebrow="Behind the scenes" title="System" description="What is measured, what is configured, and what nothing measures yet." actions={<RefreshControl loadedAt={health.loadedAt} every={120} />} />
+
+      {mayTest && (
+        <Section title="Test bookings" meta={<span>staging · live Beds24 · PayPal sandbox</span>} id="test-bookings">
+          <BookingTesterControl active={testing} />
+        </Section>
+      )}
 
       <Section title="Alerts" meta={<span>the same list the internal health endpoint serves</span>} id="alerts">
         {!alerts.ok ? (

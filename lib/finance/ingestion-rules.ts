@@ -22,6 +22,7 @@
 import { allocate, splitGross } from '@/lib/finance/money';
 import { requireTaxCode } from '@/lib/finance/tax-codes';
 import { taxCodeForComponent } from '@/lib/finance/invoices';
+import { TEST_TERMS } from '@/lib/legal/booking-terms';
 
 export interface BookingFact {
   intentId: string;
@@ -205,4 +206,17 @@ export function refundPosting(b: BookingFact, originalLines: Array<{ line_no: nu
 export function expectedTurnoverCost(turnover: { id: string; intent_id: string; unit_id: string; departure: string; reference?: string | null }, policy: { expectedNetCents: number; supplierId: string | null; taxCode: string } | null) {
   if (!policy || policy.expectedNetCents <= 0) return null;
   return { turnover_id: turnover.id, booking_intent_id: turnover.intent_id, booking_reference: turnover.reference ?? null, unit_id: turnover.unit_id, departure: turnover.departure, supplier_id: policy.supplierId, expected_net_cents: policy.expectedNetCents, expected_tax_code: policy.taxCode, state: 'expected' };
+}
+
+/**
+ * A booking concluded under the sandbox TEST terms on a deployed environment:
+ * a staging test paid with PayPal sandbox money. `BOOKING_TEST_TERMS` is
+ * refused on production, so a real guest can never carry these versions. On
+ * `local` (the integration stack) nothing is real anyway, and the finance
+ * tests drive the ingestion with exactly these bookings, so it is not skipped.
+ */
+export function isStagingTestBooking(termsEvidence: unknown, appEnv: string | undefined = process.env.APP_ENV): boolean {
+  if (appEnv === 'local') return false;
+  const versions = (termsEvidence as { versions?: Record<string, unknown> } | null | undefined)?.versions;
+  return !!versions && Object.values(versions).some((v) => v === TEST_TERMS.cancellation.version);
 }

@@ -27,13 +27,18 @@
     },
     "staging": {
       "name": "bolagio-staging",
-      // Live Beds24 reads against the real account, PayPal SANDBOX, its own
-      // Supabase project. Direct booking may be switched on here for the
-      // sandbox end-to-end run and nowhere else before production.
+      // Live Beds24 against the real account, PayPal SANDBOX, labelled TEST
+      // terms. Direct booking is on for the sandbox end-to-end run
+      // (docs/staging-live-test.md): the gate stays shut until the secrets
+      // exist, and even then only a browser an administrator unlocked
+      // (Control → System → Test bookings) can write to Beds24.
       "vars": {
         "APP_ENV": "staging",
         "BEDS24_MODE": "live",
-        "DIRECT_BOOKING_ENABLED": "false",
+        "DIRECT_BOOKING_ENABLED": "true",
+        "PAYPAL_MODE": "sandbox",
+        "BOOKING_TEST_TERMS": "true",
+        "OPERATOR_PAID_CANCELLATION_ENABLED": "true",
         "SUPABASE_URL": "https://lqgtmoulqzmrhglabrms.supabase.co"
       }
     },
