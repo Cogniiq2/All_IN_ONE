@@ -175,7 +175,7 @@ export function PayPalButton({ reference, onSettled, onCancel, onError }: PayPal
   }, [reference]);
 
   return (
-    <div>
+    <div className="w-full">
       <div ref={container} aria-busy={state === 'loading'} />
 
       {state === 'loading' && (

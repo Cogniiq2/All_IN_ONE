@@ -55,7 +55,8 @@ supabase/ops/*                 preflight, verify, rollback
 ## 3. The guest path
 
 ```
-GET availability (cache)  →  POST quote (live Beds24)  →  POST intent
+GET availability (LIVE Beds24, 15 s shared; cache only if Beds24 is silent)
+   →  POST quote (live calendar + live offer)  →  POST intent
    gate: DIRECT_BOOKING_ENABLED && environment has no contradiction && unit.is_bookable
    → idempotency key → quoted → LOCK (exclusion constraint) → live offer
    → tracked POST /bookings (uncertain = manual_review, never retried)
@@ -64,8 +65,34 @@ POST payment/order   guards: payable state, lease not expired, quote fresh, no m
                      reuse existing order (read from PayPal) or create with deterministic request id
 POST payment/capture guards: payable state, lease not expired, payment not unknown
                      capture → bolagio_record_payment_capture (amount, currency, order, dedup)
-                     → paid → finalize (same Beds24 id) → confirmed → outbox booking.confirmed
+                     → paid → finalize: READ the hold first — cancelled/moved/other room →
+                     manual_review (BEDS24_HOLD_LOST_BEFORE_CONFIRM), never confirmed
+                     → confirm (same Beds24 id) → confirmed → outbox booking.confirmed
 ```
+
+**A Beds24 "no" is a clean answer.** A 4xx from Beds24 (except 408/409/429)
+is a definite refusal (`rejected` → `availability_conflict`): nothing was
+created, the lock is released, and the dialog shows "these dates have just
+been taken" with the nearest free stays of the same length
+(`POST /api/booking/alternatives`, live, `lib/booking/alternatives.ts`) —
+same apartment ±45 days, then the same dates in another bookable apartment
+that sleeps the party. Timeouts, 409, 429 and 5xx stay uncertain (Beds24 may
+have acted) and go to reconciliation as before. A refusal is never served
+from the 15-second shared answer: it is re-read fresh, and a refusal drops
+the shared answers for that unit so the next calendar look shows the taken
+nights.
+
+**The launch gate reaches the dialog.** `GET availability` carries
+`directBooking` (`directBookingPermitted()`); with the gate shut the calendar
+is still the live one, but the last step sends a booking request — never a
+checkout the server would refuse, and never a "confirmed" screen for a request.
+
+**What still decides "impossible".** The website cannot make a double
+booking on its own side (exclusion constraint + live re-check + hold
+read-back + pre-confirm read). Between Beds24 and the OTAs the guarantee is
+Beds24's: its availability push to Booking.com/Airbnb and its Overbooking
+Protection setting. A guest on Booking.com and a guest here pressing the
+button in the same second is resolved by Beds24, not by this code.
 
 Time: the guest-facing gate closes at `hold_expires_at`; the sweep releases
 only `BOOKING_LEASE_GRACE_SECONDS` later, so the two cannot cross.

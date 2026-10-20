@@ -267,6 +267,7 @@ const CODE_TITLE: Readonly<Record<string, string>> = {
   BEDS24_RELEASE_UNVERIFIED: 'Released, but nights still closed',
   BEDS24_FINALIZATION_FAILED: 'Finalization at channel manager failed',
   BEDS24_FINALIZATION_UNVERIFIED: 'Finalized status did not verify',
+  BEDS24_HOLD_LOST_BEFORE_CONFIRM: 'Paid, but the hold was gone before confirming — check the nights',
   BEDS24_UNAVAILABLE: 'Channel manager unreachable',
   BEDS24_ORPHAN_BOOKING: 'Channel-manager booking without a local record',
   PAYMENT_AMOUNT_MISMATCH: 'Captured amount differs from the quote',

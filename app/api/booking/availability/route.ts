@@ -1,12 +1,13 @@
 /**
  * GET /api/booking/availability?unit=<slug>&from=<iso>&to=<iso>
  *
- * The calendar the browser paints. Served from the Supabase cache, so paging
- * through months is instant and generates no provider traffic at all.
+ * The calendar the browser paints. Read LIVE from Beds24 (one answer shared
+ * for 15 seconds per isolate), falling back to the Supabase cache only when
+ * Beds24 does not answer. The whole horizon arrives in one response, so
+ * paging through months costs nothing.
  *
- * It is deliberately NOT authoritative and the client must not treat it as a
- * guarantee — `/api/booking/quote` re-asks Beds24 live before anything is
- * reserved. Nothing identifying is required to call it: availability is public
+ * It is still not a guarantee — `/api/booking/quote` and the hold re-ask
+ * Beds24 before anything is reserved. Nothing identifying is required to call it: availability is public
  * information, the same information Booking.com shows.
  */
 

@@ -467,6 +467,9 @@ async function resolveUnknownHold(intent: IntentRecord, logger: BookingLogger): 
 async function resolveUnfinalized(intent: IntentRecord, logger: BookingLogger): Promise<Outcome> {
   const result = await finalizeBooking(intent, logger);
   if (result.outcome === 'confirmed') return 'resolved';
+  // The hold was cancelled or moved at Beds24 before it could be confirmed:
+  // retrying would only find it gone again. A person re-books or refunds.
+  if (result.outcome === 'hold_lost') return 'escalated';
   // Never creates a second booking, never refunds, never releases. It simply
   // stays queued until it works or a person intervenes.
   return 'retry';

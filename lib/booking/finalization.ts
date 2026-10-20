@@ -40,6 +40,7 @@ export type FinalizationResult =
   | { outcome: 'confirmed'; intent: IntentRecord }
   | { outcome: 'unfinalized'; intent: IntentRecord | null; code: 'BEDS24_FINALIZATION_FAILED' }
   | { outcome: 'unverified'; intent: IntentRecord | null; code: 'BEDS24_FINALIZATION_UNVERIFIED' }
+  | { outcome: 'hold_lost'; intent: IntentRecord | null; code: 'BEDS24_HOLD_LOST_BEFORE_CONFIRM' }
   | { outcome: 'not_applicable'; intent: IntentRecord };
 
 /**
@@ -96,6 +97,36 @@ export async function finalizeBooking(
     // way this call has nothing to do — and doing it anyway would be a second
     // concurrent update of the same Beds24 booking.
     return { outcome: 'not_applicable', intent };
+  }
+
+  /* ── Is the hold still ours? ─────────────────────────────────────────── */
+  //
+  // Read BEFORE writing. Confirming is a status write on an existing Beds24
+  // booking; if that booking was cancelled meanwhile (by hand in Beds24, or
+  // by Beds24 itself), writing "confirmed" would bring back nights that may
+  // already have been sold on Booking.com — a double booking created by us.
+  // So: a hold that is gone, or no longer covers these nights in this room,
+  // is never confirmed automatically, and a hold we cannot read is not
+  // confirmed either (reconciliation retries).
+
+  let current: ProviderBooking | null = null;
+  try {
+    current = await bookingProvider().getBooking(bookingId);
+  } catch {
+    current = null;
+  }
+  if (!current) {
+    return unverified(finalizing, 'the Beds24 hold could not be read before confirming', logger);
+  }
+  const lost = holdLostReason(current, intent);
+  if (lost) {
+    logger.error('beds24.finalize', undefined, {
+      reference: intent.reference,
+      providerBookingId: bookingId,
+      actual: current.status,
+      errorCode: 'BEDS24_HOLD_LOST_BEFORE_CONFIRM',
+    });
+    return holdLost(finalizing, lost, logger);
   }
 
   let updated: ProviderBooking;
@@ -262,6 +293,47 @@ async function unfinalized(
 }
 
 /** Beds24 answered, but not with the status we asked for. Also never releases. */
+/** Beds24 statuses under which the nights are no longer held for this guest. */
+const RELEASED_STATUSES = new Set(['cancelled', 'canceled', 'black', 'declined', 'inquiry']);
+
+/**
+ * Why the Beds24 booking is no longer this guest's hold, or null when it
+ * still is: not cancelled, same room, same nights. Exported for tests.
+ */
+export function holdLostReason(current: ProviderBooking, intent: Pick<IntentRecord, 'checkIn' | 'checkOut' | 'beds24RoomId'>): string | null {
+  const status = (current.status ?? '').toLowerCase();
+  if (RELEASED_STATUSES.has(status)) return `the Beds24 hold is "${current.status}"`;
+  if (current.checkIn && current.checkIn !== intent.checkIn) return `the Beds24 hold now starts ${current.checkIn}, not ${intent.checkIn}`;
+  if (current.checkOut && current.checkOut !== intent.checkOut) return `the Beds24 hold now ends ${current.checkOut}, not ${intent.checkOut}`;
+  if (current.externalRoomId && intent.beds24RoomId && String(current.externalRoomId) !== String(intent.beds24RoomId)) return 'the Beds24 hold is now in another room';
+  return null;
+}
+
+async function holdLost(intent: IntentRecord, reason: string, logger: BookingLogger): Promise<FinalizationResult> {
+  const next = await transitionIntent(
+    intent.id,
+    {
+      expected: 'finalizing',
+      to: 'manual_review',
+      reason: 'hold_lost_before_confirm',
+      patch: {
+        lastFailureCode: 'BEDS24_HOLD_LOST_BEFORE_CONFIRM',
+        lastFailureReason: reason,
+        reconciliationState: 'manual',
+      },
+      outbox: {
+        type: 'booking.manual_review_required',
+        payload: { code: 'BEDS24_HOLD_LOST_BEFORE_CONFIRM', reference: intent.reference },
+      },
+    },
+    logger
+  );
+  await queueReconciliation(intent.id, 'BEDS24_HOLD_LOST_BEFORE_CONFIRM', OPS_CODES.BEDS24_HOLD_LOST_BEFORE_CONFIRM, {
+    beds24BookingId: intent.beds24BookingId,
+  });
+  return { outcome: 'hold_lost', intent: next, code: 'BEDS24_HOLD_LOST_BEFORE_CONFIRM' };
+}
+
 async function unverified(
   intent: IntentRecord,
   reason: string,

@@ -30,6 +30,8 @@ export type BookingLogEvent =
   /** The staging-only financial shape probe. Outcome and provider status only. */
   | 'reservation.financial_probe'
   | 'availability.read'
+  | 'availability.live'
+  | 'availability.alternatives'
   | 'beds24.availability'
   | 'beds24.offer'
   | 'beds24.hold'

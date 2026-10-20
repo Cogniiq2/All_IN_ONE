@@ -87,6 +87,27 @@ export function fetchAvailability(
   });
 }
 
+export interface StayAlternativeView {
+  unitSlug: string;
+  checkIn: IsoDate;
+  checkOut: IsoDate;
+  nights: number;
+  shiftDays: number;
+  sameUnit: boolean;
+}
+
+/** The nearest free stays when the chosen dates are gone. Suggestions only. */
+export function fetchAlternatives(
+  input: { unitSlug: string; checkIn: IsoDate; checkOut: IsoDate; adults: number; children: number },
+  signal?: AbortSignal
+): Promise<{ alternatives: StayAlternativeView[]; live: boolean }> {
+  return call<{ alternatives: StayAlternativeView[]; live: boolean }>('/api/booking/alternatives', {
+    method: 'POST',
+    body: JSON.stringify(input),
+    signal,
+  });
+}
+
 export function fetchQuote(
   input: {
     unitSlug: string;

@@ -112,6 +112,16 @@ async function attempt<T>(init: Beds24RequestInit, isRetry: boolean): Promise<T>
     throw new ProviderError('unavailable', 'Beds24 rate limit reached');
   }
 
+  // A 4xx (other than a timeout or the rate limit above) is Beds24 ANSWERING
+  // "no": the request was read and refused, and nothing was created. It is a
+  // definite refusal — the lock can be released and the guest offered other
+  // dates — not an uncertain outcome that needs a person. 5xx stays uncertain:
+  // the server may have acted before failing. 409 stays uncertain too: on a
+  // retried write it can mean "already done under this idempotency key".
+  if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 409) {
+    throw new ProviderError('rejected', `Beds24 refused the request (${response.status})`);
+  }
+
   if (!response.ok) {
     // Status only. The body is not read into the error — see the note above.
     throw new ProviderError('unavailable', `Beds24 responded ${response.status}`);

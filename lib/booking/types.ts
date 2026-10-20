@@ -63,6 +63,15 @@ export interface AvailabilityCalendar {
    * The UI does not show it; observability and staleness checks use it.
    */
   syncedAt?: string;
+  /** True when these nights were read from Beds24 just now; false when Beds24 was silent and the cached copy answered. */
+  live?: boolean;
+  /**
+   * Whether this deployment takes direct bookings right now (the launch gate,
+   * `directBookingPermitted()`). False: the calendar is still real, but the
+   * dialog sends a booking request instead of opening a checkout that the
+   * server would refuse.
+   */
+  directBooking?: boolean;
   /**
    * True when this unit has no connected provider mapping at all. The UI then
    * keeps the existing "we confirm your dates personally" behaviour instead of
@@ -324,6 +333,7 @@ export interface BookingErrorBody {
  */
 export type BookingAnalyticsEvent =
   | 'booking_calendar_opened'
+  | 'booking_dates_unavailable'
   | 'booking_dates_selected'
   | 'booking_quote_loaded'
   | 'booking_started'

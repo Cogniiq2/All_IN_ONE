@@ -44,9 +44,11 @@ import { PayPalButton } from '@/components/booking/paypal-button';
 import {
   BookingRequestError,
   createBookingIntent,
+  fetchAlternatives,
   fetchAvailability,
   fetchQuote,
   formatMoney,
+  type StayAlternativeView,
 } from '@/lib/booking/client';
 import { track } from '@/lib/booking/analytics';
 import type {
@@ -56,16 +58,13 @@ import type {
   BookingQuote,
   InventoryDay,
 } from '@/lib/booking/types';
-import {
-  readConfirmedStay,
-  readResponsePayload,
-  stayEvent,
-  type ConfirmedStay,
-} from '@/lib/booking/calendar';
+import { stayEvent, type ConfirmedStay } from '@/lib/booking/calendar';
 import { useStay } from '@/lib/booking/stay-context';
 import { DialogModal, Step, StepActions } from '@/components/ui-kit/modal';
 import { StayCalendar } from '@/components/booking/stay-calendar';
 import { BookingNotice } from '@/components/booking/booking-notice';
+import { UnavailablePanel, type UnavailableState } from '@/components/booking/unavailable-panel';
+import { getRentalUnit } from '@/lib/content/apartments';
 import { useUnitFlow } from '@/components/units/unit-flow-context';
 import { CtaButton } from '@/components/ui-kit/cta';
 import { ContactFields, EMAIL_PATTERN } from '@/components/enquiry/enquiry-fields';
@@ -118,7 +117,7 @@ const NO_BEDROOM_PACKAGES: readonly BedroomPackage[] = [];
 export function BookingModal() {
   const { locale } = useI18n();
   const de = locale === 'de';
-  const { unit, stage, backToDetail, close } = useUnitFlow();
+  const { unit, stage, backToDetail, close, openBooking } = useUnitFlow();
   const { stay, setStay } = useStay();
   const router = useRouter();
 
@@ -162,6 +161,9 @@ export function BookingModal() {
   /** Whatever went wrong last, as a code the notice component has copy for. */
   const [notice, setNotice] = useState<{ code: BookingErrorCode; meta?: Record<string, number | string | boolean> } | null>(null);
 
+  /** Beds24 refused the chosen dates: what was refused, and the nearest free stays instead. */
+  const [unavailable, setUnavailable] = useState<UnavailableState | null>(null);
+
   /** Set only when the backend confirms. Never inferred from a successful POST. */
   const [confirmed, setConfirmed] = useState<ConfirmedStay | null>(null);
   const [reference, setReference] = useState<string | null>(null);
@@ -176,7 +178,13 @@ export function BookingModal() {
    */
   const attemptId = useRef<string>('');
 
-  const bookable = Boolean(calendar && !calendar.unsourced) && !upcoming;
+  /*
+   * Bookable needs a connected calendar AND an open launch gate. With the gate
+   * shut the calendar is still the real one — taken nights are taken — but the
+   * last step sends a booking request rather than a checkout the server would
+   * refuse. The gate is the server's answer, never a client flag.
+   */
+  const bookable = Boolean(calendar && !calendar.unsourced && calendar.directBooking !== false) && !upcoming;
 
   const bedroomOptions: readonly BedroomPackage[] =
     unit && 'bedroomPackages' in unit ? unit.bedroomPackages ?? NO_BEDROOM_PACKAGES : NO_BEDROOM_PACKAGES;
@@ -222,6 +230,7 @@ export function BookingModal() {
     setReference(null);
     setQuote(null);
     setNotice(null);
+    setUnavailable(null);
     attemptId.current =
       typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : String(Date.now());
   }, [open, stay.arrival, stay.departure, stay.guests, maxGuests]);
@@ -254,6 +263,70 @@ export function BookingModal() {
 
     return () => controller.abort();
   }, [open, unit, upcoming]);
+
+  /**
+   * Re-read the calendar quietly: on entering the dates step, every minute
+   * while it is on screen, and after a refusal. The server reads Beds24 live,
+   * so a night booked on Booking.com a moment ago shows as taken here without
+   * waiting for any sync. A failed refresh keeps the calendar already shown.
+   */
+  const refreshCalendar = useCallback(() => {
+    if (!unit || upcoming) return;
+    fetchAvailability(unit.slug, {})
+      .then(setCalendar)
+      .catch(() => undefined);
+  }, [unit, upcoming]);
+
+  useEffect(() => {
+    if (!open || step !== 2 || status === 'success') return;
+    refreshCalendar();
+    const timer = window.setInterval(refreshCalendar, 60_000);
+    return () => window.clearInterval(timer);
+  }, [open, step, status, refreshCalendar]);
+
+  /**
+   * Beds24 said no to these dates. Not an error screen: the dates step, with
+   * the refusal stated once, the calendar re-read so the taken nights show,
+   * and the nearest free stays of the same length offered in their place.
+   */
+  const showUnavailable = useCallback(
+    (checkIn: string, checkOut: string) => {
+      if (!unit) return;
+      setQuote(null);
+      setNotice(null);
+      setDates({ arrival: undefined, departure: undefined });
+      setUnavailable({ checkIn, checkOut, loading: true, alternatives: [] });
+      refreshCalendar();
+      track('booking_dates_unavailable', { unitSlug: unit.slug });
+      fetchAlternatives({ unitSlug: unit.slug, checkIn, checkOut, adults: guests, children: 0 })
+        .then(({ alternatives }) =>
+          setUnavailable((u) => (u && u.checkIn === checkIn ? { ...u, loading: false, alternatives } : u))
+        )
+        .catch(() => setUnavailable((u) => (u && u.checkIn === checkIn ? { ...u, loading: false } : u)));
+    },
+    [unit, guests, refreshCalendar]
+  );
+
+  /** Take a suggested stay: its dates, and its apartment if it is another one. Re-quoted live like any choice. */
+  const adoptAlternative = (a: StayAlternativeView) => {
+    setUnavailable(null);
+    if (unit && a.unitSlug !== unit.slug) {
+      const next = getRentalUnit(a.unitSlug);
+      if (!next) return;
+      const options = 'bedroomPackages' in next ? next.bedroomPackages ?? NO_BEDROOM_PACKAGES : NO_BEDROOM_PACKAGES;
+      setCalendar(null);
+      openBooking(next);
+      // The setup chosen for one apartment carries over only if the other offers it.
+      if (bedroomPackage && !options.includes(bedroomPackage)) {
+        setBedroomPackage(undefined);
+        setDates({ arrival: a.checkIn, departure: a.checkOut });
+        setDirection(-1);
+        setStep(1);
+        return;
+      }
+    }
+    setDates({ arrival: a.checkIn, departure: a.checkOut });
+  };
 
   const nights = nightsBetween(dates.arrival, dates.departure);
   const complete = Boolean(dates.arrival && dates.departure && nights);
@@ -297,11 +370,15 @@ export function BookingModal() {
         .catch((cause) => {
           if (signal?.aborted) return;
           setQuote(null);
+          if (cause instanceof BookingRequestError && cause.code === 'availability_conflict') {
+            showUnavailable(dates.arrival!, dates.departure!);
+            return;
+          }
           setNotice(toNotice(cause));
         })
         .finally(() => !signal?.aborted && setQuoteLoading(false));
     },
-    [unit, bookable, dates.arrival, dates.departure, guests, bedroomPackage]
+    [unit, bookable, dates.arrival, dates.departure, guests, bedroomPackage, showUnavailable]
   );
 
   useEffect(() => {
@@ -434,10 +511,10 @@ export function BookingModal() {
 
       // An availability conflict sends the guest back to the calendar with
       // their contact details intact — losing a filled-in form because someone
-      // else booked first would be a second insult.
+      // else booked first would be a second insult — and the nearest free
+      // stays already on offer.
       if (cause instanceof BookingRequestError && cause.code === 'availability_conflict') {
-        setQuote(null);
-        setDates((d) => ({ arrival: d.arrival, departure: undefined }));
+        showUnavailable(dates.arrival!, dates.departure!);
         setDirection(-1);
         setStep(2);
       }
@@ -495,26 +572,19 @@ export function BookingModal() {
         }),
       });
       if (!response.ok) throw new Error(`Booking request failed with ${response.status}`);
-      const fixed = readConfirmedStay(await readResponsePayload(response)) ?? null;
-      if (!fixed) {
-        // A request (or, for a residence in preparation, a note to be told):
-        // each has its own confirmation page.
-        const kind = upcoming ? 'waitlist' : 'booking-request';
-        saveReceipt(kind, {
-          firstName: firstNameOf(contact.name),
-          unitSlug: unit?.slug,
-          ...(upcoming
-            ? {}
-            : { arrival: dates.arrival, departure: dates.departure, guests: clampGuestsFor(guests, maxGuests) ?? MIN_GUESTS }),
-        });
-        finishAt(`/thank-you/${kind}`);
-        return;
-      }
-      // A stay the endpoint itself confirmed stays in the dialog with its
-      // calendar entry: it carries no BoLaGio reference for a page to read.
-      setConfirmed(fixed);
-      setDirection(1);
-      setStatus('success');
+      // A request (or, for a residence in preparation, a note to be told):
+      // each has its own confirmation page. Whatever the enquiry webhook
+      // answers, a request is never shown as a confirmed stay — only the
+      // booking engine, after Beds24 holds the nights, can confirm one.
+      const kind = upcoming ? 'waitlist' : 'booking-request';
+      saveReceipt(kind, {
+        firstName: firstNameOf(contact.name),
+        unitSlug: unit?.slug,
+        ...(upcoming
+          ? {}
+          : { arrival: dates.arrival, departure: dates.departure, guests: clampGuestsFor(guests, maxGuests) ?? MIN_GUESTS }),
+      });
+      finishAt(`/thank-you/${kind}`);
     } catch {
       setNotice({ code: 'unexpected' });
       setStatus('idle');
@@ -608,7 +678,20 @@ export function BookingModal() {
                   loading={calendarLoading}
                   quote={quote}
                   quoteLoading={quoteLoading}
-                  onSelect={(next) => setDates((d) => ({ ...d, ...next }))}
+                  onSelect={(next) => {
+                    setUnavailable(null);
+                    setDates((d) => ({ ...d, ...next }));
+                  }}
+                  panel={
+                    unavailable && (
+                      <UnavailablePanel
+                        state={unavailable}
+                        unitName={unit.name[locale]}
+                        onAdopt={adoptAlternative}
+                        onDismiss={() => setUnavailable(null)}
+                      />
+                    )
+                  }
                 />
               )}
               {step === 3 && (
@@ -636,10 +719,12 @@ export function BookingModal() {
                 />
               )}
 
-              {notice && <div className="mt-5"><BookingNotice code={notice.code} meta={notice.meta} locale={locale} /></div>}
+              {notice && !(unavailable && notice.code === 'availability_conflict') && (
+                <div className="mt-5"><BookingNotice code={notice.code} meta={notice.meta} locale={locale} /></div>
+              )}
 
               <StepActions>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 [&>*:last-child]:min-w-0 [&>*:last-child]:flex-1">
                   {step > 1 && (
                     <button
                       type="button"
@@ -1054,7 +1139,7 @@ function StepperButton({
 }
 
 function StepDates({
-  arrival, departure, nights, days, loading, quote, quoteLoading, onSelect,
+  arrival, departure, nights, days, loading, quote, quoteLoading, onSelect, panel,
 }: {
   arrival?: string; departure?: string; nights?: number;
   days: InventoryDay[];
@@ -1062,11 +1147,14 @@ function StepDates({
   quote: BookingQuote | null;
   quoteLoading: boolean;
   onSelect: (n: { arrival?: string; departure?: string }) => void;
+  /** The "no longer free" panel, when Beds24 has just refused the chosen dates. */
+  panel?: React.ReactNode;
 }) {
   const { locale } = useI18n();
   const de = locale === 'de';
   return (
     <div>
+      {panel}
       <h3 className="display-3 text-[20px]">{de ? 'Wann möchten Sie kommen?' : 'When would you like to come?'}</h3>
       <p className="body-copy mt-2 text-[14px]">
         {nights

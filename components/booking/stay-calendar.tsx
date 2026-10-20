@@ -206,7 +206,7 @@ export function StayCalendar({
                 type="button"
                 disabled={disabled}
                 onClick={() => pick(date)}
-                aria-label={ariaLabel(date, { past, taken, isArrival, isDeparture, inRange }, de)}
+                aria-label={ariaLabel(date, { past, taken, isArrival, isDeparture, inRange, sourced }, de)}
                 aria-pressed={edge || inRange}
                 className="relative flex h-10 items-center justify-center text-[13px] transition-colors
                            disabled:cursor-not-allowed"
@@ -357,7 +357,7 @@ function Legend({ de, minStay }: { de: boolean; minStay?: number }) {
 /** What a screen reader hears. Colour and strikethrough are never the only signal. */
 function ariaLabel(
   date: string,
-  state: { past: boolean; taken: boolean; isArrival: boolean; isDeparture: boolean; inRange: boolean },
+  state: { past: boolean; taken: boolean; isArrival: boolean; isDeparture: boolean; inRange: boolean; sourced: boolean },
   de: boolean
 ): string {
   const [y, m, d] = date.split('-');
@@ -367,5 +367,7 @@ function ariaLabel(
   if (state.inRange) return `${printed} — ${de ? 'im gewählten Zeitraum' : 'within your stay'}`;
   if (state.past) return `${printed} — ${de ? 'vergangen' : 'in the past'}`;
   if (state.taken) return `${printed} — ${de ? 'belegt' : 'reserved'}`;
+  // Without a connected calendar a night is only selectable, not known to be free.
+  if (!state.sourced) return `${printed} — ${de ? 'wählbar, Verfügbarkeit auf Anfrage' : 'selectable, availability on request'}`;
   return `${printed} — ${de ? 'frei' : 'available'}`;
 }

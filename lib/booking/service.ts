@@ -30,6 +30,7 @@ import { directBookingPermitted, inventoryMonths, quoteMinutes } from '@/lib/boo
 import { appEnvironment } from '@/lib/config/environment';
 import { transitionIntent } from '@/lib/booking/commands';
 import { acquireHold, HoldError } from '@/lib/booking/hold';
+import { nearestFreeWindows, nightsOf, windowIsFree, type StayWindow } from '@/lib/booking/alternatives';
 import { evaluateLease } from '@/lib/booking/lease';
 import { releaseHold as releaseHoldSaga } from '@/lib/booking/release';
 import { quoteHashOf } from '@/lib/booking/quote-hash';
@@ -48,6 +49,7 @@ import {
 } from '@/lib/booking/repository';
 import {
   addDays,
+  isIsoDate,
   nightsBetween,
   propertyToday,
   validateAgainstCalendar,
@@ -64,6 +66,7 @@ import type {
   BookingIntentView,
   BookingQuote,
   GuestDetails,
+  InventoryDay,
   IsoDate,
 } from '@/lib/booking/types';
 import { bookingProvider } from '@/lib/integrations/beds24';
@@ -138,13 +141,62 @@ export function occupancyFor(unit: BookableUnit): number {
 
 /* ── Availability (cached) ─────────────────────────────────────────────── */
 
+/* ── Live calendar ─────────────────────────────────────────────────────── */
+
+/**
+ * How long one live Beds24 calendar answer is shared inside this worker
+ * isolate. Short enough that a booking made on Booking.com a moment ago shows
+ * as taken on the next opening; long enough that a burst of visitors (or a
+ * guest opening and closing the dialog) costs one Beds24 call, not twenty —
+ * Beds24 rate-limits per account, and the hourly import has met that limit.
+ */
+const LIVE_CALENDAR_TTL_MS = 15_000;
+const liveCalendar = new Map<string, { at: number; days: InventoryDay[] }>();
+
+/**
+ * The unit's nights straight from Beds24 (`/inventory/rooms/calendar`), or
+ * null when Beds24 does not answer — the caller then falls back to the cached
+ * copy and says so. Never throws.
+ */
+export async function liveInventory(
+  unit: { id: string; slug: string; providerRef: NonNullable<BookableUnit['providerRef']> },
+  from: IsoDate,
+  to: IsoDate,
+  logger: BookingLogger,
+  options: { fresh?: boolean } = {}
+): Promise<{ days: InventoryDay[]; checkedAt: string; shared: boolean } | null> {
+  const key = `${unit.id}|${from}|${to}`;
+  const hit = liveCalendar.get(key);
+  if (!options.fresh && hit && Date.now() - hit.at < LIVE_CALENDAR_TTL_MS) return { days: hit.days, checkedAt: new Date(hit.at).toISOString(), shared: true };
+  const started = Date.now();
+  try {
+    const days = await bookingProvider().fetchAvailability({ unit: unit.providerRef, from, to });
+    const at = Date.now();
+    liveCalendar.set(key, { at, days });
+    // Bounded: old windows are dropped rather than kept for the isolate's life.
+    if (liveCalendar.size > 64) liveCalendar.delete(liveCalendar.keys().next().value as string);
+    logger.info('availability.live', { unitSlug: unit.slug, from, to, count: days.length, durationMs: at - started });
+    return { days, checkedAt: new Date(at).toISOString(), shared: false };
+  } catch (cause) {
+    logger.warn('availability.live', { unitSlug: unit.slug, outcome: 'fallback_to_cache', reason: cause instanceof Error ? cause.message.slice(0, 120) : 'unknown', durationMs: Date.now() - started });
+    return null;
+  }
+}
+
+/** Forget a unit's live answers — after a hold or a refusal, the next look must be fresh. */
+export function forgetLiveCalendar(unitId: string): void {
+  for (const key of Array.from(liveCalendar.keys())) if (key.startsWith(`${unitId}|`)) liveCalendar.delete(key);
+}
+
 /**
  * The calendar the browser paints.
  *
- * Served from Supabase, never from Beds24: a visitor idly paging through
- * months must not generate a provider call per month, and the difference
- * between 8 ms and 800 ms is the difference between a premium calendar and a
- * spinner.
+ * LIVE from Beds24 on every opening (shared for a few seconds, see above),
+ * so a night sold on Booking.com a moment ago is already closed here. Only
+ * when Beds24 does not answer does it fall back to the cached copy that the
+ * Beds24 webhook and the scheduled sync keep current — marked `live: false`.
+ * The quote and the hold re-ask Beds24 regardless; the calendar is the guide,
+ * Beds24 is the authority.
  */
 export async function getAvailability(
   unitSlug: string,
@@ -165,8 +217,9 @@ export async function getAvailability(
     return { unitSlug, from, to, currency: 'EUR', days: [], unsourced: true };
   }
 
-  const { days, syncedAt } = await readInventory(unit.id, from, to);
-  logger.info('availability.read', { unitSlug, from, to, count: days.length });
+  const live = await liveInventory({ id: unit.id, slug: unit.slug, providerRef: unit.providerRef }, from, to, logger);
+  const { days, syncedAt } = live ? { days: live.days, syncedAt: live.checkedAt } : await readInventory(unit.id, from, to);
+  logger.info('availability.read', { unitSlug, from, to, count: days.length, source: live ? 'live' : 'cache' });
 
   return {
     unitSlug,
@@ -175,6 +228,8 @@ export async function getAvailability(
     currency: unit.currency,
     days,
     syncedAt,
+    live: Boolean(live),
+    directBooking: directBookingPermitted().permitted,
     // No inventory at all means the sync has never run for this unit. Saying
     // so is honest; painting an empty month as bookable is not.
     unsourced: days.length === 0,
@@ -184,6 +239,54 @@ export async function getAvailability(
 function horizonEnd(today: IsoDate): IsoDate {
   const [y, m, d] = today.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1 + inventoryMonths(), d)).toISOString().slice(0, 10);
+}
+
+/* ── Alternatives (live) ───────────────────────────────────────────────── */
+
+export interface StayAlternative extends StayWindow {
+  unitSlug: string;
+  /** True when it is the apartment the guest chose. */
+  sameUnit: boolean;
+}
+
+/**
+ * When the chosen dates are gone: the nearest windows of the same length in
+ * the same apartment, then the exact dates in another bookable apartment
+ * that sleeps the party. Read live from Beds24; nothing is held.
+ */
+export async function getAlternatives(
+  input: { unitSlug: string; checkIn: IsoDate; checkOut: IsoDate; adults: number; children: number },
+  logger: BookingLogger = createLogger()
+): Promise<{ alternatives: StayAlternative[]; live: boolean }> {
+  const nights = nightsOf(input.checkIn, input.checkOut);
+  if (!isIsoDate(input.checkIn) || !isIsoDate(input.checkOut) || nights < 1 || nights > 90) throw new BookingError('invalid_dates');
+  const today = propertyToday();
+  const units = await listBookableUnits();
+  const chosen = units.find((u) => u.slug === input.unitSlug && u.providerRef);
+  if (!chosen) throw new BookingError('not_bookable');
+
+  const out: StayAlternative[] = [];
+  let allLive = true;
+
+  const from = addDays(input.checkIn, -45) > today ? addDays(input.checkIn, -45) : today;
+  const to = addDays(input.checkOut, 46);
+  const own = await liveInventory({ id: chosen.id, slug: chosen.slug, providerRef: chosen.providerRef! }, from, to, logger);
+  if (!own) allLive = false;
+  const ownDays = own ? own.days : (await readInventory(chosen.id, from, to)).days;
+  for (const w of nearestFreeWindows(ownDays, input, { today, limit: 3 })) out.push({ ...w, unitSlug: chosen.slug, sameUnit: true });
+
+  const party = input.adults + input.children;
+  for (const other of units) {
+    if (other.id === chosen.id || !other.providerRef || occupancyFor(other) < party) continue;
+    const live = await liveInventory({ id: other.id, slug: other.slug, providerRef: other.providerRef }, input.checkIn, addDays(input.checkOut, 1), logger);
+    if (!live) allLive = false;
+    const days = live ? live.days : (await readInventory(other.id, input.checkIn, addDays(input.checkOut, 1))).days;
+    const byDate = new Map(days.map((d) => [d.date, d] as const));
+    if (windowIsFree(byDate, input.checkIn, nights)) out.push({ checkIn: input.checkIn, checkOut: input.checkOut, nights, shiftDays: 0, unitSlug: other.slug, sameUnit: false });
+  }
+
+  logger.info('availability.alternatives', { unitSlug: input.unitSlug, checkIn: input.checkIn, checkOut: input.checkOut, count: out.length, source: allLive ? 'live' : 'cache' });
+  return { alternatives: out, live: allLive };
 }
 
 /* ── Quote (live) ──────────────────────────────────────────────────────── */
@@ -211,9 +314,26 @@ export async function getQuote(
   });
   if (shapeError) throw fromBody(shapeError);
 
-  const { days } = await readInventory(unit.id, input.checkIn, addDays(input.checkOut, 1));
-  const cacheError = validateAgainstCalendar(input, days);
-  if (cacheError) throw fromBody(cacheError);
+  // The night-by-night rules (closed nights, check-in/out days, min stay) are
+  // judged on Beds24's LIVE calendar; the cached copy only when Beds24 is silent.
+  const window = { from: input.checkIn, to: addDays(input.checkOut, 1) };
+  const ref = { id: unit.id, slug: unit.slug, providerRef: unit.providerRef! };
+  let live = await liveInventory(ref, window.from, window.to, logger);
+  let days = live ? live.days : (await readInventory(unit.id, window.from, window.to)).days;
+  let cacheError = validateAgainstCalendar(input, days);
+  // A "no" is never given from a shared answer a few seconds old — the nights
+  // may have reopened since. It is asked again, fresh, before it stands. A
+  // "yes" needs no second look: the live offer below is the authority.
+  if (cacheError && live?.shared) {
+    live = await liveInventory(ref, window.from, window.to, logger, { fresh: true });
+    days = live ? live.days : days;
+    cacheError = validateAgainstCalendar(input, days);
+  }
+  if (cacheError) {
+    // Every shared answer for this unit that said "free" is now suspect.
+    forgetLiveCalendar(unit.id);
+    throw fromBody(cacheError);
+  }
 
   const started = Date.now();
   let quote: BookingQuote;
@@ -240,6 +360,9 @@ export async function getQuote(
     });
   } catch (cause) {
     const error = fromProvider(cause);
+    // Beds24 just said no: the shared calendar answer that let this stay
+    // through is out of date, and the guest's next look must show why.
+    if (error.code === 'availability_conflict') forgetLiveCalendar(unit.id);
     // An offer that exists under the wrong name means the Beds24 account and
     // the mapping disagree: an operations incident, not a guest's bad luck.
     const fields = {
@@ -478,6 +601,9 @@ export async function startBooking(
     return { intent: toView(held), quote };
   } catch (cause) {
     throw fromHoldFailure(cause);
+  } finally {
+    // Whatever happened, the nights changed or were found taken: the next look must be live.
+    forgetLiveCalendar(unit.id);
   }
 }
 
@@ -507,6 +633,11 @@ function fromHoldFailure(cause: unknown): BookingError {
       return new BookingError('price_changed', undefined, withBoLaGioTerms(cause.failure.quote));
     case 'bedroom_setup_unavailable':
       return new BookingError('bedroom_setup_unavailable', cause.failure.meta);
+    case 'rejected':
+      // Beds24 answered and refused the reservation (nothing was created):
+      // for the guest, these dates cannot be had — the same clean "no longer
+      // available" as a conflict, with other dates offered.
+      return new BookingError('availability_conflict');
     default:
       return new BookingError('unexpected');
   }

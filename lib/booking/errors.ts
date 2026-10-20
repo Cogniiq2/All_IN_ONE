@@ -47,6 +47,13 @@ export const OPS_CODES = {
   BEDS24_FINALIZATION_FAILED: 1,
   /** The booking read back after finalization is not in the expected status. */
   BEDS24_FINALIZATION_UNVERIFIED: 1,
+  /**
+   * Paid, but before confirming, the Beds24 hold was found cancelled or moved
+   * (by hand, or by Beds24). Confirming would revive nights that may already
+   * be sold on a channel. Never confirmed automatically: a person decides —
+   * re-book or refund. Guest has paid.
+   */
+  BEDS24_HOLD_LOST_BEFORE_CONFIRM: 1,
   /** Beds24 is unreachable or erroring. Not a booking-specific fault. */
   BEDS24_UNAVAILABLE: 3,
   /** A Beds24 booking exists that no BoLaGio intent claims. */
