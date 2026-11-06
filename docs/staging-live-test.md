@@ -65,8 +65,11 @@ and present already: `BEDS24_REFRESH_TOKEN`, `SUPABASE_SERVICE_ROLE_KEY`,
 PayPal sandbox webhook →
 `https://bolagio-staging.popovic-lazar0603.workers.dev/api/webhooks/paypal`
 (the Supabase Edge Function `paypal-webhook` is **not** deployed in this
-project, so the worker route is the one to register). n8n (staging):
-`BOLAGIO_MESSAGING_TRANSPORT=smtp` (test inbox) or `test`. Beds24: no Auto
+project, so the worker route is the one to register). n8n: the isolated
+**BoLaGio STAGING** workflows, set up per
+`n8n/runbooks/staging-isolated-setup.md`, with
+`BOLAGIO_STAGING_MESSAGING_TRANSPORT=smtp` and a guest e-mail address you own
+(the `test` transport is refused by the backend on staging). Beds24: no Auto
 Action e-mailing bookings from `BoLaGio Direct`.
 
 ## 4. Steps and evidence
@@ -96,9 +99,15 @@ Record a UTC timestamp and a screenshot or query result for each.
    (screenshots, with the time).
 7. Second attempt, same unit and dates, from the tester browser: "these dates
    have just been taken"; nothing new in Beds24.
-8. Control → the booking → messages: one `booking_confirmation`, `sent` (or
-   `skipped` under the `test` transport), sequence 1; the inbox has exactly
-   one mail. PayPal sandbox dashboard: one capture for the total.
+8. **E-mail.** Within about two minutes of step 3 the test inbox receives
+   exactly **one** "Ihre Buchung BLG-… bei BoLaGio ist bestätigt" (or the
+   English one), with the right dates, nights, total "per PayPal bezahlt"
+   and the TEST terms. Control → the booking → messages: one
+   `booking_confirmation`, `sent`, provider `smtp`, sequence 1. n8n: one
+   green Guest Message execution for the reference. No mail arrived for the
+   abandoned attempt of step 2. Re-run the pump by hand once: it claims
+   nothing new and no second mail arrives. PayPal sandbox dashboard: one
+   capture for the total.
 9. Finance: no `bolagio_finance_payments` row and no revenue transaction for
    the reference (TEST terms → skipped).
 10. Cancel in Control → the booking → Cancel, as an administrator, refund

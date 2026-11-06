@@ -118,12 +118,26 @@ describe('the messages endpoint', () => {
     expect((await messages({ action: 'complete', deliveryId: a.body.deliveryId, outcome: 'sent', provider: 'test', providerMessageId: 'test-1' })).body.recorded).toBe(true);
     expect(h.sql(`select status from bolagio_message_deliveries where kind='checkout'`)).toBe('sent');
 
+    // (A review request is suppressed outright until a legal basis exists, so
+    // the staging half uses a message kind that is still prepared.)
     process.env.APP_ENV = 'staging';
-    const b = await messages({ action: 'prepare', kind: 'review_request', reference });
+    const b = await messages({ action: 'prepare', kind: 'prearrival', reference });
     expect(b.body.outcome).toBe('claimed');
     const refused = await messages({ action: 'complete', deliveryId: b.body.deliveryId, outcome: 'sent', provider: 'test' });
     expect(refused.body.refused).toBe('test_completion_refused');
-    expect(h.sql(`select status || ':' || retryable from bolagio_message_deliveries where kind='review_request'`)).toBe('failed:false');
+    expect(h.sql(`select status || ':' || retryable from bolagio_message_deliveries where kind='prearrival'`)).toBe('failed:false');
+  });
+
+  it('a confirmation is never prepared without a captured payment and a verified Beds24 confirmation', async () => {
+    const reference = await confirmed();
+    // Simulate an inconsistent row behind the guard's back (the status alone says confirmed).
+    h.sql(`alter table bolagio_booking_intents disable trigger user; update bolagio_booking_intents set beds24_verified_at = null where reference = '${reference}'; alter table bolagio_booking_intents enable trigger user;`);
+    const unverified = await messages({ action: 'prepare', kind: 'booking_confirmation', reference });
+    expect(unverified.body.outcome).toBe('suppressed');
+    h.sql(`alter table bolagio_booking_intents disable trigger user; update bolagio_booking_intents set beds24_verified_at = now(), payment_status = 'capture_pending' where reference = '${reference}'; alter table bolagio_booking_intents enable trigger user;`);
+    const unpaid = await messages({ action: 'prepare', kind: 'booking_confirmation', reference });
+    expect(unpaid.body.outcome).toBe('suppressed');
+    expect(h.sql(`select count(*) from bolagio_message_deliveries where reference='${reference}'`)).toBe('0');
   });
 
   it('renders English for an English-speaking guest', async () => {

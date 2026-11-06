@@ -51,6 +51,8 @@ export interface Preflight {
 }
 
 const RECONCILE_MAX_AGE_MS = 10 * 60_000;
+/** The pump runs every 60 s; the heartbeat is recorded at most once a minute. */
+const N8N_CLAIM_MAX_AGE_MS = 5 * 60_000;
 
 export async function runLivePreflight(now: Date = new Date()): Promise<Preflight> {
   const t = APPROVED_LIVE_TEST;
@@ -73,6 +75,7 @@ export async function runLivePreflight(now: Date = new Date()): Promise<Prefligh
   cfg('cancel', 'Paid test booking can be cancelled from Control', operatorPaidCancellationEnabled(), operatorPaidCancellationEnabled() ? 'OPERATOR_PAID_CANCELLATION_ENABLED=true' : 'OPERATOR_PAID_CANCELLATION_ENABLED is not true — the test could not be cleaned up from Control');
   const contact = process.env.MESSAGING_CONTACT_EMAIL?.trim();
   cfg('contact', 'Confirmation e-mail can render', Boolean(contact), contact ? 'MESSAGING_CONTACT_EMAIL present' : 'MESSAGING_CONTACT_EMAIL missing — the confirmation would refuse to render');
+  cfg('n8n-secret', 'Staging n8n can authenticate', Boolean(process.env.N8N_INTERNAL_SECRET?.trim()), process.env.N8N_INTERNAL_SECRET?.trim() ? 'N8N_INTERNAL_SECRET present' : 'N8N_INTERNAL_SECRET missing — n8n cannot claim events or prepare the confirmation');
   cfg('confirmed-status', 'Beds24 status written on payment', beds24ConfirmedStatus() === 'confirmed', `BEDS24_CONFIRMED_STATUS is "${beds24ConfirmedStatus()}"`);
 
   /* ── Beds24, live, for the approved dates ───────────────────────────── */
@@ -107,6 +110,10 @@ export async function runLivePreflight(now: Date = new Date()): Promise<Prefligh
   add({ id: 'reservations', group: 'Database', label: 'No imported guest reservation on those dates', state: !resError && liveRes.length === 0 ? 'pass' : 'fail', detail: resError ? 'could not read bolagio_reservations' : `${liveRes.length} active reservation(s) overlap (both apartments)` });
   const { data: intents, error: intentError } = await db.from('bolagio_booking_intents').select('reference, status').lt('check_in', t.checkOut).gt('check_out', t.checkIn).limit(20);
   add({ id: 'intents', group: 'Database', label: 'No website booking already holds those dates', state: !intentError && (intents ?? []).length === 0 ? 'pass' : 'fail', detail: intentError ? 'could not read bolagio_booking_intents' : (intents ?? []).length === 0 ? 'none' : (intents ?? []).map((i: { reference: string; status: string }) => `${i.reference} ${i.status}`).join(', ') });
+  // The confirmation e-mail is part of the test: the staging pump must be polling.
+  const { data: claim } = await db.from('bolagio_integration_health').select('observed_at, detail').eq('provider', 'n8n').eq('signal', 'last_claim').maybeSingle();
+  const claimAge = claim?.observed_at ? now.getTime() - Date.parse(claim.observed_at as string) : Number.POSITIVE_INFINITY;
+  add({ id: 'n8n-pump', group: 'Database', label: 'Staging n8n pump is polling the outbox (confirmation e-mails)', state: claimAge < N8N_CLAIM_MAX_AGE_MS && String(claim?.detail ?? '').startsWith('n8n-bolagio-staging') ? 'pass' : 'fail', detail: claim?.observed_at ? `last claim ${Math.round(claimAge / 60_000)} min ago by ${String(claim.detail ?? '').split(':')[0] || 'unknown worker'}` : 'n8n has never claimed from staging — import and activate the BoLaGio STAGING workflows' });
   const { data: jobs } = await db.from('bolagio_scheduler_status').select('job, finished_at, ok').eq('job', 'reconcile').maybeSingle();
   const age = jobs?.finished_at ? now.getTime() - Date.parse(jobs.finished_at as string) : Number.POSITIVE_INFINITY;
   add({ id: 'reconcile', group: 'Database', label: 'Reconciliation is running (releases abandoned holds)', state: jobs?.ok && age < RECONCILE_MAX_AGE_MS ? 'pass' : 'fail', detail: jobs?.finished_at ? `last pass ${Math.round(age / 60_000)} min ago, ${jobs.ok ? 'ok' : 'failed'}` : 'no reconciliation pass recorded' });
@@ -114,7 +121,7 @@ export async function runLivePreflight(now: Date = new Date()): Promise<Prefligh
   /* ── What only the owners can see ───────────────────────────────────── */
   const manual = (id: string, label: string, detail: string) => add({ id, group: 'Owners', label, state: 'manual', detail });
   manual('paypal-dashboard', 'PayPal sandbox webhook points at staging', 'developer.paypal.com → sandbox app → Webhooks: …/api/webhooks/paypal');
-  manual('n8n', 'n8n transport for the confirmation', 'BOLAGIO_MESSAGING_TRANSPORT is smtp (test inbox) or test on the staging n8n');
+  manual('n8n', 'n8n sends real e-mail to the test inbox', 'BOLAGIO_STAGING_MESSAGING_TRANSPORT=smtp with the credential "BoLaGio STAGING SMTP"; the guest e-mail used in the test is a mailbox you own');
   manual('channels', 'Booking.com and Airbnb calendars open for the dates', 'screenshot both before the test');
 
   const go = checks.every((c) => c.state !== 'fail');

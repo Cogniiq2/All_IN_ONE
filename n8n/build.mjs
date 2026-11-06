@@ -1016,6 +1016,9 @@ function buildErrorHandler() {
 // Output
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** For the staging variant (n8n/build-staging.mjs). Exporting changes no output. */
+export { NAMES, IDS, FILES, WORKER, workflowId, credentialPlaceholderId };
+
 export const WORKFLOWS = {
   [FILES.pump]: buildPump,
   [FILES.guest]: buildGuestMessage,

@@ -16,7 +16,7 @@ const h = vi.hoisted(() => ({ claims: 0, failures: [] as Array<{ outcome: string
 vi.mock('@/lib/supabase/server', () => ({ supabaseAdmin: () => { throw new Error('no db'); }, isSupabaseConfigured: () => true }));
 vi.mock('@/lib/booking/repository', () => ({
   findIntentByReference: async () => ({
-    id: 'i1', reference: 'BLG-AAAAAA', status: 'confirmed', unitSlug: 'schulstrasse-i',
+    id: 'i1', reference: 'BLG-AAAAAA', status: 'confirmed', paymentStatus: 'paid', beds24VerifiedAt: '2026-10-01T10:00:00Z', unitSlug: 'schulstrasse-i',
     checkIn: '2027-03-10', checkOut: '2027-03-12', adults: 2, children: 0, currency: 'EUR',
     quotedTotalCents: 32000, paidAmountCents: 32000, paidCurrency: 'EUR',
     guest: { firstName: 'Ada', lastName: 'Lovelace', email: 'ada@example.com', phone: '1', locale: 'de' },

@@ -353,3 +353,37 @@ describe('the error handler', () => {
     expect(js).toContain("startsWith('BoLaGio ·')");
   });
 });
+
+/* ── The staging variant (n8n/build-staging.mjs) ─────────────────────────── */
+
+describe('the staging copies share nothing with the production package', () => {
+  const STAGING_DIR = path.join(ROOT, 'n8n', 'workflows-staging');
+  const stagingFiles = readdirSync(STAGING_DIR).filter((f) => f.endsWith('.json')).sort();
+  const productionIds = files.map((f) => String(workflows.get(f)!.id));
+
+  it('is exactly what `node n8n/build-staging.mjs` generates, one copy per workflow', () => {
+    expect(stagingFiles).toEqual(files.map((f) => f.replace(/^bolagio-/, 'bolagio-staging-')).sort());
+    const out = mkdtempSync(path.join(tmpdir(), 'bolagio-n8n-staging-'));
+    try {
+      execFileSync(process.execPath, [path.join(ROOT, 'n8n', 'build-staging.mjs'), '--out', out], { stdio: 'pipe' });
+      for (const file of stagingFiles) {
+        expect(readFileSync(path.join(out, file), 'utf8'), file).toBe(readFileSync(path.join(STAGING_DIR, file), 'utf8'));
+      }
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  });
+
+  it.each(stagingFiles)('%s: staging names, ids, variables, credential, worker; inactive', (file) => {
+    const text = readFileSync(path.join(STAGING_DIR, file), 'utf8');
+    const w = JSON.parse(text);
+    expect(w.name).toMatch(/^BoLaGio STAGING · /);
+    expect(w.active).toBe(false);
+    expect(w.tags).toEqual([{ name: 'bolagio-staging' }]);
+    expect(text).not.toContain('BoLaGio · ');
+    for (const id of productionIds) expect(text).not.toContain(id);
+    expect(text.match(/BOLAGIO_(?!STAGING_)[A-Z]/g)).toBeNull();
+    expect(text).not.toContain('"BoLaGio SMTP"');
+    expect(text).not.toMatch(/'n8n-bolagio'|"n8n-bolagio"/);
+  });
+});

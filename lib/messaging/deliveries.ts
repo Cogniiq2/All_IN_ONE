@@ -134,6 +134,19 @@ export async function prepareGuestMessage(
   if (!intent.guest?.email) {
     return { outcome: 'suppressed', reason: 'booking has no guest email' };
   }
+  // The confirmation states two facts, so both are checked at the moment it
+  // would go out, not only inferred from the status: the money was captured,
+  // and Beds24 itself was read back holding the confirmed reservation.
+  if (input.kind === 'booking_confirmation') {
+    if (intent.paymentStatus !== 'paid') {
+      logger.info('message.delivery', { reference: input.reference, eventType: input.kind, outcome: 'suppressed', status: intent.paymentStatus });
+      return { outcome: 'suppressed', reason: `payment is ${intent.paymentStatus}, not paid` };
+    }
+    if (!intent.beds24VerifiedAt) {
+      logger.info('message.delivery', { reference: input.reference, eventType: input.kind, outcome: 'suppressed', status: 'beds24_unverified' });
+      return { outcome: 'suppressed', reason: 'the Beds24 confirmation has not been verified' };
+    }
+  }
 
   // A feedback request is advertising in German law. Nothing leaves until a
   // legal basis is recorded — see lib/legal/messaging.ts.
