@@ -1,0 +1,47 @@
+# ══════════════════════════════════════════════════════════════════════════
+# BoLaGio's OWN n8n — separate from the Cogniiq instance in every respect:
+# own server, own database (SQLite volume), own encryption key, own
+# credentials, own variables. See n8n/runbooks/staging-dedicated-instance.md.
+#
+# Not reachable from the internet: the editor listens on 127.0.0.1 only and
+# is opened through an SSH tunnel. The BoLaGio workflows need no inbound
+# traffic — the pump POLLS the website (outbound HTTPS) and sends mail by
+# SMTP (outbound). No webhook, no public URL, no TLS certificate to run.
+# ══════════════════════════════════════════════════════════════════════════
+services:
+  n8n:
+    # Pinned on purpose. Set N8N_VERSION in .env to the version the package
+    # was rehearsed on; never `latest` (a major upgrade changed Code-node
+    # and environment-variable defaults once already, in 2.0).
+    image: docker.n8n.io/n8nio/n8n:${N8N_VERSION:?set N8N_VERSION in .env to the rehearsed version}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"
+    env_file: .env
+    environment:
+      GENERIC_TIMEZONE: Europe/Berlin
+      TZ: Europe/Berlin
+      # The BoLaGio package reads its configuration from $env and signs
+      # requests with node:crypto. Safe here: this instance runs nothing else.
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      NODE_FUNCTION_ALLOW_BUILTIN: crypto
+      # Editor over the SSH tunnel on http://localhost.
+      N8N_SECURE_COOKIE: "false"
+      N8N_HOST: localhost
+      # Guest names and e-mail addresses pass through executions: keep them
+      # only as long as they are useful for diagnosis (GDPR: data minimisation).
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: "168"
+      EXECUTIONS_DATA_SAVE_ON_SUCCESS: all
+      EXECUTIONS_DATA_SAVE_ON_ERROR: all
+      # No telemetry, no in-app marketing, no community nodes.
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
+      N8N_PERSONALIZATION_ENABLED: "false"
+      N8N_COMMUNITY_PACKAGES_ENABLED: "false"
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./workflows:/import:ro
+
+volumes:
+  n8n_data:

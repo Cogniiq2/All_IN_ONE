@@ -1,5 +1,9 @@
 # Runbook — the BoLaGio STAGING workflows on the shared n8n instance
 
+> **Superseded for hosting (2026-11-06):** the owners decided not to touch
+> the Cogniiq instance. Use `staging-dedicated-instance.md`; §1 here (what the
+> workflows are and why they are isolated) still applies.
+
 For the staging live test (`docs/staging-live-test.md`): automatic booking
 confirmation e-mails from staging, on the n8n instance that also runs the
 Cogniiq automations, without touching any of them.
