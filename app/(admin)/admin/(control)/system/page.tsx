@@ -9,6 +9,8 @@ import { PageHeader, Section, ErrorNotice, JobBadge, OperationBadge, When, Notic
 import { RefreshControl } from '@/components/admin/shell/refresh-control';
 import { RunPassButton } from '@/components/admin/system/run-pass-button';
 import { BookingTesterControl } from '@/components/admin/system/booking-tester-control';
+import { LivePreflight } from '@/components/admin/system/live-preflight';
+import { runLivePreflight } from '@/lib/booking/live-test';
 import { cookies } from 'next/headers';
 import { isBookingTester, testerGateApplies } from '@/lib/booking/tester';
 import { loadFinanceHealth } from '@/lib/finance/queries';
@@ -42,6 +44,7 @@ export default async function SystemPage() {
   const mayRun = can(operator?.role, 'run_reconciliation_pass') && !operator?.preview;
   const mayTest = can(operator?.role, 'manage_operators') && !operator?.preview && testerGateApplies();
   const testing = mayTest && (await isBookingTester({ cookies: cookies() }));
+  const preflight = mayTest ? await runLivePreflight().catch(() => null) : null;
 
   return (
     <>
@@ -50,6 +53,7 @@ export default async function SystemPage() {
       {mayTest && (
         <Section title="Test bookings" meta={<span>staging · live Beds24 · PayPal sandbox</span>} id="test-bookings">
           <BookingTesterControl active={testing} />
+          {preflight ? <LivePreflight preflight={preflight} /> : <p className="bc-meta pt-3">The live test preflight could not run. See the server log.</p>}
         </Section>
       )}
 

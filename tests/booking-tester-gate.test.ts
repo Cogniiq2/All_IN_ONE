@@ -14,7 +14,7 @@ vi.mock('@/lib/booking/config', async (importOriginal) => {
   return { ...real, directBookingPermitted: () => ({ permitted: gate.permitted, refusals: [] }) };
 });
 
-import { directBookingFor, mintTesterToken, requireDirectBookingFor, testerGateApplies, TESTER_COOKIE } from '@/lib/booking/tester';
+import { directBookingFor, mintTesterToken, requireApprovedTestStay, requireDirectBookingFor, testerGateApplies, TESTER_COOKIE } from '@/lib/booking/tester';
 import { createLogger } from '@/lib/booking/logger';
 
 const SECRET = 'a-staging-admin-session-secret-of-enough-length';
@@ -58,6 +58,15 @@ describe('staging tester gate', () => {
     const { signSession } = await import('@/lib/admin/session');
     const session = await signSession({ sub: 'u1', email: 'owner@example.com' }, SECRET);
     expect(await directBookingFor(request(session))).toBe(false);
+  });
+
+  it('a tester may write only the approved stay to the real Beds24', () => {
+    const log = createLogger();
+    expect(() => requireApprovedTestStay({ unitSlug: 'schulstrasse-ii', checkIn: '2027-01-19', checkOut: '2027-01-21' }, log)).not.toThrow();
+    expect(() => requireApprovedTestStay({ unitSlug: 'schulstrasse-ii', checkIn: '2027-01-20', checkOut: '2027-01-21' }, log)).toThrow();
+    expect(() => requireApprovedTestStay({ unitSlug: 'schulstrasse-i', checkIn: '2027-01-19', checkOut: '2027-01-21' }, log)).toThrow();
+    process.env.APP_ENV = 'production';
+    expect(() => requireApprovedTestStay({ unitSlug: 'schulstrasse-i', checkIn: '2027-03-01', checkOut: '2027-03-04' }, log)).not.toThrow();
   });
 
   it('production keeps the launch gate alone', async () => {

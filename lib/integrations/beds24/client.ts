@@ -102,10 +102,21 @@ async function attempt<T>(init: Beds24RequestInit, isRetry: boolean): Promise<T>
 
   // Exactly one re-authentication. A token can expire between the cache check
   // and the call; a loop on a genuinely invalid refresh token would hammer
-  // Beds24 and get the account rate-limited.
-  if (response.status === 401 && !isRetry) {
+  // Beds24 and get the account rate-limited. Beds24 answers a token it no
+  // longer accepts with 403 as well as 401 (its documentation: 403 = token
+  // missing, expired or without the scope) — and the per-isolate cache can
+  // hold such a token for up to a day. Nothing was processed on either, so
+  // the retry is safe for writes too.
+  if ((response.status === 401 || response.status === 403) && !isRetry) {
     invalidateAccessToken();
     return attempt<T>(init, true);
+  }
+
+  // Still refused with a FRESH token: the credential or its scope is wrong.
+  // That is an integration fault for an operator — never "the dates are
+  // gone" for a guest, so it is not a `rejected` refusal.
+  if (response.status === 401 || response.status === 403) {
+    throw new ProviderError('unavailable', `Beds24 refused the credentials (${response.status}) after a fresh token`);
   }
 
   if (response.status === 429) {

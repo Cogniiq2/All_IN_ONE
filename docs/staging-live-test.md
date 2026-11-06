@@ -34,65 +34,80 @@ no revenue, no receipt, no refund is posted for sandbox money. The Beds24
 copy of the booking is imported into `bolagio_reservations` like any other;
 once cancelled it counts as a cancellation without charge.
 
-## 2. The approved test (to be filled in by the owners)
+## 2. The approved test
 
-| | Proposed | Approved by / at |
+| | Approved | |
 |---|---|---|
-| Apartment | Schulstraße II — Beds24 property 354658, room 731146 | |
+| Apartment | Schulstraße II — Beds24 property 354658, room 731146 | approved by the owner, 2026-11-06, conditionally (below) |
 | Dates | arrival Tue 19 Jan 2027, departure Thu 21 Jan 2027 (2 nights) | |
 | Party / setup | 1 adult, 1 Schlafzimmer | |
-| Why these | no reservation overlaps them in either apartment (checked 20 Oct 2026, 10:30 UTC); a low-demand midweek in January; within Booking.com's and (normally) Airbnb's open calendar | |
 | Side effect accepted | the two nights are closed on Booking.com and Airbnb from the hold until the cancellation (target: under 1 hour) | |
 
-Re-check the dates are still free immediately before the test.
+Conditions of the approval: every prerequisite verified first; availability
+re-checked immediately before; sandbox money only; no production, pricing or
+existing reservation touched; the test kept out of financial reporting; the
+cancellation and release proven; evidence from Beds24, Booking.com, Airbnb,
+PayPal and Supabase; every channel open again at the end. **Any missing
+prerequisite means no booking.**
+
+Enforced in code, not only here: on staging the booking API accepts **only**
+this unit and these dates (`lib/booking/live-test-stay.ts`,
+`requireApprovedTestStay`), and the tester unlock refuses unless the
+preflight is GO.
 
 ## 3. Prerequisites (owner actions)
 
-Cloudflare, worker `bolagio-staging` (**Encrypt** every value, so a deploy
-from `wrangler.jsonc` cannot wipe it): `PAYPAL_CLIENT_ID`,
-`PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID` (sandbox app), and check that
-`BEDS24_REFRESH_TOKEN`, `SUPABASE_SERVICE_ROLE_KEY`, `BOOKING_SYNC_SECRET`,
-`ADMIN_SESSION_SECRET`, `N8N_INTERNAL_SECRET` and `MESSAGING_CONTACT_EMAIL`
-exist. PayPal developer dashboard → sandbox app → Webhooks →
+See the checklist in the session report of 2026-11-06; in short:
+Cloudflare `bolagio-staging` secrets (encrypted): `PAYPAL_CLIENT_ID`,
+`PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID` (sandbox app), `MESSAGING_CONTACT_EMAIL`,
+and present already: `BEDS24_REFRESH_TOKEN`, `SUPABASE_SERVICE_ROLE_KEY`,
+`BOOKING_SYNC_SECRET`, `ADMIN_SESSION_SECRET`, `N8N_INTERNAL_SECRET`.
+PayPal sandbox webhook →
 `https://bolagio-staging.popovic-lazar0603.workers.dev/api/webhooks/paypal`
-(events listed in `docs/paypal-sandbox-e2e.md`). n8n (staging):
-`BOLAGIO_MESSAGING_TRANSPORT=smtp` with the "BoLaGio SMTP" credential and a
-test inbox as the guest e-mail — or `test` to prove "exactly once" without
-mail leaving.
-
-Beds24: no Auto Action may e-mail on these bookings (the API booking source
-is `BoLaGio Direct`). Beds24's own "Booking Confirmation" message is sent only
-for bookings made on the Beds24 booking page, so it does not apply.
+(the Supabase Edge Function `paypal-webhook` is **not** deployed in this
+project, so the worker route is the one to register). n8n (staging):
+`BOLAGIO_MESSAGING_TRANSPORT=smtp` (test inbox) or `test`. Beds24: no Auto
+Action e-mailing bookings from `BoLaGio Direct`.
 
 ## 4. Steps and evidence
 
 Record a UTC timestamp and a screenshot or query result for each.
 
-1. Control → System → Test bookings → allow. Confirm the System page shows no
-   `DIRECT_BOOKING_*` or `LEGAL_*` refusal.
-2. Book the approved stay on the staging site; pay with a PayPal **sandbox
-   personal account**. Expect `/booking/confirmed`.
-3. Beds24 → the booking: property/room, dates, guest, total, referer
+0. **Preflight.** Control → System → *Test bookings*: the *Live test
+   preflight* must read **GO** (configuration, Beds24 calendar and bookings for
+   the dates, database, reconciliation heartbeat). Screenshot it. Screenshot
+   Booking.com and Airbnb showing both nights open. Refresh the preflight
+   immediately before step 2.
+1. Control → System → Test bookings → *Allow test bookings in this browser*
+   (refused unless GO).
+2. **Abandoned payment first**, on the approved dates, guest e-mail
+   `<test inbox>+abandon@…`: go to the PayPal window, close it without paying.
+   Expect: a Beds24 booking `new` appears; after the lease
+   (`BOOKING_HOLD_MINUTES`, default 15, plus the grace period) reconciliation
+   releases it — Beds24 `cancelled`, the nights free again on the website, no
+   confirmation mail, the intent `released`/`expired`.
+3. **Paid booking**, guest e-mail `<test inbox>+paid@…` (a different e-mail,
+   so it is a new booking rather than a replay of step 2): pay with a PayPal
+   **sandbox personal account**. Expect `/booking/confirmed`.
+4. Beds24 → the booking: property/room, dates, guest, total, referer
    `BoLaGio Direct`, status `confirmed`, notes `BoLaGio BLG-…`.
-4. Staging site, a private window: the two nights show as taken.
-5. Booking.com extranet calendar and Airbnb host calendar: both nights closed
+5. Staging site, a private window: the two nights show as taken.
+6. Booking.com extranet calendar and Airbnb host calendar: both nights closed
    (screenshots, with the time).
-6. Second attempt, same unit and dates, from the tester browser: "these dates
-   have just been taken", nothing new in Beds24.
-7. Control → the booking → messages: one `booking_confirmation`, status `sent`
-   (or `skipped` under the `test` transport), sequence 1; the test inbox has
-   exactly one mail.
-8. Abandoned payment: start a booking for the same unit on the next free
-   night pair, close the PayPal window. The hold is released after the lease
-   (`BOOKING_HOLD_MINUTES`, default 15, plus the grace period): Beds24 shows the
-   booking `cancelled`, the nights reopen; no confirmation mail.
-9. Cancel the approved test booking in Control → the booking → Cancel, as an
-   administrator (`OPERATOR_PAID_CANCELLATION_ENABLED=true` is set on staging
-   only), refund decision "not required" (sandbox money; refund execution
-   stays off). The saga cancels the Beds24 booking and verifies the nights
-   reopened before the booking reads `cancelled`. Do **not** cancel it in
-   Beds24 by hand: our copy would stay `confirmed` and keep the nights locked
-   on the website. Then confirm Booking.com and Airbnb reopen both nights.
-10. Control → System → Test bookings → stop.
+7. Second attempt, same unit and dates, from the tester browser: "these dates
+   have just been taken"; nothing new in Beds24.
+8. Control → the booking → messages: one `booking_confirmation`, `sent` (or
+   `skipped` under the `test` transport), sequence 1; the inbox has exactly
+   one mail. PayPal sandbox dashboard: one capture for the total.
+9. Finance: no `bolagio_finance_payments` row and no revenue transaction for
+   the reference (TEST terms → skipped).
+10. Cancel in Control → the booking → Cancel, as an administrator, refund
+    decision "not required" (sandbox money; refund execution stays off). The
+    saga cancels the Beds24 booking and verifies the nights reopened before the
+    booking reads `cancelled`. Do **not** cancel it in Beds24 by hand: our copy
+    would stay `confirmed` and keep the nights locked on the website.
+11. Beds24 `cancelled`; website, Booking.com and Airbnb show both nights open
+    again (screenshots, with the time).
+12. Control → System → Test bookings → stop.
 
 Anything not directly observed is recorded as **not verified**.

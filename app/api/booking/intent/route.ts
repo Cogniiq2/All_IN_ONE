@@ -33,7 +33,7 @@ import {
   requireBackend,
 } from '@/lib/booking/http';
 import { BookingError, startBooking } from '@/lib/booking/service';
-import { requireDirectBookingFor } from '@/lib/booking/tester';
+import { requireApprovedTestStay, requireDirectBookingFor } from '@/lib/booking/tester';
 import type { GuestDetails } from '@/lib/booking/types';
 import { parseAcceptedVersions } from '@/lib/legal/booking-terms';
 
@@ -56,6 +56,8 @@ export async function POST(request: NextRequest) {
     await requireDirectBookingFor(request, logger);
 
     const body = await readJson(request);
+    // Staging against the real Beds24: the approved test stay and nothing else.
+    requireApprovedTestStay({ unitSlug: str(body.unitSlug), checkIn: str(body.checkIn), checkOut: str(body.checkOut) }, logger);
     const result = await startBooking(
       {
         unitSlug: str(body.unitSlug),

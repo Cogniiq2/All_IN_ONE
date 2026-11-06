@@ -9,6 +9,7 @@ const REASON: Record<Exclude<BookingTesterResult, { ok: true }>['reason'], strin
   preview: 'Preview data is read-only.',
   not_applicable: 'Not needed here: this deployment is production or does not talk to the real Beds24.',
   gate_closed: 'Direct booking is shut on this deployment (flag, PayPal sandbox secrets or test terms missing) — see Alerts above.',
+  preflight_failed: 'The live test preflight below is not GO. Fix every failed check first.',
   failed: 'The test pass could not be issued. Check ADMIN_SESSION_SECRET.',
 };
 

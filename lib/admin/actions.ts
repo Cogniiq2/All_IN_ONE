@@ -439,7 +439,7 @@ export async function requeueOutboxAction(eventId: string): Promise<RequeueResul
 
 export type BookingTesterResult =
   | { ok: true; on: boolean }
-  | { ok: false; reason: 'unauthenticated' | 'forbidden' | 'preview' | 'not_applicable' | 'gate_closed' | 'failed' };
+  | { ok: false; reason: 'unauthenticated' | 'forbidden' | 'preview' | 'not_applicable' | 'gate_closed' | 'preflight_failed' | 'failed' };
 
 /**
  * Let THIS browser make live test bookings on staging (or stop). Administrators
@@ -459,6 +459,9 @@ export async function setBookingTesterAction(on: boolean): Promise<BookingTester
     return { ok: true, on: false };
   }
   if (!directBookingPermitted().permitted) return { ok: false, reason: 'gate_closed' };
+  // Every automatic prerequisite of the approved live test must pass first.
+  const { runLivePreflight } = await import('@/lib/booking/live-test');
+  if (!(await runLivePreflight()).go) return { ok: false, reason: 'preflight_failed' };
   try {
     cookies().set(TESTER_COOKIE, await mintTesterToken({ id: gate.operator.authUserId, email: gate.operator.email }), testerCookieOptions(secure));
     await audit({ operator: gate.operator, action: 'booking_tester.on', outcome: 'ok' });

@@ -25,6 +25,7 @@ import { BEDS24_DEFAULT_BASE_URL, beds24Config, beds24Mode, directBookingPermitt
 import { signSession, verifySession, SESSION_TTL_SECONDS } from '@/lib/admin/session';
 import { BookingError } from '@/lib/booking/service';
 import type { BookingLogger } from '@/lib/booking/logger';
+import { APPROVED_LIVE_TEST } from '@/lib/booking/live-test-stay';
 
 export const TESTER_COOKIE = 'bolagio_booking_tester';
 const AUDIENCE = 'booking-tester';
@@ -65,4 +66,17 @@ export async function mintTesterToken(operator: { id: string; email: string }): 
 
 export function testerCookieOptions(secure: boolean) {
   return { httpOnly: true, secure, sameSite: 'lax' as const, path: '/', maxAge: SESSION_TTL_SECONDS };
+}
+
+/**
+ * Where the tester gate applies, the only stay that may be written to Beds24
+ * is the one the owners approved (lib/booking/live-test.ts). A mistyped date
+ * cannot close real nights on Booking.com and Airbnb.
+ */
+export function requireApprovedTestStay(input: { unitSlug: string; checkIn: string; checkOut: string }, logger: BookingLogger): void {
+  if (!testerGateApplies()) return;
+  const t = APPROVED_LIVE_TEST;
+  if (input.unitSlug === t.unitSlug && input.checkIn === t.checkIn && input.checkOut === t.checkOut) return;
+  logger.warn('config.validation', { errorCode: 'DIRECT_BOOKING_DISABLED', outcome: 'not_the_approved_test_stay' });
+  throw new BookingError('booking_disabled');
 }

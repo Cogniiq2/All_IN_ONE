@@ -31,9 +31,21 @@ describe('Beds24 client: refusal vs. uncertainty', () => {
 
   const answer = (status: number) => fetchMock.mockResolvedValue(new Response('{}', { status }));
 
-  it.each([400, 403, 404, 422])('%i is a definite refusal', async (status) => {
+  it.each([400, 404, 422])('%i is a definite refusal', async (status) => {
     answer(status);
     await expect(beds24Request({ path: '/bookings', method: 'POST', body: [{}], quiet: true })).rejects.toMatchObject({ code: 'rejected' });
+  });
+
+  it.each([401, 403])('%i is retried once with a fresh token, and succeeds', async (status) => {
+    fetchMock.mockResolvedValueOnce(new Response('{}', { status })).mockResolvedValueOnce(new Response('{"ok":true}', { status: 200 }));
+    await expect(beds24Request({ path: '/bookings', quiet: true })).resolves.toEqual({ ok: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([401, 403])('%i twice is a credentials fault, never a guest-facing refusal', async (status) => {
+    answer(status);
+    await expect(beds24Request({ path: '/bookings', method: 'POST', body: [{}], quiet: true })).rejects.toMatchObject({ code: 'unavailable' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it.each([408, 409, 429, 500, 502, 503])('%i stays uncertain', async (status) => {
